@@ -1,0 +1,109 @@
+import numpy as np
+import pandas as pd
+
+WINDOWS_MIN = [15, 30, 60]
+
+TIME_COLS = [
+    "MVT_TIME_UTC_mvt", "SCHED_TIME_UTC_mvt", "LOBT_flt",
+    "IOBT_flt", "EOBT_1_flt", "AOBT_3_flt", "ARVT_1_flt", "ARVT_3_flt",
+]
+
+CAT_COLS = [
+    "ADEP_mvt", "ADES_mvt", "STAND_mvt", "RUNWAY_mvt",
+    "AIRCRAFT_TYPE_mvt", "WK_TBL_CAT_flt", "MARKET_SEGMENT_flt",
+    "FLIGHT_TYPE_flt", "AIRCRAFT_OPERATOR_flt",
+    "ADEP_STAND", "ADEP_RUNWAY", "ADEP_AIRCRAFT_TYPE",
+]
+
+
+def _rolling_counts(g: pd.DataFrame) -> pd.DataFrame:
+    out = pd.DataFrame(index=g.index)
+    t = g["MVT_TIME_UTC_mvt"].values.astype("datetime64[s]")
+    is_dep = (g["PHASE_mvt"] == "DEP").values
+    is_arr = ~is_dep
+    order = np.argsort(t, kind="mergesort")
+    t_sorted = t[order]
+    dep_cum = np.cumsum(is_dep[order])
+    arr_cum = np.cumsum(is_arr[order])
+
+    for w in WINDOWS_MIN:
+        delta = np.timedelta64(w, "m")
+        lo_idx = np.searchsorted(t_sorted, t_sorted - delta, side="left")
+        hi_idx = np.searchsorted(t_sorted, t_sorted, side="left")
+
+        dep_before = np.where(lo_idx > 0, dep_cum[np.clip(lo_idx - 1, 0, None)], 0)
+        dep_upto = np.where(hi_idx > 0, dep_cum[np.clip(hi_idx - 1, 0, None)], 0)
+        arr_before = np.where(lo_idx > 0, arr_cum[np.clip(lo_idx - 1, 0, None)], 0)
+        arr_upto = np.where(hi_idx > 0, arr_cum[np.clip(hi_idx - 1, 0, None)], 0)
+
+        dep_count = np.empty(len(g), dtype=np.int64)
+        arr_count = np.empty(len(g), dtype=np.int64)
+        dep_count[order] = dep_upto - dep_before
+        arr_count[order] = arr_upto - arr_before
+
+        out[f"dep_count_{w}m"] = dep_count
+        out[f"arr_count_{w}m"] = arr_count
+
+    return out
+
+
+def _rolling_queue(g: pd.DataFrame) -> pd.DataFrame:
+    out = pd.DataFrame(index=g.index)
+    t = g["AOBT_3_flt"].values.astype("datetime64[s]")
+    valid = ~pd.isna(g["AOBT_3_flt"]).values
+    order = np.argsort(t, kind="mergesort")
+    t_sorted = t[order]
+    valid_sorted = valid[order]
+    valid_cum = np.cumsum(valid_sorted)
+
+    for w in [15, 30]:
+        delta = np.timedelta64(w, "m")
+        lo_idx = np.searchsorted(t_sorted, t_sorted - delta, side="left")
+        hi_idx = np.searchsorted(t_sorted, t_sorted, side="left")
+        before = np.where(lo_idx > 0, valid_cum[np.clip(lo_idx - 1, 0, None)], 0)
+        upto = np.where(hi_idx > 0, valid_cum[np.clip(hi_idx - 1, 0, None)], 0)
+        count_sorted = upto - before
+        count = np.empty(len(g), dtype=np.int64)
+        count[order] = count_sorted
+        count = np.where(valid, count, -1)
+        out[f"pushback_queue_{w}m"] = count
+
+    return out
+
+
+def build_features(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    for c in TIME_COLS:
+        if c in df.columns:
+            df[c] = pd.to_datetime(df[c], utc=True)
+
+    df["AIRCRAFT_TYPE_mvt"] = df["AIRCRAFT_TYPE_mvt"].fillna(df["AIRCRAFT_TYPE_flt"])
+
+    feats = pd.DataFrame(index=df.index)
+
+    mvt_t = df["MVT_TIME_UTC_mvt"]
+    for c in ["SCHED_TIME_UTC_mvt", "LOBT_flt", "IOBT_flt", "EOBT_1_flt", "AOBT_3_flt"]:
+        feats[f"gap_{c}"] = (mvt_t - df[c]).dt.total_seconds()
+
+    feats["hour"] = mvt_t.dt.hour + mvt_t.dt.minute / 60.0
+    feats["dow"] = mvt_t.dt.dayofweek
+    feats["month"] = mvt_t.dt.month
+    feats["is_weekend"] = (feats["dow"] >= 5).astype(int)
+
+    df["ADEP_STAND"] = df["ADEP_mvt"].astype(str) + "_" + df["STAND_mvt"].astype(str)
+    df["ADEP_RUNWAY"] = df["ADEP_mvt"].astype(str) + "_" + df["RUNWAY_mvt"].astype(str)
+    df["ADEP_AIRCRAFT_TYPE"] = df["ADEP_mvt"].astype(str) + "_" + df["AIRCRAFT_TYPE_mvt"].astype(str)
+
+    for c in CAT_COLS:
+        feats[c] = df[c].fillna("missing").astype(str).astype("category")
+
+    count_parts = [_rolling_counts(g) for _, g in df.groupby("ADEP_mvt", observed=True)]
+    counts = pd.concat(count_parts).reindex(df.index)
+
+    dep_only = df[df["PHASE_mvt"] == "DEP"]
+    queue_parts = [_rolling_queue(g) for _, g in dep_only.groupby("ADEP_mvt", observed=True)]
+    queue = pd.concat(queue_parts).reindex(df.index)
+    queue = queue.fillna(-1)
+
+    feats = pd.concat([feats, counts, queue], axis=1)
+    return feats

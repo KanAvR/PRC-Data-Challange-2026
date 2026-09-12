@@ -1,0 +1,9 @@
+.venv/
+dataset/
+output/*.txt
+__pycache__/
+*.pyc
+.last
+credentials.json
+*.pem
+.mc/

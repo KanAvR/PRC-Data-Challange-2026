@@ -14,6 +14,7 @@ CAT_COLS = [
     "AIRCRAFT_TYPE_mvt", "WK_TBL_CAT_flt", "MARKET_SEGMENT_flt",
     "FLIGHT_TYPE_flt", "AIRCRAFT_OPERATOR_flt",
     "ADEP_STAND", "ADEP_RUNWAY", "ADEP_AIRCRAFT_TYPE", "ADEP_STAND_RUNWAY",
+    "AIRLINE_mvt", "ADEP_AIRLINE",
 ]
 
 
@@ -240,6 +241,14 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     feats["dow"] = mvt_t.dt.dayofweek
     feats["month"] = mvt_t.dt.month
     feats["is_weekend"] = (feats["dow"] >= 5).astype(int)
+
+    # FLIGHT_mvt survives on the rows where every _flt column is absent, so its
+    # operator prefix is the only operator signal available on exactly the rows
+    # the tail model has to judge (AIRCRAFT_OPERATOR_flt is "missing" there).
+    airline = (df["FLIGHT_mvt"].astype(str)
+               .str.replace(r"\d+[A-Z]?$", "", regex=True).str[:3])
+    df["AIRLINE_mvt"] = airline.where(airline.str.len() > 0, "missing")
+    df["ADEP_AIRLINE"] = df["ADEP_mvt"].astype(str) + "_" + df["AIRLINE_mvt"]
 
     df["ADEP_STAND"] = df["ADEP_mvt"].astype(str) + "_" + df["STAND_mvt"].astype(str)
     df["ADEP_RUNWAY"] = df["ADEP_mvt"].astype(str) + "_" + df["RUNWAY_mvt"].astype(str)

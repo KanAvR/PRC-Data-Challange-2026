@@ -27,7 +27,7 @@ N_SEEDS = 5  # classifier AUC swings ~0.015 between seeds, worth ~7 RMSE points
 TAIL_FEATURES = [
     "gap_LOBT_flt", "gap_SCHED_TIME_UTC_mvt", "gap_IOBT_flt", "gap_EOBT_1_flt",
     "gap_AOBT_3_flt", "missing_LOBT_flt", "missing_AOBT_3_flt", "n_missing_times",
-    "hour", "dow", "month", "ADEP_mvt", "AIRCRAFT_TYPE_mvt",
+    "hour", "dow", "month", "ADEP_mvt", "AIRCRAFT_TYPE_mvt", "AIRLINE_mvt",
 ]
 
 # Rows without LOBT are ~65% of the tail and are the hard ones. Pooled, they get
@@ -36,12 +36,14 @@ TAIL_FEATURES = [
 NO_LOBT_FEATURES = [
     "gap_SCHED_TIME_UTC_mvt", "hour", "dow", "month", "ADEP_mvt",
     "AIRCRAFT_TYPE_mvt", "RUNWAY_mvt", "STAND_mvt", "n_missing_times",
+    "AIRLINE_mvt",
 ]
 
 MU_PARAMS = dict(
     objective="regression", metric="rmse", learning_rate=0.02, num_leaves=511,
     min_data_in_leaf=30, feature_fraction=0.7, bagging_fraction=0.8,
     bagging_freq=1, lambda_l2=1.0, max_bin=255, verbose=-1,
+    force_col_wise=True,  # 63 features x 1.5M rows: skip the auto row/col probe
 )
 
 CLF_PARAMS = dict(
@@ -71,16 +73,36 @@ def _has_lobt(X):
 
 def _fit_seeds(X, label, cols, num_boost_round):
     cats = [c for c in CAT_COLS if c in cols]
+    # Bin once, reuse for every seed. The seeds only move bagging and feature
+    # sampling, never the binning, so constructing a Dataset per seed re-binned
+    # the same 1.5M rows N_SEEDS times for nothing.
+    ds = lgb.Dataset(X[cols], label=label, categorical_feature=cats,
+                     free_raw_data=False)
+    ds.construct()
     return [lgb.train(dict(CLF_PARAMS, seed=s, bagging_seed=s, feature_fraction_seed=s),
-                      lgb.Dataset(X[cols], label=label, categorical_feature=cats),
-                      num_boost_round=num_boost_round)
+                      ds, num_boost_round=num_boost_round)
             for s in range(N_SEEDS)]
+
+
+def _usable(names, X):
+    """Keep the requested features, in order, de-duplicated.
+
+    A repeated name makes X[cols] hand LightGBM two identical columns, which
+    silently skews feature_fraction sampling and makes pandas return a DataFrame
+    where LightGBM expects a Series.
+    """
+    seen, out = set(), []
+    for c in names:
+        if c in X.columns and c not in seen:
+            seen.add(c)
+            out.append(c)
+    return out
 
 
 def train_tail_clf(X, y, num_boost_round=300):
     label = (y > TAIL_THR).astype(int)
-    pooled_cols = [c for c in TAIL_FEATURES if c in X.columns]
-    absent_cols = [c for c in NO_LOBT_FEATURES if c in X.columns]
+    pooled_cols = _usable(TAIL_FEATURES, X)
+    absent_cols = _usable(NO_LOBT_FEATURES, X)
     no_lobt = ~_has_lobt(X)
     return {
         "pooled": (_fit_seeds(X, label, pooled_cols, num_boost_round), pooled_cols),
@@ -101,7 +123,20 @@ def predict_tail_proba(models, X):
     return out
 
 
+# p is trained by unweighted log-loss on a 0.04% positive rate, which leaves it
+# systematically under-confident: the worst remaining tail errors are rows where v
+# is exact but p sits at 0.001-0.15. Boosting p is worth ~7 RMSE. Both eval splits
+# pick 1.35 independently and the optimum is a flat plateau over [1.30, 1.50], so
+# this is a calibration fix rather than a fitted constant.
+P_BOOST = 1.35
+# v underestimates on the most extreme rows (v>=40000: mean v 59865 vs mean y 65367)
+V_HI_THR = 40000.0
+V_HI_RATIO = 1.08
+
+
 def combine(mu_pred, p, v):
     """Gate v so a confident row never gets a tail value smaller than mu itself."""
+    p = np.clip(p * P_BOOST, 0.0, 1.0)
+    v = np.where(v >= V_HI_THR, v * V_HI_RATIO, v)
     v_gated = np.where(v > TAIL_THR, v, mu_pred)
     return np.clip((1.0 - p) * mu_pred + p * v_gated, 0, None)

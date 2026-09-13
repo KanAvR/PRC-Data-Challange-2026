@@ -6,7 +6,8 @@ import pandas as pd
 from sklearn.metrics import roc_auc_score, root_mean_squared_error
 
 sys.path.insert(0, "src")
-from features import CAT_COLS, build_features
+from featcache import build_features_cached
+from features import CAT_COLS
 from model import (TAIL_THR, analytic_tail_value, combine, predict_tail_proba,
                    train_mu, train_tail_clf)
 
@@ -20,7 +21,7 @@ def load_training():
     frames = []
     for f in TRAIN_FILES:
         df = pd.read_parquet(f)
-        feats = build_features(df)
+        feats = build_features_cached(f, df)
         feats["target"] = df["TAXITIME_SEC_mvt"].astype(float)
         feats["month_file"] = f
         frames.append(feats.loc[df["PHASE_mvt"].values == "DEP"])

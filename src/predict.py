@@ -5,7 +5,8 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, "src")
-from features import CAT_COLS, build_features
+from featcache import build_features_cached
+from features import CAT_COLS
 from model import (analytic_tail_value, combine, predict_tail_proba, train_mu,
                    train_tail_clf)
 
@@ -20,7 +21,7 @@ def load_training():
     frames = []
     for f in TRAIN_FILES:
         df = pd.read_parquet(f)
-        feats = build_features(df)
+        feats = build_features_cached(f, df)
         feats["target"] = df["TAXITIME_SEC_mvt"].astype(float)
         frames.append(feats.loc[df["PHASE_mvt"].values == "DEP"])
     full = pd.concat(frames, ignore_index=True)
@@ -35,7 +36,7 @@ def main():
 
     print("Loading ranking data and building features...")
     ranking_raw = pd.read_parquet(RANKING_FILE)
-    ranking_feats = build_features(ranking_raw)
+    ranking_feats = build_features_cached(RANKING_FILE, ranking_raw)
     dep_mask = (ranking_raw["PHASE_mvt"] == "DEP").values
     ranking_dep = ranking_feats.loc[dep_mask].copy()
     ranking_ids = ranking_raw.loc[dep_mask, "MVT_ID_mvt"].values

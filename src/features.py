@@ -72,6 +72,97 @@ def _rolling_queue(g: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _window_counts(event_t, query_t, windows):
+    """For each query time, how many events fall in [t-w, t). Events strictly before."""
+    ev = np.sort(event_t)
+    hi = np.searchsorted(ev, query_t, side="left")
+    out = {}
+    for w in windows:
+        lo = np.searchsorted(ev, query_t - np.timedelta64(w, "m"), side="left")
+        out[w] = hi - lo
+    return out
+
+
+def _window_mean(event_t, event_val, query_t, windows):
+    """Mean of event_val over events in [t-w, t). NaN when the window is empty."""
+    order = np.argsort(event_t, kind="mergesort")
+    ev, val = event_t[order], event_val[order]
+    ok = ~np.isnan(val)
+    csum = np.concatenate([[0.0], np.cumsum(np.where(ok, val, 0.0))])
+    ccnt = np.concatenate([[0], np.cumsum(ok)])
+    hi = np.searchsorted(ev, query_t, side="left")
+    out = {}
+    for w in windows:
+        lo = np.searchsorted(ev, query_t - np.timedelta64(w, "m"), side="left")
+        n = ccnt[hi] - ccnt[lo]
+        out[w] = np.where(n > 0, (csum[hi] - csum[lo]) / np.maximum(n, 1), np.nan)
+    return out
+
+
+def _pending_queue(sched_t, mvt_t, query_t, self_sched):
+    """Flights whose scheduled push-back has passed but which have not taken off.
+
+    Both timestamps exist for every ranking DEP row, so this is a queue estimate
+    that survives to predict time -- actual push-back (BLOCK_TIME) does not.
+    """
+    s = np.sort(sched_t)
+    m = np.sort(mvt_t)
+    started = np.searchsorted(s, query_t, side="right")
+    gone = np.searchsorted(m, query_t, side="left")
+    q = started - gone
+    return q - (self_sched <= query_t).astype(np.int64)  # drop self
+
+
+def _dep_dynamics(g: pd.DataFrame) -> pd.DataFrame:
+    """Departure-side congestion at one airport, split airport-wide vs runway.
+
+    Everything keys off takeoff time and scheduled time only. Neighbouring
+    flights' gap_SCHED is the disruption signal: when an airport is in trouble,
+    every departure around it takes off long after schedule, and that is visible
+    without knowing anybody's taxi time.
+    """
+    out = pd.DataFrame(index=g.index)
+    t = g["MVT_TIME_UTC_mvt"].values.astype("datetime64[s]")
+    sched = g["SCHED_TIME_UTC_mvt"].values.astype("datetime64[s]")
+    gap_sched = (t - sched) / np.timedelta64(1, "s")
+
+    for w, c in _window_counts(t, t, [5, 15, 30, 60, 120]).items():
+        out[f"dep_off_apt_{w}m"] = c
+    for w, v in _window_mean(t, gap_sched, t, [30, 60, 120]).items():
+        out[f"nbr_gapsched_apt_{w}m"] = v
+    out["queue_ahead_apt"] = _pending_queue(sched, t, t, sched)
+
+    ev = np.sort(t)
+    prev_idx = np.searchsorted(ev, t, side="left") - 1
+    out["secs_since_prev_dep_apt"] = np.where(
+        prev_idx >= 0, (t - ev[np.clip(prev_idx, 0, None)]) / np.timedelta64(1, "s"), np.nan)
+
+    for col in ["dep_off_rwy_5m", "dep_off_rwy_15m", "dep_off_rwy_30m", "dep_off_rwy_60m",
+                "queue_ahead_rwy", "secs_since_prev_dep_rwy", "nbr_gapsched_rwy_60m",
+                "queue_rate_rwy"]:
+        out[col] = np.nan
+
+    rwy = g["RUNWAY_mvt"].fillna("missing").astype(str).values
+    for r in pd.unique(rwy):
+        sel = rwy == r
+        tr, sr, gr = t[sel], sched[sel], gap_sched[sel]
+        for w, c in _window_counts(tr, tr, [5, 15, 30, 60]).items():
+            out.loc[sel, f"dep_off_rwy_{w}m"] = c
+        q = _pending_queue(sr, tr, tr, sr)
+        out.loc[sel, "queue_ahead_rwy"] = q
+        # queue 30 min earlier -> is congestion building or clearing
+        q30 = _pending_queue(sr, tr, tr - np.timedelta64(30, "m"), sr)
+        out.loc[sel, "queue_rate_rwy"] = q - q30
+        for w, v in _window_mean(tr, gr, tr, [60]).items():
+            out.loc[sel, "nbr_gapsched_rwy_60m"] = v
+        evr = np.sort(tr)
+        pi = np.searchsorted(evr, tr, side="left") - 1
+        out.loc[sel, "secs_since_prev_dep_rwy"] = np.where(
+            pi >= 0, (tr - evr[np.clip(pi, 0, None)]) / np.timedelta64(1, "s"), np.nan)
+
+    return out
+
+
 def _arr_context(g: pd.DataFrame) -> pd.DataFrame:
     """Ground conditions from ARR rows only. Their TAXITIME/BLOCK_TIME survive in
     ranking.parquet (only DEP rows are stripped), so this is safe at predict time."""
@@ -175,5 +266,8 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     queue = pd.concat(queue_parts).reindex(df.index)
     queue = queue.fillna(-1)
 
-    feats = pd.concat([feats, counts, arr_ctx, queue], axis=1)
+    dyn_parts = [_dep_dynamics(g) for _, g in dep_only.groupby("apt", observed=True)]
+    dyn = pd.concat(dyn_parts).reindex(df.index)
+
+    feats = pd.concat([feats, counts, arr_ctx, queue, dyn], axis=1)
     return feats

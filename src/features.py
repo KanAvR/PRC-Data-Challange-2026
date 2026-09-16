@@ -1,7 +1,16 @@
 import numpy as np
 import pandas as pd
 
+from airline import airline_code
+
 WINDOWS_MIN = [15, 30, 60]
+
+AIRPORT_TZ = {
+    "EDDF": "Europe/Berlin", "EDDM": "Europe/Berlin", "EGLL": "Europe/London",
+    "EHAM": "Europe/Amsterdam", "LEBL": "Europe/Madrid", "LEMD": "Europe/Madrid",
+    "LFPG": "Europe/Paris", "LIRF": "Europe/Rome", "LSZH": "Europe/Zurich",
+    "LTFM": "Europe/Istanbul",
+}
 
 TIME_COLS = [
     "MVT_TIME_UTC_mvt", "SCHED_TIME_UTC_mvt", "LOBT_flt",
@@ -73,28 +82,35 @@ def _rolling_queue(g: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def _window_counts(event_t, query_t, windows):
-    """For each query time, how many events fall in [t-w, t). Events strictly before."""
+def _bounds(ev, query_t, w, after):
+    """Index range of sorted events in [t-w, t), or in (t, t+w] when after=True."""
+    if after:
+        return (np.searchsorted(ev, query_t, side="right"),
+                np.searchsorted(ev, query_t + np.timedelta64(w, "m"), side="right"))
+    return (np.searchsorted(ev, query_t - np.timedelta64(w, "m"), side="left"),
+            np.searchsorted(ev, query_t, side="left"))
+
+
+def _window_counts(event_t, query_t, windows, after=False):
+    """For each query time, how many events fall in the window (self excluded)."""
     ev = np.sort(event_t)
-    hi = np.searchsorted(ev, query_t, side="left")
     out = {}
     for w in windows:
-        lo = np.searchsorted(ev, query_t - np.timedelta64(w, "m"), side="left")
+        lo, hi = _bounds(ev, query_t, w, after)
         out[w] = hi - lo
     return out
 
 
-def _window_mean(event_t, event_val, query_t, windows):
-    """Mean of event_val over events in [t-w, t). NaN when the window is empty."""
+def _window_mean(event_t, event_val, query_t, windows, after=False):
+    """Mean of event_val over events in the window. NaN when the window is empty."""
     order = np.argsort(event_t, kind="mergesort")
     ev, val = event_t[order], event_val[order]
     ok = ~np.isnan(val)
     csum = np.concatenate([[0.0], np.cumsum(np.where(ok, val, 0.0))])
     ccnt = np.concatenate([[0], np.cumsum(ok)])
-    hi = np.searchsorted(ev, query_t, side="left")
     out = {}
     for w in windows:
-        lo = np.searchsorted(ev, query_t - np.timedelta64(w, "m"), side="left")
+        lo, hi = _bounds(ev, query_t, w, after)
         n = ccnt[hi] - ccnt[lo]
         out[w] = np.where(n > 0, (csum[hi] - csum[lo]) / np.maximum(n, 1), np.nan)
     return out
@@ -132,6 +148,13 @@ def _dep_dynamics(g: pd.DataFrame) -> pd.DataFrame:
     for w, v in _window_mean(t, gap_sched, t, [30, 60, 120]).items():
         out[f"nbr_gapsched_apt_{w}m"] = v
     out["queue_ahead_apt"] = _pending_queue(sched, t, t, sched)
+    # Scoring is retrospective and ranking.parquet holds every takeoff, so the
+    # traffic that followed this one is known too: a queue behind the aircraft
+    # and delays that persist after it are part of the same episode.
+    for w, c in _window_counts(t, t, [15, 30], after=True).items():
+        out[f"dep_off_apt_next_{w}m"] = c
+    for w, v in _window_mean(t, gap_sched, t, [60], after=True).items():
+        out[f"nbr_gapsched_apt_next_{w}m"] = v
 
     ev = np.sort(t)
     prev_idx = np.searchsorted(ev, t, side="left") - 1
@@ -140,7 +163,7 @@ def _dep_dynamics(g: pd.DataFrame) -> pd.DataFrame:
 
     for col in ["dep_off_rwy_5m", "dep_off_rwy_15m", "dep_off_rwy_30m", "dep_off_rwy_60m",
                 "queue_ahead_rwy", "secs_since_prev_dep_rwy", "nbr_gapsched_rwy_60m",
-                "queue_rate_rwy"]:
+                "queue_rate_rwy", "dep_off_rwy_next_15m", "secs_to_next_dep_rwy"]:
         out[col] = np.nan
 
     rwy = g["RUNWAY_mvt"].fillna("missing").astype(str).values
@@ -160,6 +183,10 @@ def _dep_dynamics(g: pd.DataFrame) -> pd.DataFrame:
         pi = np.searchsorted(evr, tr, side="left") - 1
         out.loc[sel, "secs_since_prev_dep_rwy"] = np.where(
             pi >= 0, (tr - evr[np.clip(pi, 0, None)]) / np.timedelta64(1, "s"), np.nan)
+        out.loc[sel, "dep_off_rwy_next_15m"] = _window_counts(tr, tr, [15], after=True)[15]
+        ni = np.searchsorted(evr, tr, side="right")
+        out.loc[sel, "secs_to_next_dep_rwy"] = np.where(
+            ni < len(evr), (evr[np.clip(ni, None, len(evr) - 1)] - tr) / np.timedelta64(1, "s"), np.nan)
 
     return out
 
@@ -185,6 +212,10 @@ def _arr_context(g: pd.DataFrame) -> pd.DataFrame:
         n = ccnt[hi] - ccnt[lo]
         out[f"arr_taxi_mean_{w}m"] = np.where(n > 0, (csum[hi] - csum[lo]) / np.maximum(n, 1), np.nan)
         out[f"arr_landed_{w}m"] = n
+    for w, v in _window_mean(arr_t, arr_taxi, t, [30], after=True).items():
+        out[f"arr_taxi_mean_next_{w}m"] = v
+    for w, c in _window_counts(arr_t, t, [30], after=True).items():
+        out[f"arr_landed_next_{w}m"] = c
     return out
 
 
@@ -238,6 +269,15 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     feats["hour"] = mvt_t.dt.hour + mvt_t.dt.minute / 60.0
+    # schedules and staffing follow local clocks, and the UTC offset shifts by an
+    # hour between the Jan and Jul ranking months everywhere except LTFM
+    apt = np.where(df["PHASE_mvt"].values == "DEP", df["ADEP_mvt"], df["ADES_mvt"])
+    feats["hour_local"] = np.nan
+    for code, tz in AIRPORT_TZ.items():
+        sel = apt == code
+        if sel.any():
+            lt = mvt_t[sel].dt.tz_convert(tz)
+            feats.loc[sel, "hour_local"] = (lt.dt.hour + lt.dt.minute / 60.0).values
     feats["dow"] = mvt_t.dt.dayofweek
     feats["month"] = mvt_t.dt.month
     feats["is_weekend"] = (feats["dow"] >= 5).astype(int)
@@ -245,9 +285,8 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     # FLIGHT_mvt survives on the rows where every _flt column is absent, so its
     # operator prefix is the only operator signal available on exactly the rows
     # the tail model has to judge (AIRCRAFT_OPERATOR_flt is "missing" there).
-    airline = (df["FLIGHT_mvt"].astype(str)
-               .str.replace(r"\d+[A-Z]?$", "", regex=True).str[:3])
-    df["AIRLINE_mvt"] = airline.where(airline.str.len() > 0, "missing")
+    # IATA-form codes are mapped to ICAO so LH400 and DLH400 are one operator.
+    df["AIRLINE_mvt"], _ = airline_code(df["FLIGHT_mvt"])
     df["ADEP_AIRLINE"] = df["ADEP_mvt"].astype(str) + "_" + df["AIRLINE_mvt"]
 
     df["ADEP_STAND"] = df["ADEP_mvt"].astype(str) + "_" + df["STAND_mvt"].astype(str)

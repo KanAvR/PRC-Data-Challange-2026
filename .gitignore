@@ -1,6 +1,7 @@
 .venv/
 dataset/
 output/*.txt
+output/validate/
 __pycache__/
 *.pyc
 .last

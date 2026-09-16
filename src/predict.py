@@ -1,37 +1,33 @@
-import glob
+"""Retrain on all 12 months and write output/submitting.parquet.
+
+Takes the same model options as validate.py (see --help), so a configuration
+that passed validation is reproduced exactly.
+"""
+import argparse
 import sys
 
 import numpy as np
 import pandas as pd
 
 sys.path.insert(0, "src")
+from data import align_categoricals, flight_ids, load_training
+from encode import add_target_encodings
 from featcache import build_features_cached
-from features import CAT_COLS
-from model import (analytic_tail_value, combine, predict_tail_proba, train_mu,
-                   train_tail_clf)
+from model import (MU_FAMILIES, add_model_args, analytic_tail_value, combine,
+                   predict_tail_proba, train_tail_clf)
 
-TRAIN_FILES = sorted(glob.glob("dataset/training_*.parquet"))
 RANKING_FILE = "dataset/ranking.parquet"
 SUBMITTING_TEMPLATE = "dataset/submitting.parquet"
 
-MIN_TAXI_SEC = 0
-
-
-def load_training():
-    frames = []
-    for f in TRAIN_FILES:
-        df = pd.read_parquet(f)
-        feats = build_features_cached(f, df)
-        feats["target"] = df["TAXITIME_SEC_mvt"].astype(float)
-        frames.append(feats.loc[df["PHASE_mvt"].values == "DEP"])
-    full = pd.concat(frames, ignore_index=True)
-    return full[full["target"] >= MIN_TAXI_SEC]
-
 
 def main():
+    ap = argparse.ArgumentParser(description=__doc__)
+    add_model_args(ap)
+    ap.add_argument("--out", default="output/submitting.parquet")
+    args = ap.parse_args()
+
     print("Loading training data and building features...")
-    train_data = load_training()
-    y_train = train_data.pop("target").values
+    train_data, y_train, meta = load_training()
     print("Training rows:", len(train_data))
 
     print("Loading ranking data and building features...")
@@ -41,21 +37,21 @@ def main():
     ranking_dep = ranking_feats.loc[dep_mask].copy()
     ranking_ids = ranking_raw.loc[dep_mask, "MVT_ID_mvt"].values
 
-    for c in CAT_COLS:
-        cats = sorted(set(train_data[c].astype(str).unique()) | set(ranking_dep[c].astype(str).unique()))
-        dtype = pd.CategoricalDtype(categories=cats)
-        train_data[c] = train_data[c].astype(str).astype(dtype)
-        ranking_dep[c] = ranking_dep[c].astype(str).astype(dtype)
+    align_categoricals(train_data, ranking_dep)
+    if args.te:
+        add_target_encodings(train_data, y_train, meta["month"].values, meta["flight"].values,
+                             ranking_dep, flight_ids(ranking_raw.loc[dep_mask]))
 
-    print("Training normal-regime regressor on all data...")
-    mu = train_mu(train_data, y_train)
-    mu.save_model("output/model_final.txt")
+    mus = []
+    for fam in args.mu:
+        print(f"Training normal-regime regressor ({fam}) on all data...", flush=True)
+        mus.append(np.clip(MU_FAMILIES[fam](train_data, y_train).predict(ranking_dep), 0, None))
+    mu_pred = np.mean(mus, axis=0)
 
-    print("Training tail classifier on all data...")
-    clf = train_tail_clf(train_data, y_train)
+    print("Training tail classifier on all data...", flush=True)
+    clf = train_tail_clf(train_data, y_train, pooled=args.clf_pooled, no_lobt=args.clf_nolobt)
 
     print("Predicting on ranking DEP rows...")
-    mu_pred = np.clip(mu.predict(ranking_dep), 0, None)
     p = predict_tail_proba(clf, ranking_dep)
     preds = combine(mu_pred, p, analytic_tail_value(ranking_dep))
 
@@ -71,10 +67,9 @@ def main():
     submission["TAXITIME_SEC_mvt"] = submission["TAXITIME_SEC_mvt"].astype("float64")
     submission["MVT_ID_mvt"] = submission["MVT_ID_mvt"].astype("float64")
 
-    out_path = "output/submitting.parquet"
-    submission.to_parquet(out_path, index=False)
-    print(f"Wrote {out_path} with {len(submission)} rows")
-    print(f"  predictions above 6000s: {(preds > 6000).sum()} (was 1 in the capped version)")
+    submission.to_parquet(args.out, index=False)
+    print(f"Wrote {args.out} with {len(submission)} rows")
+    print(f"  predictions above 6000s: {(preds > 6000).sum()}")
     print(submission["TAXITIME_SEC_mvt"].describe())
 
 

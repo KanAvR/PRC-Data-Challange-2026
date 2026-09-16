@@ -1,8 +1,8 @@
 """Disk cache for build_features().
 
 Feature engineering is 19s per run and both train.py and predict.py redo it from
-scratch every time. The cache key includes a hash of features.py, so editing the
-feature code invalidates every entry automatically -- a stale cache can never
+scratch every time. The cache key includes a hash of features.py, airline.py and
+airline_map.csv, so editing the feature code invalidates every entry automatically -- a stale cache can never
 silently survive a feature change.
 """
 import hashlib
@@ -11,13 +11,19 @@ import pathlib
 
 import pandas as pd
 
+import airline as _airline
 import features as _features
 
 CACHE_DIR = pathlib.Path(os.environ.get("PRC_CACHE_DIR", ".featcache"))
 
 
+# everything build_features() output depends on besides the input file
+_DEPENDENCIES = [pathlib.Path(_features.__file__), pathlib.Path(_airline.__file__),
+                 _airline.MAP_PATH]
+
+
 def _cache_path(path):
-    src = pathlib.Path(_features.__file__).read_bytes()
+    src = b"".join(p.read_bytes() for p in _DEPENDENCIES)
     st = os.stat(path)
     h = hashlib.sha256(src + f"{path}|{st.st_mtime_ns}|{st.st_size}".encode()).hexdigest()[:16]
     return CACHE_DIR / f"{pathlib.Path(path).stem}.{h}.parquet"

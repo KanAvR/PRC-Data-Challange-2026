@@ -14,7 +14,7 @@ from data import align_categoricals, flight_ids, load_training
 from encode import add_target_encodings
 from featcache import build_features_cached
 from model import (MU_FAMILIES, add_model_args, analytic_tail_value, combine,
-                   predict_tail_proba, train_tail_clf)
+                   day_late_weight, predict_tail_proba, train_tail_clf)
 
 RANKING_FILE = "dataset/ranking.parquet"
 SUBMITTING_TEMPLATE = "dataset/submitting.parquet"
@@ -53,7 +53,8 @@ def main():
 
     print("Predicting on ranking DEP rows...")
     p = predict_tail_proba(clf, ranking_dep)
-    preds = combine(mu_pred, p, analytic_tail_value(ranking_dep))
+    q_day = day_late_weight(clf, ranking_dep) if args.day_late else None
+    preds = combine(mu_pred, p, analytic_tail_value(ranking_dep), q_day=q_day)
 
     pred_df = pd.DataFrame({"MVT_ID_mvt": ranking_ids, "TAXITIME_SEC_mvt": preds})
 

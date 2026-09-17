@@ -63,6 +63,32 @@ def analytic_tail_value(X):
     return np.clip(v, 0, None)
 
 
+# A few takeoff times are stamped a day late, so the label is a normal taxi plus
+# 86400s (block 15:29, takeoff 16:03 the next day). 14 such rows in 2025 carry 56%
+# of the tail's squared error. Most have no LOBT and a gap_SCHED of 14-30h. Below
+# 14h the no-LOBT tails are almost all v-explained (block = schedule), which a
+# 12h bound wrongly pulled towards DAY; the bound was set on months other than
+# Jan/Jul so the holdout stays a clean check.
+DAY = 86400.0
+DAY_WINDOW = (14 * 3600.0, 30 * 3600.0)
+
+
+def day_late_candidates(X):
+    gs = X["gap_SCHED_TIME_UTC_mvt"].values.astype(float)
+    return (~_has_lobt(X)) & (gs > DAY_WINDOW[0]) & (gs < DAY_WINDOW[1])
+
+
+def fit_day_late_rate(X, y):
+    """P(day-late | tail, candidate), Laplace-smoothed: only ~30 rows inform it."""
+    cand_tail = day_late_candidates(X) & (y > TAIL_THR)
+    n_day = int(((y >= DAY) & (y < DAY + TAIL_THR) & cand_tail).sum())
+    return (n_day + 1) / (int(cand_tail.sum()) + 2)
+
+
+def day_late_weight(models, X):
+    return np.where(day_late_candidates(X), models["q_day"], 0.0)
+
+
 def train_mu(X, y, num_boost_round=900):
     normal = y <= TAIL_THR
     ds = lgb.Dataset(X[normal], label=y[normal], categorical_feature=CAT_COLS)
@@ -116,11 +142,14 @@ class _XgbMu:
         return self.booster.predict(xgb.DMatrix(X, enable_categorical=True))
 
 
-def train_mu_cat(X, y, iterations=None, eval_set=None):
+def train_mu_cat(X, y, iterations=None, eval_set=None, params=None):
+    """params overrides CAT_MU_PARAMS (bench_mu.py tuning). An eval_set only
+    records the learning curve; the model is never cut back to its best
+    iteration on it."""
     from catboost import CatBoostRegressor, Pool
     normal = y <= TAIL_THR
     Xc, cats = _as_catboost(X[normal])
-    params = dict(CAT_MU_PARAMS)
+    params = dict(CAT_MU_PARAMS, **(params or {}))
     if iterations:
         params["iterations"] = iterations
     model = CatBoostRegressor(**params)
@@ -129,7 +158,7 @@ def train_mu_cat(X, y, iterations=None, eval_set=None):
         Xe, ye = eval_set
         evals = Pool(_as_catboost(Xe)[0], ye, cat_features=cats)
     model.fit(Pool(Xc, y[normal], cat_features=cats), eval_set=evals,
-              metric_period=100, verbose=100 if evals is not None else 0)
+              use_best_model=False, metric_period=50)
     return _CatMu(model)
 
 
@@ -146,7 +175,43 @@ def train_mu_xgb(X, y, num_boost_round=XGB_ROUNDS, eval_set=None):
     return _XgbMu(booster)
 
 
-MU_FAMILIES = {"lgb": train_mu, "cat": train_mu_cat, "xgb": train_mu_xgb}
+class _DropCols:
+    def __init__(self, model, drop):
+        self.model, self.drop = model, drop
+
+    def predict(self, X):
+        return self.model.predict(X.drop(columns=self.drop))
+
+
+def train_mu_cat_note(X, y):
+    """CatBoost without the te_* columns. It scores the same as with them, but its
+    errors differ enough (r=0.97) that the two average to ~1.8 RMSE better."""
+    drop = [c for c in X.columns if c.startswith("te_")]
+    return _DropCols(train_mu_cat(X.drop(columns=drop), y), drop)
+
+
+# Single-feature CTRs at depth 10: 3.6x faster per iteration than the default and
+# the most different of the tuned CatBoosts. On the inner split it bottoms out at
+# 3000-4500 iterations and overfits after.
+CAT_CTR1_PARAMS = dict(max_ctr_complexity=1, depth=10, iterations=3500)
+
+
+def train_mu_cat_ctr1(X, y):
+    return train_mu_cat(X, y, params=CAT_CTR1_PARAMS)
+
+
+# Tuning on the inner split (bench_mu.py) found no single CatBoost better than the
+# default: depth 10 with pairwise CTRs, Depthwise/Lossguide growth, fewer borders,
+# subsampling and stronger L2 all converge to 223.7-227. Averaging the three
+# CatBoost variants reaches 221.5 on inner normal rows, against 224.0 for the
+# LightGBM + CatBoost average. Inner said LightGBM adds nothing to that, but over
+# the four validate.py splits keeping it as a fourth, equal member is better on
+# every split except inner (pooled -0.29 robust), so it stays. The four-member
+# average is ~1.3 RMSE better than lgb + cat over the four splits but doubles the
+# run time, so it is the final-submission recipe rather than the default:
+FINAL_MU = ["lgb", "cat", "cat_note", "cat_ctr1"]
+MU_FAMILIES = {"lgb": train_mu, "cat": train_mu_cat, "xgb": train_mu_xgb,
+               "cat_note": train_mu_cat_note, "cat_ctr1": train_mu_cat_ctr1}
 
 
 def _has_lobt(X):
@@ -219,18 +284,22 @@ def train_tail_clf(X, y, pooled="lgb", no_lobt="lgb"):
         "pooled": (CLF_FAMILIES[pooled](X, label, pooled_cols), pooled_cols, pooled),
         "no_lobt": (CLF_FAMILIES[no_lobt](X[absent], label[absent], absent_cols), absent_cols,
                     no_lobt),
+        "q_day": fit_day_late_rate(X, y),
     }
 
 
 def add_model_args(ap):
     """Model choices shared by validate.py and predict.py, so their defaults agree."""
-    # defaults are the configuration that last passed validate.py on both splits
+    # defaults are the fast development configuration; see FINAL_MU for submissions
     ap.add_argument("--mu", nargs="+", default=["lgb", "cat"], choices=list(MU_FAMILIES),
-                    help="mu model families, averaged with equal weight")
+                    help="mu model families, averaged with equal weight "
+                         f"(final submission: {' '.join(FINAL_MU)})")
     ap.add_argument("--te", action=argparse.BooleanOptionalAction, default=True,
                     help="add out-of-fold target encodings")
     ap.add_argument("--clf-pooled", default="cat", choices=list(CLF_FAMILIES))
     ap.add_argument("--clf-nolobt", default="cat", choices=list(CLF_FAMILIES))
+    ap.add_argument("--day-late", action=argparse.BooleanOptionalAction, default=False,
+                    help="mix a normal-taxi-plus-one-day value into the tail of candidate rows")
 
 
 def predict_tail_proba(models, X):
@@ -255,17 +324,22 @@ def predict_tail_proba(models, X):
 # sweep bottoms at 1.15 on holdout and 0.9 on inner, so no boost sits between the
 # two instead of fitting either.
 CLF_BOOST = {"lgb": 1.35, "cat": 1.0}
-# v underestimates on the most extreme rows (v>=40000: mean v 59865 vs mean y 65367)
+# v underestimates on the most extreme rows (v>=40000: mean v 59865 vs mean y 65367).
+# Much of that gap is the day-late rows; with q_day the correction is not applied
+# to day-late candidates, which get the explicit component instead.
 V_HI_THR = 40000.0
 V_HI_RATIO = 1.08
 
 
-def combine(mu_pred, p, v, p_boost=1.0):
+def combine(mu_pred, p, v, p_boost=1.0, q_day=None):
     """Gate v so a confident row never gets a tail value smaller than mu itself.
 
     p comes from predict_tail_proba and is already calibrated; p_boost is an extra
-    multiplier for sweeps."""
+    multiplier for sweeps. q_day (from day_late_weight) splits the tail of
+    candidate rows between v and a day-late value, DAY + mu."""
     p = np.clip(p * p_boost, 0.0, 1.0)
-    v = np.where(v >= V_HI_THR, v * V_HI_RATIO, v)
+    q = np.zeros(len(mu_pred)) if q_day is None else np.asarray(q_day, float)
+    v = np.where((v >= V_HI_THR) & (q == 0), v * V_HI_RATIO, v)
     v_gated = np.where(v > TAIL_THR, v, mu_pred)
-    return np.clip((1.0 - p) * mu_pred + p * v_gated, 0, None)
+    tail = (1.0 - q) * v_gated + q * (DAY + mu_pred)
+    return np.clip((1.0 - p) * mu_pred + p * tail, 0, None)

@@ -1,19 +1,25 @@
-"""Two-split validation: the rule every model change has to pass.
+"""Multi-split validation: the rule every model change has to pass.
 
     holdout  train on the other 10 months, score Jan+Jul 2025 (mirrors ranking)
-    inner    train on the 8 months left after also dropping Feb+Aug, score Feb+Aug
+    inner    score Feb+Aug; train on the 8 months left after also dropping Jan+Jul
+    dec_jun  score Dec+Jun; train without Jan+Jul either
+    mar_sep  score Mar+Sep; train without Jan+Jul either
 
-The inner split never sees the holdout months, so a constant tuned on one split
-can be checked out of sample on the other. A change is kept only if it wins on
-both.
+Only the holdout trains on Jan+Jul, so a constant tuned on the other splits can
+be checked out of sample on it. Each scored pair is a winter and a summer month,
+like the ranking set.
 
-RMSE here is dominated by a handful of tail rows (10 of 344k carry 37.5% of the
-squared error), so a single number is not evidence. Every run saves its
-predictions under output/validate/<tag>/, and --compare scores the current run
-against a saved one with a bootstrap over days (paired, same rows).
+RMSE is dominated by a handful of tail rows, some of which no model can predict
+(a block time from the previous day that matches no timestamp), so a single
+number is not evidence. Every run saves its predictions under
+output/validate/<tag>/, and --compare scores the current run against a saved
+one with a paired bootstrap over days, per split and pooled over all splits,
+both on all rows and on "robust" rows (unexplainable tail rows removed). The
+verdict is a win only when the pooled robust interval is below zero and no
+split is significantly worse.
 
-    python src/validate.py --tag baseline
-    python src/validate.py --tag airline --compare baseline
+    python src/validate.py --tag baseline --splits holdout inner
+    python src/validate.py --tag mychange --compare baseline
 """
 import argparse
 import pathlib
@@ -27,20 +33,44 @@ sys.path.insert(0, "src")
 from data import align_categoricals, load_training
 from encode import add_target_encodings
 from model import (MU_FAMILIES, TAIL_THR, add_model_args,
-                   analytic_tail_value, combine, predict_tail_proba,
-                   train_tail_clf)
+                   analytic_tail_value, combine, day_late_weight,
+                   predict_tail_proba, train_tail_clf)
 
+NO_JAN_JUL = ["2025-01", "2025-07"]
 SPLITS = {
     "holdout": dict(valid=["2025-01", "2025-07"], drop=[]),
-    "inner": dict(valid=["2025-02", "2025-08"], drop=["2025-01", "2025-07"]),
+    "inner": dict(valid=["2025-02", "2025-08"], drop=NO_JAN_JUL),
+    "dec_jun": dict(valid=["2025-12", "2025-06"], drop=NO_JAN_JUL),
+    "mar_sep": dict(valid=["2025-03", "2025-09"], drop=NO_JAN_JUL),
 }
 OUT_DIR = pathlib.Path("output/validate")
 N_BOOT = 2000
 P_SWEEP = [0.8, 0.9, 1.0, 1.15, 1.35, 1.7]
 
+# timestamp gaps saved with every run, for the robust mask and offline experiments
+GAP_COLS = ["gap_SCHED_TIME_UTC_mvt", "gap_LOBT_flt", "gap_IOBT_flt",
+            "gap_EOBT_1_flt", "gap_AOBT_3_flt"]
+DAY = 86400.0
+EXPLAIN_TOL = 600
+
 
 def rmse(y, p):
     return float(np.sqrt(np.mean((y - p) ** 2)))
+
+
+def unexplainable(r):
+    """Tail rows whose label matches no timestamp gap, even shifted by a day.
+
+    None if the run was saved before gap columns existed."""
+    if not all(c in r.columns for c in GAP_COLS):
+        return None
+    y = r["y"].values
+    hit = np.zeros(len(r), bool)
+    for c in GAP_COLS:
+        g = r[c].values.astype(float)
+        hit |= np.abs(y - g) <= EXPLAIN_TOL
+    hit |= (y >= DAY) & (y < DAY + TAIL_THR)
+    return (y > TAIL_THR) & ~hit
 
 
 def run_split(name, X, y, meta, args):
@@ -72,12 +102,15 @@ def run_split(name, X, y, meta, args):
     clf = train_tail_clf(X_tr, y_tr, pooled=args.clf_pooled, no_lobt=args.clf_nolobt)
     p = predict_tail_proba(clf, X_va)
     v = analytic_tail_value(X_va)
-    pred = combine(mu, p, v)
+    # always saved, so blend.py can switch the day-late component on or off
+    q_day = day_late_weight(clf, X_va)
+    pred = combine(mu, p, v, q_day=q_day if args.day_late else None)
 
     return pd.DataFrame({
         "date": meta.loc[va, "date"].values, "ADEP_mvt": meta.loc[va, "ADEP_mvt"].values,
         "has_lobt": ~np.isnan(X_va["gap_LOBT_flt"].values.astype(float)),
-        "y": y_va, "mu": mu, "p": p, "v": v, "pred": pred, "p_calibrated": True, **mus,
+        "y": y_va, "mu": mu, "p": p, "v": v, "pred": pred, "q_day": q_day, "p_calibrated": True, **mus,
+        **{c: X_va[c].values.astype(float) for c in GAP_COLS},
     })
 
 
@@ -85,6 +118,10 @@ def report(name, r):
     y, tail = r["y"].values, r["y"].values > TAIL_THR
     print(f"[{name}] scored over ALL rows, as the leaderboard does")
     print(f"  mixture          {rmse(y, r['pred']):8.2f}")
+    bad = unexplainable(r)
+    if bad is not None:
+        print(f"  robust           {rmse(y[~bad], r['pred'][~bad]):8.2f}   "
+              f"({int(bad.sum())} unexplainable tail rows removed)")
     print(f"  mu alone         {rmse(y, r['mu']):8.2f}")
     print(f"  normal rows      {rmse(y[~tail], r['pred'][~tail]):8.2f}   (n={int((~tail).sum())})")
     print(f"  tail rows        {rmse(y[tail], r['pred'][tail]):8.2f}   (n={int(tail.sum())})")
@@ -101,44 +138,77 @@ def report(name, r):
     print("  per airport      " + "  ".join(f"{a}:{v:.0f}" for a, v in per_apt.items()))
 
 
+def _day_sums(cur, base, keep):
+    d = pd.DataFrame({"date": cur["date"].values[keep],
+                      "cur": ((cur["y"] - cur["pred"]) ** 2).values[keep],
+                      "base": ((base["y"] - base["pred"]) ** 2).values[keep]})
+    g = d.groupby("date")
+    s = g[["cur", "base"]].sum()
+    return s["cur"].values, s["base"].values, g.size().values
+
+
+def _boot(days, rng):
+    """Paired day-level bootstrap of the RMSE difference; days = (cur, base, n)."""
+    cur, base, n = days
+    idx = rng.integers(0, len(n), size=(N_BOOT, len(n)))
+    nn = n[idx].sum(axis=1)
+    delta = np.sqrt(cur[idx].sum(axis=1) / nn) - np.sqrt(base[idx].sum(axis=1) / nn)
+    point = np.sqrt(cur.sum() / n.sum()) - np.sqrt(base.sum() / n.sum())
+    lo, hi = np.percentile(delta, [2.5, 97.5])
+    return point, lo, hi, (delta < 0).mean()
+
+
+def _fmt(label, s):
+    point, lo, hi, frac = s
+    return f"{label} {point:+7.2f}  CI {lo:+7.2f} .. {hi:+7.2f}  better in {100 * frac:3.0f}%"
+
+
 def compare(name, cur, base, base_tag):
+    """Per-split comparison. Returns day sums for pooling, or None."""
     if len(cur) != len(base) or not np.array_equal(cur["y"].values, base["y"].values):
         print(f"[{name}] cannot compare with '{base_tag}': different validation rows")
-        return
+        return None
     if np.array_equal(cur["pred"].values, base["pred"].values):
         print(f"[{name}] predictions are identical to '{base_tag}': the change had no effect")
-        return 0.0, 0.0, 0.0
-    d = cur.assign(se_cur=(cur["y"] - cur["pred"]) ** 2,
-                   se_base=(base["y"].values - base["pred"].values) ** 2)
-    days = d.groupby("date")[["se_cur", "se_base"]].sum()
-    n_day = d.groupby("date").size().values
+    bad = unexplainable(cur)
+    if bad is None:
+        bad = unexplainable(base)
+    if bad is None:
+        bad = np.zeros(len(cur), bool)
     rng = np.random.default_rng(0)
-    idx = rng.integers(0, len(days), size=(N_BOOT, len(days)))
-    n = n_day[idx].sum(axis=1)
-    delta = (np.sqrt(days["se_cur"].values[idx].sum(axis=1) / n)
-             - np.sqrt(days["se_base"].values[idx].sum(axis=1) / n))
-    point = rmse(d["y"], d["pred"]) - rmse(base["y"], base["pred"])
-    lo, hi = np.percentile(delta, [2.5, 97.5])
-    tail = d["y"].values > TAIL_THR
-    normal_delta = (rmse(d["y"][~tail], d["pred"][~tail])
+    full = _day_sums(cur, base, np.ones(len(cur), bool))
+    robust = _day_sums(cur, base, ~bad)
+    tail = cur["y"].values > TAIL_THR
+    normal_delta = (rmse(cur["y"][~tail], cur["pred"][~tail])
                     - rmse(base["y"][~tail], base["pred"][~tail]))
-    print(f"[{name}] vs '{base_tag}': {point:+.2f} RMSE  (95% day-bootstrap CI "
-          f"{lo:+.2f} .. {hi:+.2f}, better in {100 * (delta < 0).mean():.0f}% of resamples)"
-          f"   normal rows {normal_delta:+.2f}")
-    return point, lo, hi
+    print(f"[{name:7s}] vs '{base_tag}':  {_fmt('all', _boot(full, rng))}   |  "
+          f"{_fmt('robust', _boot(robust, rng))}   |  normal rows {normal_delta:+.2f}")
+    return {"full": full, "robust": robust, "robust_stats": _boot(robust, rng)}
 
 
 def verdict(results):
-    """results: split -> (point, lo, hi). A point estimate below zero on ~220 tail
-    rows is not a win by itself; the day-bootstrap interval has to clear zero too."""
-    if len(results) < len(SPLITS) or any(r is None for r in results.values()):
+    """Pool the per-split day sums and decide.
+
+    A win needs the pooled robust interval below zero and no split whose robust
+    interval is entirely above zero."""
+    results = {k: v for k, v in results.items() if v is not None}
+    if not results:
         return None
-    if all(hi < 0 for _, _, hi in results.values()):
-        return "wins on both splits (both CIs below zero)"
-    if all(pt < 0 for pt, _, _ in results.values()):
-        loose = [s for s, (_, _, hi) in results.items() if hi >= 0]
-        return f"better on both splits, but the CI crosses zero on {', '.join(loose)}: not established"
-    return "does NOT win on both splits"
+    rng = np.random.default_rng(1)
+    pooled = {}
+    for kind in ("full", "robust"):
+        parts = [r[kind] for r in results.values()]
+        pooled[kind] = _boot(tuple(np.concatenate([p[i] for p in parts]) for i in range(3)), rng)
+    print(f"[pooled ] {len(results)} splits:  {_fmt('all', pooled['full'])}   |  "
+          f"{_fmt('robust', pooled['robust'])}")
+    worse = [k for k, r in results.items() if r["robust_stats"][1] > 0]
+    if worse:
+        return f"does NOT win: significantly worse on {', '.join(worse)}"
+    if pooled["robust"][2] < 0:
+        return f"wins (pooled robust CI below zero over {len(results)} splits)"
+    if pooled["robust"][0] < 0:
+        return "better on the pooled point estimate, but the CI crosses zero: not established"
+    return "does NOT win"
 
 
 def main():

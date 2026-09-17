@@ -46,7 +46,9 @@ def main():
     ap.add_argument("--mu", nargs="+", required=True, help="TAG or TAG:COLUMN")
     ap.add_argument("--weights", nargs="+", type=float)
     ap.add_argument("--fit-weights", action="store_true")
-    ap.add_argument("--p-boost", type=float, help="extra multiplier on p (default: none, or 1.35 for old raw-p runs)")
+    ap.add_argument("--p-boost", type=float,
+                    help="extra multiplier on p (default: none, or 1.35 for old raw-p runs)")
+    ap.add_argument("--day-late", action="store_true", help="use the saved q_day component")
     ap.add_argument("--compare", metavar="TAG")
     ap.add_argument("--tag", help="save the blended run as a new tag")
     args = ap.parse_args()
@@ -61,8 +63,10 @@ def main():
         weights = fit_weights(mus, base["y"].values[normal])
     print("weights: " + "  ".join(f"{s}={w:.2f}" for s, w in zip(args.mu, weights)))
 
+    tags = {args.clf, *(s.partition(":")[0] for s in args.mu)}
+    splits = [s for s in SPLITS if all((OUT_DIR / t / f"{s}.parquet").exists() for t in tags)]
     deltas = {}
-    for split in SPLITS:
+    for split in splits:
         r = pd.read_parquet(OUT_DIR / args.clf / f"{split}.parquet")
         mus = np.stack([load_mu(s, split) for s in args.mu])
         r["mu"] = weights @ mus
@@ -70,15 +74,16 @@ def main():
         boost = args.p_boost or (1.0 if "p_calibrated" in r.columns else CLF_BOOST["lgb"])
         r["p"] = np.clip(r["p"].values * boost, 0.0, 1.0)
         r["p_calibrated"] = True
-        r["pred"] = combine(r["mu"].values, r["p"].values, r["v"].values)
+        q = r["q_day"].values if args.day_late else None
+        r["pred"] = combine(r["mu"].values, r["p"].values, r["v"].values, q_day=q)
         report(split, r)
         if args.tag:
             out = OUT_DIR / args.tag
             out.mkdir(parents=True, exist_ok=True)
             r.to_parquet(out / f"{split}.parquet", index=False)
-        if args.compare:
-            deltas[split] = compare(split, r, pd.read_parquet(OUT_DIR / args.compare / f"{split}.parquet"),
-                                    args.compare)
+        ref = OUT_DIR / str(args.compare) / f"{split}.parquet"
+        if args.compare and ref.exists():
+            deltas[split] = compare(split, r, pd.read_parquet(ref), args.compare)
     v = verdict(deltas) if args.compare else None
     if v:
         print(f"\nverdict: {v}")

@@ -15,6 +15,12 @@ Place the challenge data in `dataset/`:
 - `ranking.parquet`
 - `submitting.parquet`
 
+Then fetch the weather data (free, no key, ~10 min):
+
+```
+.venv/bin/python src/weather.py download
+```
+
 ## Pipeline
 
 - `src/features.py` — feature engineering: time gaps between actual movement time
@@ -26,6 +32,12 @@ Place the challenge data in `dataset/`:
   (`LH400`) mapped to ICAO (`DLH`) via `src/airline_map.csv`, which is learned
   from training rows that carry both `FLIGHT_mvt` and `CALLSIGN_flt`. Rebuild
   it with `python src/airline.py`.
+- `src/weather.py` — METAR observations for the ten airports from the Iowa
+  Environmental Mesonet, and the features built from them: the latest report
+  before each movement (visibility, ceiling, temperature, dewpoint spread, wind,
+  runway-relative crosswind and tailwind, present-weather flags) plus what
+  happened in the hour before (snow, freezing, thunderstorm, fog, minimum
+  visibility, maximum gust) and snow in the previous six hours.
 - `src/model.py` — the mixture `E[y|x] = (1 - p) * mu + p * v`: a regressor `mu`
   on normal rows (LightGBM, CatBoost or XGBoost, averaged when several are
   chosen), tail classifiers `p` (LightGBM or CatBoost, one for rows with LOBT and
@@ -90,16 +102,31 @@ Later changes were judged over all four splits:
 | configuration | holdout | inner | dec_jun | mar_sep |
 |---|---|---|---|---|
 | CatBoost + LightGBM mu (above) | 320.97 | 256.45 | 267.82 | 227.89 |
-| mu = equal average of LightGBM and three CatBoost variants (final-submission recipe) | **319.98** | **254.17** | **266.95** | **226.53** |
+| mu = equal average of LightGBM and three CatBoost variants (`FINAL_MU`) | 319.98 | 254.17 | 266.95 | 226.53 |
+| + METAR weather features, on LightGBM + CatBoost mu (default) | 320.17 | 252.70 | 266.56 | 227.73 |
+| weather + the four-member mu (final-submission recipe) | **319.45** | **250.10** | **265.61** | **226.45** |
+
+On the live leaderboard this recipe scored ~1.5 points better than the same
+four-member mu without weather. Weather wins on the pooled robust interval
+(-1.51) and on three of the four splits individually; with LightGBM alone it
+wins on all four (pooled -1.37). Three richer weather feature sets were then
+measured and all came out worse -- derived operational flags, everything
+parseable from the report text, and the four sharpest of those alone -- so the
+kept set is deliberate; `src/weather.py` records what each contained.
 
 The three CatBoost variants are the default settings, the same without target
 encodings, and depth 10 with single-feature CTRs; they were chosen on inner
 normal rows with `src/bench_mu.py`, so the inner gain is optimistic. On the live
 leaderboard the four-member submission scored just under 2 points better than
-the LightGBM + CatBoost one. Tried and
-not kept: a day-late tail component (`--day-late`; mixed across splits, rests on
-~16 rows), blending exact timestamp values into `mu` (the dominant AOBT match is
-not predictable, AUC 0.70), and XGBoost.
+the LightGBM + CatBoost one.
+
+Tried and not kept: a day-late tail component (`--day-late`; mixed across
+splits, rests on ~16 rows), blending exact timestamp values into `mu` (the
+dominant AOBT match is not predictable, AUC 0.70), XGBoost, and a richer feature
+set for the tail classifiers. The last of those won on all four splits offline
+(pooled -3.0) but lost ~25 points on the live leaderboard, which is why tail
+changes now need a much higher bar than `mu` changes: the offline tail gain
+rests on a few hundred 2025 rows and does not carry to 2026.
 
 Figures quoted in earlier commits (327.11, 344.44, ~239) were measured by the old
 `train.py`, whose holdout filter also matched `training_2025-06-01_2025-07-01`

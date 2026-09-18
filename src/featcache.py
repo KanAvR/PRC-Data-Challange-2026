@@ -2,8 +2,9 @@
 
 Feature engineering is 19s per run and both train.py and predict.py redo it from
 scratch every time. The cache key includes a hash of features.py, airline.py and
-airline_map.csv, so editing the feature code invalidates every entry automatically -- a stale cache can never
-silently survive a feature change.
+airline_map.csv, weather.py and the weather CSVs, so editing the feature code or
+refreshing the weather data invalidates every entry automatically -- a stale cache
+can never silently survive a feature change.
 """
 import hashlib
 import os
@@ -13,17 +14,23 @@ import pandas as pd
 
 import airline as _airline
 import features as _features
+import weather as _weather
 
 CACHE_DIR = pathlib.Path(os.environ.get("PRC_CACHE_DIR", ".featcache"))
 
 
 # everything build_features() output depends on besides the input file
 _DEPENDENCIES = [pathlib.Path(_features.__file__), pathlib.Path(_airline.__file__),
-                 _airline.MAP_PATH]
+                 _airline.MAP_PATH, pathlib.Path(_weather.__file__)]
 
 
 def _cache_path(path):
-    src = b"".join(p.read_bytes() for p in _DEPENDENCIES)
+    # line endings are normalised: a git checkout that only converts them must
+    # not invalidate the cache
+    src = b"".join(p.read_bytes().replace(b"\r\n", b"\n") for p in _DEPENDENCIES)
+    for w in sorted(_weather.WEATHER_DIR.glob("*.csv")):
+        ws = w.stat()
+        src += f"{w.name}|{ws.st_mtime_ns}|{ws.st_size}".encode()
     st = os.stat(path)
     h = hashlib.sha256(src + f"{path}|{st.st_mtime_ns}|{st.st_size}".encode()).hexdigest()[:16]
     return CACHE_DIR / f"{pathlib.Path(path).stem}.{h}.parquet"

@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 
 from airline import airline_code
+from weather import weather_features
 
 WINDOWS_MIN = [15, 30, 60]
 
@@ -317,5 +318,8 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     dyn_parts = [_dep_dynamics(g) for _, g in dep_only.groupby("apt", observed=True)]
     dyn = pd.concat(dyn_parts).reindex(df.index)
 
-    feats = pd.concat([feats, counts, arr_ctx, queue, dyn], axis=1)
+    wx = weather_features(df["apt"].values, df["MVT_TIME_UTC_mvt"].values, df["RUNWAY_mvt"].values)
+    wx.index = df.index
+
+    feats = pd.concat([feats, counts, arr_ctx, queue, dyn, wx], axis=1)
     return feats

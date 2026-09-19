@@ -276,10 +276,24 @@ def train_mu_cat_ctr1(X, y):
 # average is ~1.3 RMSE better than lgb + cat over the four splits but doubles the
 # run time, so it is the final-submission recipe rather than the default:
 FINAL_MU = ["lgb", "cat", "cat_note", "cat_ctr1"]
+def train_mu_neural(X, y):
+    """Fifth member, and the only one that is not a tree. Imported lazily so the
+    pipeline still runs without torch installed.
+
+    Measured on the inner split, normal rows: solo 232.70, worse than every tree
+    member, but its residuals correlate 0.885-0.899 with them against 0.94-0.97
+    among the trees themselves, and that diversity is what the average wants.
+    Equal five-way weighting takes inner normal rows from 218.63 to 217.97.
+    Regularisation is not the binding constraint: 12 vs 20 epochs, dropout 0.1
+    vs 0.25 and a 2x wider net all land within 0.3 of each other."""
+    from neural import train_mu_neural as _t
+    return _t(X, y)
+
+
 MU_FAMILIES = {"lgb": train_mu, "cat": train_mu_cat, "xgb": train_mu_xgb,
                "cat_note": train_mu_cat_note, "cat_ctr1": train_mu_cat_ctr1,
                "lgb_nocat": train_mu_nocat, "lgb_anchor": train_mu_anchor,
-               "lgb_anchor_lobt": train_mu_anchor_lobt}
+               "lgb_anchor_lobt": train_mu_anchor_lobt, "neural": train_mu_neural}
 
 
 def _has_lobt(X):

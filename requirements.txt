@@ -6,3 +6,6 @@ numpy==2.5.3
 catboost==1.2.10
 xgboost==3.4.1
 minio==7.2.20
+# optional, only for --mu neural; CPU wheel:
+#   uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+# torch==2.14.0+cpu

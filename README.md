@@ -125,7 +125,10 @@ because `combine()` gates smaller values back to `mu`. `--stakes 25` therefore
 trains the tail classifiers on those candidate rows only, each weighted by its
 RMSE stakes clipped to [1, 25]. Against the v8 four-member weather run it wins
 on all four splits (pooled robust -2.67, CI -4.34..-1.24) and, submitted on its
-own as v10, took the live score from 275.97 to 270.21:
+own as v10, took the live score from 275.97 to 270.21. It is **not** in the
+current recipe: once the specialist owns the matched rows, the only rows
+`--stakes` still changes are unmatched ones, and those cost 0.225 live
+(v11 269.64 against v9 269.41). Off by default.
 
 | configuration | holdout | inner | dec_jun | mar_sep |
 |---|---|---|---|---|

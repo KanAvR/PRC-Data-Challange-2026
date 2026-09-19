@@ -276,6 +276,14 @@ def train_mu_cat_ctr1(X, y):
 # average is ~1.3 RMSE better than lgb + cat over the four splits but doubles the
 # run time, so it is the final-submission recipe rather than the default:
 FINAL_MU = ["lgb", "cat", "cat_note", "cat_ctr1"]
+def train_mu_per_airport(X, y):
+    """Per-airport pairs, routed by ADEP_mvt. Never use alone: swapping the global
+    average for it is mixed across airports (LSZH +1.20). Blend it, weight ~0.4.
+    See src/per_airport.py for the measurements."""
+    from per_airport import train_mu_per_airport as _t
+    return _t(X, y)
+
+
 def train_mu_neural(X, y):
     """Fifth member, and the only one that is not a tree. Imported lazily so the
     pipeline still runs without torch installed.
@@ -293,7 +301,8 @@ def train_mu_neural(X, y):
 MU_FAMILIES = {"lgb": train_mu, "cat": train_mu_cat, "xgb": train_mu_xgb,
                "cat_note": train_mu_cat_note, "cat_ctr1": train_mu_cat_ctr1,
                "lgb_nocat": train_mu_nocat, "lgb_anchor": train_mu_anchor,
-               "lgb_anchor_lobt": train_mu_anchor_lobt, "neural": train_mu_neural}
+               "lgb_anchor_lobt": train_mu_anchor_lobt, "neural": train_mu_neural,
+               "pa": train_mu_per_airport}
 
 
 def _has_lobt(X):
@@ -408,6 +417,20 @@ def add_model_args(ap):
     ap.add_argument("--mu", nargs="+", default=["lgb", "cat"], choices=list(MU_FAMILIES),
                     help="mu model families, averaged with equal weight "
                          f"(final submission: {' '.join(FINAL_MU)})")
+    ap.add_argument("--mu-weights", nargs="+", type=float, metavar="W",
+                    help="weights for --mu, in the same order (default: equal). "
+                         "Normalised automatically. The per-airport family wants "
+                         "~0.4 against 0.6 shared by the four global members, i.e. "
+                         "--mu lgb cat cat_note cat_ctr1 pa --mu-weights 1 1 1 1 " 
+                         "2.667")
+    ap.add_argument("--pa-weight", type=float, default=None,
+                    help="weight of the per-airport family when 'pa' is in --mu "
+                         "(default: per_airport.PA_WEIGHT). The other families "
+                         "share the remainder equally.")
+    ap.add_argument("--pa-clip", type=float, default=None,
+                    help="cap, in seconds, on how far the per-airport prediction "
+                         "may sit from the global average before blending "
+                         "(default: per_airport.PA_CLIP; 0 disables)")
     ap.add_argument("--te", action=argparse.BooleanOptionalAction, default=True,
                     help="add out-of-fold target encodings")
     ap.add_argument("--lobt-bounds", action=argparse.BooleanOptionalAction, default=True,
@@ -422,6 +445,42 @@ def add_model_args(ap):
                     help="train the tail classifiers on candidate rows (v > TAIL_THR) only, "
                          "weighted by RMSE stakes clipped to [1, CLIP]; 1 = candidates "
                          "unweighted, 0 = every row unweighted (default)")
+
+
+def mu_weights(args, families):
+    """Normalised weights for the chosen mu families, in order."""
+    w = getattr(args, "mu_weights", None)
+    if not w:
+        return np.full(len(families), 1.0 / len(families))
+    if len(w) != len(families):
+        raise ValueError(f"--mu-weights needs {len(families)} values, got {len(w)}")
+    w = np.asarray(w, dtype=float)
+    if (w < 0).any() or w.sum() <= 0:
+        raise ValueError("--mu-weights must be non-negative and not all zero")
+    return w / w.sum()
+
+
+def combine_mu(mus, families, args):
+    """Average the mu families, handling 'pa' as a clipped offset on the rest.
+
+    The per-airport family is not a peer of the global members: on its own it is
+    worse than the average almost everywhere, and it only pays as a bounded
+    nudge. So when 'pa' is present the other families are averaged first and the
+    per-airport prediction is clipped around that average before blending. See
+    src/per_airport.py for the measurements.
+    """
+    stack = [np.asarray(mus[f"mu_{f}"], dtype=float) for f in families]
+    if "pa" not in families:
+        return np.average(np.stack(stack), axis=0, weights=mu_weights(args, families))
+    from per_airport import blend
+    others = [m for f, m in zip(families, stack) if f != "pa"]
+    pa = stack[families.index("pa")]
+    if not others:
+        return np.clip(pa, 0, None)
+    glob = np.mean(np.stack(others), axis=0)
+    clip = getattr(args, "pa_clip", None)
+    return blend(glob, pa, weight=getattr(args, "pa_weight", None),
+                 clip=None if clip is None else clip)
 
 
 def predict_tail_proba(models, X):

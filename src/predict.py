@@ -16,6 +16,7 @@ from high_lobt import train_high_lobt
 from encode import add_target_encodings
 from featcache import build_features_cached
 from model import (MU_FAMILIES, add_model_args, analytic_tail_value, combine,
+                   combine_mu,
                    day_late_weight, predict_tail_proba, train_tail_clf)
 
 RANKING_FILE = "dataset/ranking.parquet"
@@ -50,7 +51,7 @@ def main():
     for fam in args.mu:
         print(f"Training normal-regime regressor ({fam}) on all data...", flush=True)
         mus.append(np.clip(MU_FAMILIES[fam](train_data, y_train).predict(ranking_dep), 0, None))
-    mu_pred = np.mean(mus, axis=0)
+    mu_pred = combine_mu({f"mu_{f}": m for f, m in zip(args.mu, mus)}, args.mu, args)
 
     print("Training tail classifier on all data...", flush=True)
     clf = train_tail_clf(train_data, y_train, pooled=args.clf_pooled, no_lobt=args.clf_nolobt,

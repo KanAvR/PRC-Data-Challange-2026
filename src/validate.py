@@ -34,7 +34,7 @@ from data import align_categoricals, load_training
 from constraints import check_lobt_support, project_lobt
 from high_lobt import APPLY_GAP_SEC, train_high_lobt
 from encode import add_target_encodings
-from model import (MU_FAMILIES, TAIL_THR, add_model_args,
+from model import (MU_FAMILIES, TAIL_THR, add_model_args, combine_mu,
                    analytic_tail_value, combine, day_late_weight,
                    predict_tail_proba, train_tail_clf)
 
@@ -102,7 +102,7 @@ def run_split(name, X, y, meta, args):
         for fam in args.mu:
             mus[f"mu_{fam}"] = np.clip(MU_FAMILIES[fam](X_tr, y_tr).predict(X_va), 0, None)
             print(f"  {fam}: done", flush=True)
-        mu = np.mean(list(mus.values()), axis=0)
+        mu = combine_mu(mus, args.mu, args)
     clf = train_tail_clf(X_tr, y_tr, pooled=args.clf_pooled, no_lobt=args.clf_nolobt,
                          stakes=args.stakes, fit_pooled=not args.high_lobt)
     p = predict_tail_proba(clf, X_va)

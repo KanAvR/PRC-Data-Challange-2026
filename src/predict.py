@@ -11,6 +11,8 @@ import pandas as pd
 
 sys.path.insert(0, "src")
 from data import align_categoricals, flight_ids, load_training
+from constraints import check_lobt_support, project_lobt
+from high_lobt import train_high_lobt
 from encode import add_target_encodings
 from featcache import build_features_cached
 from model import (MU_FAMILIES, add_model_args, analytic_tail_value, combine,
@@ -28,6 +30,8 @@ def main():
 
     print("Loading training data and building features...")
     train_data, y_train, meta = load_training()
+    if args.lobt_bounds:
+        check_lobt_support(y_train, train_data["gap_LOBT_flt"].values)
     print("Training rows:", len(train_data))
 
     print("Loading ranking data and building features...")
@@ -49,12 +53,19 @@ def main():
     mu_pred = np.mean(mus, axis=0)
 
     print("Training tail classifier on all data...", flush=True)
-    clf = train_tail_clf(train_data, y_train, pooled=args.clf_pooled, no_lobt=args.clf_nolobt, stakes=args.stakes)
+    clf = train_tail_clf(train_data, y_train, pooled=args.clf_pooled, no_lobt=args.clf_nolobt,
+                         stakes=args.stakes, fit_pooled=not args.high_lobt)
 
     print("Predicting on ranking DEP rows...")
     p = predict_tail_proba(clf, ranking_dep)
     q_day = day_late_weight(clf, ranking_dep) if args.day_late else None
     preds = combine(mu_pred, p, analytic_tail_value(ranking_dep), q_day=q_day)
+    if args.lobt_bounds:
+        preds = project_lobt(preds, ranking_dep["gap_LOBT_flt"].values)
+    if args.high_lobt:
+        print("Training matched long-taxi specialist...", flush=True)
+        specialist = train_high_lobt(train_data, y_train)
+        preds = specialist.refine(preds, ranking_dep)
 
     pred_df = pd.DataFrame({"MVT_ID_mvt": ranking_ids, "TAXITIME_SEC_mvt": preds})
 

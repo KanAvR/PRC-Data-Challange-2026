@@ -31,6 +31,8 @@ from sklearn.metrics import roc_auc_score
 
 sys.path.insert(0, "src")
 from data import align_categoricals, load_training
+from constraints import check_lobt_support, project_lobt
+from high_lobt import APPLY_GAP_SEC, train_high_lobt
 from encode import add_target_encodings
 from model import (MU_FAMILIES, TAIL_THR, add_model_args,
                    analytic_tail_value, combine, day_late_weight,
@@ -79,6 +81,8 @@ def run_split(name, X, y, meta, args):
     tr = ~va & ~meta["month"].isin(spec["drop"]).values
     X_tr, X_va = X.loc[tr].copy(), X.loc[va].copy()
     y_tr, y_va = y[tr], y[va]
+    if args.lobt_bounds:
+        check_lobt_support(y_tr, X_tr["gap_LOBT_flt"].values)
     align_categoricals(X_tr, X_va)
     if args.te:
         add_target_encodings(X_tr, y_tr, meta.loc[tr, "month"].values, meta.loc[tr, "flight"].values,
@@ -99,25 +103,43 @@ def run_split(name, X, y, meta, args):
             mus[f"mu_{fam}"] = np.clip(MU_FAMILIES[fam](X_tr, y_tr).predict(X_va), 0, None)
             print(f"  {fam}: done", flush=True)
         mu = np.mean(list(mus.values()), axis=0)
-    clf = train_tail_clf(X_tr, y_tr, pooled=args.clf_pooled, no_lobt=args.clf_nolobt, stakes=args.stakes)
+    clf = train_tail_clf(X_tr, y_tr, pooled=args.clf_pooled, no_lobt=args.clf_nolobt,
+                         stakes=args.stakes, fit_pooled=not args.high_lobt)
     p = predict_tail_proba(clf, X_va)
     v = analytic_tail_value(X_va)
     # always saved, so blend.py can switch the day-late component on or off
     q_day = day_late_weight(clf, X_va)
     pred = combine(mu, p, v, q_day=q_day if args.day_late else None)
+    pred_unconstrained = pred.copy()
+    if args.lobt_bounds:
+        pred = project_lobt(pred, X_va["gap_LOBT_flt"].values)
+    high_pred = np.full(len(pred), np.nan)
+    if args.high_lobt:
+        specialist = train_high_lobt(X_tr, y_tr)
+        high = X_va["gap_LOBT_flt"].values > APPLY_GAP_SEC
+        if high.any():
+            high_pred[high] = specialist.predict(X_va.loc[high])
+            pred[high] = high_pred[high]
 
     return pd.DataFrame({
+        "MVT_ID_mvt": meta.loc[va, "MVT_ID_mvt"].values,
         "date": meta.loc[va, "date"].values, "ADEP_mvt": meta.loc[va, "ADEP_mvt"].values,
         "has_lobt": ~np.isnan(X_va["gap_LOBT_flt"].values.astype(float)),
         "y": y_va, "mu": mu, "p": p, "v": v, "pred": pred, "q_day": q_day, "p_calibrated": True, **mus,
+        "pred_unconstrained": pred_unconstrained,
+        "lobt_bounds": args.lobt_bounds,
+        "high_lobt": args.high_lobt, "high_lobt_pred": high_pred,
         **{c: X_va[c].values.astype(float) for c in GAP_COLS},
     })
 
 
 def report(name, r):
     y, tail = r["y"].values, r["y"].values > TAIL_THR
-    print(f"[{name}] scored over ALL rows, as the leaderboard does")
+    print(f"[{name}] scored over all retained departures (normal + tail)")
     print(f"  mixture          {rmse(y, r['pred']):8.2f}")
+    if "pred_unconstrained" in r:
+        print(f"  before correction {rmse(y, r['pred_unconstrained']):7.2f}   "
+              f"({int((r['pred'] != r['pred_unconstrained']).sum())} rows corrected)")
     bad = unexplainable(r)
     if bad is not None:
         print(f"  robust           {rmse(y[~bad], r['pred'][~bad]):8.2f}   "
@@ -133,7 +155,7 @@ def report(name, r):
     sweep = "  ".join(
         f"{b:.2f}:{rmse(y, combine(r['mu'].values, r['p'].values, r['v'].values, b)):.2f}"
         for b in P_SWEEP)
-    print(f"  extra p boost    {sweep}   (p already carries CLF_BOOST)")
+    print(f"  extra p boost    {sweep}   (before corrections; p already carries CLF_BOOST)")
     per_apt = r.assign(se=(r["y"] - r["pred"]) ** 2).groupby("ADEP_mvt")["se"].mean() ** 0.5
     print("  per airport      " + "  ".join(f"{a}:{v:.0f}" for a, v in per_apt.items()))
 

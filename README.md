@@ -1,149 +1,142 @@
 # PRC Data Challenge 2026 — Taxi-Out Time Prediction
 
-Predicts `TAXITIME_SEC_mvt` for departures in the ranking dataset (Jan and Jul 2026,
-10 major European airports), targeting RMSE < 245 seconds.
+Predict `TAXITIME_SEC_mvt` for departures at ten European airports using 2025
+training data. The ranking set covers January and July 2026.
+
+**Latest live scores: 269.41 RMSE (v9, LOBT bounds + specialist) and 270.21
+(v10, stakes-weighted tail classifiers)**, both down from **275.97 (v8)** and
+developed independently; this branch combines them. All 344,841 ranking
+departures were scored. The next target is 250–260.
 
 ## Setup
 
-```
+```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-Place the challenge data in `dataset/`:
-- `training_*.parquet` (12 monthly files)
-- `ranking.parquet`
-- `submitting.parquet`
+Put the twelve monthly `training_*.parquet` files, `ranking.parquet`, and the
+`submitting.parquet` template in `dataset/`. Download METAR weather observations:
 
-Then fetch the weather data (free, no key, ~10 min):
-
-```
+```bash
 .venv/bin/python src/weather.py download
 ```
 
-## Pipeline
+On Windows, use `.venv\Scripts\python.exe`. Data, credentials, feature caches,
+models, and generated submissions stay local and are ignored by Git.
 
-- `src/features.py` — feature engineering: time gaps between actual movement time
-  and scheduled/estimated/off-block times (`SCHED`, `LOBT`, `IOBT`, `EOBT_1`,
-  `AOBT_3`), calendar features, categorical airport/stand/runway/aircraft/operator
-  fields (plus airport-specific interaction keys), and rolling departure/arrival
-  and pushback-queue congestion counts per airport.
-- `src/airline.py` — operator code from `FLIGHT_mvt`, with IATA-form codes
-  (`LH400`) mapped to ICAO (`DLH`) via `src/airline_map.csv`, which is learned
-  from training rows that carry both `FLIGHT_mvt` and `CALLSIGN_flt`. Rebuild
-  it with `python src/airline.py`.
-- `src/weather.py` — METAR observations for the ten airports from the Iowa
-  Environmental Mesonet, and the features built from them: the latest report
-  before each movement (visibility, ceiling, temperature, dewpoint spread, wind,
-  runway-relative crosswind and tailwind, present-weather flags) plus what
-  happened in the hour before (snow, freezing, thunderstorm, fog, minimum
-  visibility, maximum gust) and snow in the previous six hours.
-- `src/model.py` — the mixture `E[y|x] = (1 - p) * mu + p * v`: a regressor `mu`
-  on normal rows (LightGBM, CatBoost or XGBoost, averaged when several are
-  chosen), tail classifiers `p` (LightGBM or CatBoost, one for rows with LOBT and
-  one without), and the analytic tail value `v`.
-- `src/encode.py` — out-of-fold (by month) smoothed mean taxi time per
-  stand/runway, stand, airline, aircraft type, runway-hour and flight number
-  (`--te`).
-- `src/validate.py` — the rule every change must pass, over four winter+summer
-  splits: Jan+Jul 2025 (training on the other 10 months) and Feb+Aug, Dec+Jun,
-  Mar+Sep (each training without Jan/Jul). Saves each run's predictions and
-  compares runs with a paired day-level bootstrap, per split and pooled, on all
-  rows and on "robust" rows (tail rows whose label matches no timestamp removed).
-  A change counts as a win when the pooled robust interval is below zero and no
-  split is significantly worse.
-- `src/blend.py` — re-weights `mu` from saved runs and swaps in another run's
-  tail predictions (or toggles `--day-late`), without retraining.
-- `src/bench_mu.py` — learning curves for the `mu` families on the inner split,
-  used to choose round counts without touching the holdout.
-- `src/predict.py` — retrains on all 12 months and writes predictions for the
-  ranking departures to `output/submitting.parquet`, matching the
-  `submitting.parquet` template's row order and schema exactly.
+## What the model does
 
-## Usage
+- **Normal taxi times:** average LightGBM and CatBoost regressors trained on
+  labels up to 6,000 seconds. Features include off-block time gaps, airport,
+  stand, runway, aircraft, standardized airline codes, local time, congestion,
+  weather, and out-of-fold target encodings.
+- **Extreme times:** a separate classifier and timestamp-based estimate handle
+  the tail. Departures without a matched LOBT retain this mixture.
+- **LOBT correction:** matched predictions are bounded to the movement-to-LOBT
+  gap ±3,660 seconds, intersected with nonnegative taxi times. All 2,062,448
+  matched training labels lie within ±3,606 seconds. This is an observed data
+  property, not a guarantee for future data; training checks for violations.
+- **Long-taxi specialist:** a small LightGBM model learns `target - gap_LOBT`
+  on matched gaps above 3,000 seconds, including extreme labels. It replaces
+  the mixture above 6,000 seconds, then applies the same bounds.
 
-```
-.venv/bin/python src/validate.py --tag mychange --compare baseline
-.venv/bin/python src/predict.py    # submission file, development configuration
+## Progress and validation
 
-# final submission: re-validate on the final feature set, then
-.venv/bin/python src/validate.py --mu lgb cat cat_note cat_ctr1 --tag final --compare <dev tag>
+The initial LightGBM mixture gained standardized airline codes, congestion
+features, and target encodings. CatBoost tail classifiers and a four-member
+normal-model ensemble improved it further; METAR weather produced the v8
+baseline. The latest change adds the LOBT correction and residual specialist.
+
+Rare large errors matter disproportionately: in the latest validation study,
+0.053% of rows contributed 30% of squared error. This motivated the specialist.
+Flight-code format features gave mixed results and were rejected; richer weather
+features and an earlier tail-feature expansion also failed to generalize.
+
+Validation uses four temporal splits: Jan+Jul, Feb+Aug, Dec+Jun, and Mar+Sep.
+The last three exclude Jan+Jul from training. Comparisons use a paired day-level
+bootstrap. The loader excludes 369 invalid negative labels but retains the
+positive extreme tail; a separate robust metric excludes unexplained tail rows.
+
+The controlled refinement study kept the baseline forecasts fixed (LightGBM
+normal model with target encodings, no weather, LightGBM pooled tail classifier,
+and CatBoost classifier for unmatched rows):
+
+| Correction | Jan+Jul | Feb+Aug | Dec+Jun | Mar+Sep |
+|---|---:|---:|---:|---:|
+| None | 327.48 | 263.41 | 271.46 | 231.05 |
+| LOBT bounds | 321.35 | 263.01 | 270.66 | 229.35 |
+| Bounds + specialist | 320.14 | 262.16 | 270.23 | 228.93 |
+
+Pooled RMSE improved by **3.22 seconds** (95% interval: 1.19–7.07 seconds).
+All four splits improved. Applied to the full v8 ensemble, the correction changed
+307 predictions and improved the **live score by 6.5617 seconds** in v9.
+Local validation and leaderboard scores cover different data and are not directly
+comparable.
+
+## Run
+
+```bash
+# Validate the full ensemble with the current corrections.
+.venv/bin/python src/validate.py --mu lgb cat cat_note cat_ctr1 --tag refined
+
+# Train on all months; write output/submitting.parquet.
 .venv/bin/python src/predict.py --mu lgb cat cat_note cat_ctr1
+
+# Or refine an existing pre-correction ensemble without retraining it.
+# Preserves the input; writes output/submitting_improved.parquet.
+.venv/bin/python src/refine_submission.py --input output/submitting.parquet
+
+# Compare corrections against saved pre-correction validation forecasts.
+.venv/bin/python src/evaluate_refinement.py --baseline baseline --tag refinement_check
+
+.venv/bin/python -m unittest discover -s tests -v
 ```
 
-(On Windows the interpreter is `.venv\Scripts\python.exe`.)
+`--no-lobt-bounds --no-high-lobt` reproduces the previous prediction pipeline.
+`src/constrain_submission.py` applies bounds alone; `src/blend.py` compares
+saved model blends. Validation forecasts are saved under `output/validate/`.
 
-Both scripts take the same model options (`--mu`, `--te/--no-te`,
-`--clf-pooled`, `--clf-nolobt`, `--day-late`, `--stakes`). The defaults are the fast
-development configuration (LightGBM + CatBoost `mu`, ~1 hour for `predict.py` on
-a 16-core CPU). The four-member `mu` above is ~1.3 RMSE better but takes ~2h15m,
-so it is kept for the final submission. `--mu lgb --clf-pooled lgb --clf-nolobt
-lgb --no-te` is a LightGBM-only run that finishes in a few minutes.
+Both scripts share their model options (`--mu`, `--te/--no-te`, `--clf-pooled`,
+`--clf-nolobt`, `--day-late`, `--stakes`, `--lobt-bounds`, `--high-lobt`). The
+defaults are the fast development configuration (LightGBM + CatBoost `mu`,
+~1 hour for `predict.py` on a 16-core CPU); the four-member `mu` takes ~2h20m
+and is the submission recipe. `--mu lgb --clf-pooled lgb --clf-nolobt lgb
+--no-te` is a LightGBM-only run that finishes in a few minutes.
 
-## Results
+## Stakes-weighted tail classifiers
 
-`src/validate.py`, scored over all rows as the leaderboard does:
-
-| configuration | holdout (Jan+Jul 2025) | inner (Feb+Aug 2025) |
-|---|---|---|
-| LightGBM mu + LightGBM classifiers (previous pipeline) | 344.49 | 267.66 |
-| + ICAO airline codes | 344.77 | 267.58 |
-| + local hour, after-takeoff congestion, target encodings | 343.17 | 267.40 |
-| + CatBoost tail classifiers, no p boost | 324.93 | 263.69 |
-| + CatBoost mu averaged with LightGBM mu | 320.97 | 256.45 |
-
-The holdout trains on the other 10 months; the inner split trains on the 8
-months left after also dropping Jan and Jul. Only the last two steps clear zero
-on both splits under the day-bootstrap; the feature steps are directionally
-consistent but within noise.
-
-Later changes were judged over all four splits:
+`p` only changes a prediction where the analytic tail value exceeds 6000s,
+because `combine()` gates smaller values back to `mu`. `--stakes 25` therefore
+trains the tail classifiers on those candidate rows only, each weighted by its
+RMSE stakes clipped to [1, 25]. Against the v8 four-member weather run it wins
+on all four splits (pooled robust -2.67, CI -4.34..-1.24) and, submitted on its
+own as v10, took the live score from 275.97 to 270.21:
 
 | configuration | holdout | inner | dec_jun | mar_sep |
 |---|---|---|---|---|
-| CatBoost + LightGBM mu (above) | 320.97 | 256.45 | 267.82 | 227.89 |
-| mu = equal average of LightGBM and three CatBoost variants (`FINAL_MU`) | 319.98 | 254.17 | 266.95 | 226.53 |
-| + METAR weather features, on LightGBM + CatBoost mu (default) | 320.17 | 252.70 | 266.56 | 227.73 |
-| weather + the four-member mu (final-submission recipe) | **319.45** | **250.10** | **265.61** | **226.45** |
+| v8: weather + four-member mu | 319.45 | 250.10 | 265.61 | 226.45 |
+| v10: v8 + `--stakes 25` | 313.61 | 248.18 | 263.46 | 223.44 |
 
-On the live leaderboard this recipe scored ~1.5 points better than the same
-four-member mu without weather. Weather wins on the pooled robust interval
-(-1.51) and on three of the four splits individually; with LightGBM alone it
-wins on all four (pooled -1.37). Three richer weather feature sets were then
-measured and all came out worse -- derived operational flags, everything
-parseable from the report text, and the four sharpest of those alone -- so the
-kept set is deliberate; `src/weather.py` records what each contained.
-
-The three CatBoost variants are the default settings, the same without target
-encodings, and depth 10 with single-feature CTRs; they were chosen on inner
-normal rows with `src/bench_mu.py`, so the inner gain is optimistic. On the live
-leaderboard the four-member submission scored just under 2 points better than
-the LightGBM + CatBoost one.
-
-`--stakes 25` trains the tail classifiers on candidate rows only (those whose
-analytic tail value exceeds 6000s, the only rows where `p` changes the
-prediction), each weighted by its RMSE stakes clipped to [1, 25]. It wins on
-all four splits (pooled robust -2.67, CI -4.34..-1.24, against the four-member
-weather run) and took the live score from 275.97 to 270.21 as its own
-submission. It stays opt-in so the earlier recipe remains reproducible; the
-current submission is `--mu lgb cat cat_note cat_ctr1 --stakes 25`. `--mu lgb_nocat` is LightGBM without the high-cardinality keys:
-5 RMSE better alone on inner normal rows (223.3 vs 228.7) and twice as fast,
-but so much more CatBoost-like that swapping it into the four-member average is
-a wash (pooled +0.01), so it is not part of `FINAL_MU`.
+With `--high-lobt` the pooled classifier is not fitted, so on matched rows the
+specialist and the stakes weighting are alternatives; on unmatched rows
+(no flight plan) the stakes classifier still applies. `--mu lgb_nocat` is
+LightGBM without the eight high-cardinality keys: 5 RMSE better alone on inner
+normal rows (223.3 vs 228.7) and twice as fast, but so much more CatBoost-like
+that swapping it into the four-member average is a wash, so it is opt-in only.
 
 Tried and not kept: a day-late tail component (`--day-late`; mixed across
 splits, rests on ~16 rows), blending exact timestamp values into `mu` (the
-dominant AOBT match is not predictable, AUC 0.70), XGBoost, and a richer feature
-set for the tail classifiers. The last of those won on all four splits offline
-(pooled -3.0) but lost ~25 points on the live leaderboard, which is why tail
-changes now need a much higher bar than `mu` changes: the offline tail gain
-rests on a few hundred 2025 rows and does not carry to 2026.
+dominant AOBT match is not predictable, AUC 0.70), XGBoost, and a richer
+feature set for the tail classifiers, which won on all four splits offline
+(pooled -3.0) but lost ~25 points live. Tail changes are therefore submitted on
+their own before being bundled.
 
-Figures quoted in earlier commits (327.11, 344.44, ~239) were measured by the old
-`train.py`, whose holdout filter also matched `training_2025-06-01_2025-07-01`
-on its end date, so they cover Jan+Jun+Jul and are not comparable.
+For leaderboard access, keep `accessKey` and `secretKey` in local
+`credentials.json`. Upload explicitly using a new, unused version number:
 
-Key predictive signal: the gap between actual movement time and the NM-reported
-actual/estimated off-block times (`AOBT_3_flt`, `EOBT_1_flt`), combined with
-stand/runway-specific taxi patterns per airport and local traffic congestion
-counts.
+```bash
+.venv/bin/python submission.py list
+.venv/bin/python submission.py upload VERSION --file output/submitting_improved.parquet
+.venv/bin/python submission.py read VERSION
+```

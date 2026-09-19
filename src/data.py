@@ -35,6 +35,7 @@ def load_training():
         xs.append(build_features_cached(f, df).loc[dep])
         ys.append(df.loc[dep, "TAXITIME_SEC_mvt"].astype(float))
         metas.append(pd.DataFrame({
+            "MVT_ID_mvt": df.loc[dep, "MVT_ID_mvt"],
             "month": month_of(f),
             "date": df.loc[dep, "MVT_TIME_UTC_mvt"].dt.strftime("%Y-%m-%d"),
             "ADEP_mvt": df.loc[dep, "ADEP_mvt"],

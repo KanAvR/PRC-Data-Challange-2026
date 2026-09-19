@@ -17,6 +17,7 @@ import pandas as pd
 
 sys.path.insert(0, "src")
 from model import CLF_BOOST, TAIL_THR, combine
+from constraints import project_lobt
 from validate import OUT_DIR, SPLITS, compare, report, rmse, verdict
 
 
@@ -49,6 +50,9 @@ def main():
     ap.add_argument("--p-boost", type=float,
                     help="extra multiplier on p (default: none, or 1.35 for old raw-p runs)")
     ap.add_argument("--day-late", action="store_true", help="use the saved q_day component")
+    ap.add_argument("--lobt-bounds", action=argparse.BooleanOptionalAction, default=True)
+    ap.add_argument("--high-lobt", action="store_true",
+                    help="apply specialist predictions saved in the --clf run")
     ap.add_argument("--compare", metavar="TAG")
     ap.add_argument("--tag", help="save the blended run as a new tag")
     args = ap.parse_args()
@@ -76,6 +80,16 @@ def main():
         r["p_calibrated"] = True
         q = r["q_day"].values if args.day_late else None
         r["pred"] = combine(r["mu"].values, r["p"].values, r["v"].values, q_day=q)
+        r["pred_unconstrained"] = r["pred"]
+        r["lobt_bounds"] = args.lobt_bounds
+        if args.lobt_bounds:
+            r["pred"] = project_lobt(r["pred"].values, r["gap_LOBT_flt"].values)
+        r["high_lobt"] = args.high_lobt
+        if args.high_lobt:
+            if "high_lobt_pred" not in r or r["high_lobt_pred"].notna().sum() == 0:
+                raise ValueError("--clf run has no saved specialist predictions")
+            high = r["high_lobt_pred"].notna()
+            r.loc[high, "pred"] = r.loc[high, "high_lobt_pred"]
         report(split, r)
         if args.tag:
             out = OUT_DIR / args.tag

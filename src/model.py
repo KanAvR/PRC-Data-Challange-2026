@@ -1,9 +1,9 @@
 """Two-component model for taxi-out time.
 
-A GBM predicts an average of the training labels in each leaf, so it can never
-output the 6000-131167s values that dominate RMSE. Those rows are supplied
-analytically instead: on them the recorded block time is the scheduled (or
-latest-off-block) time, so the target equals MVT_TIME minus that timestamp.
+The normal regressor is trained without labels above 6000 seconds and shrinks
+extreme taxi times. The mixture below supplies a separate analytic tail value.
+The default pipeline then uses high_lobt.py to refine matched long departures
+with a bounded residual model; unmatched departures retain this mixture.
 
     E[y|x] = (1 - p(x)) * mu(x) + p(x) * v(x)
 
@@ -308,8 +308,11 @@ CLF_FAMILIES = {"lgb": lambda X, label, cols, weight=None: _fit_seeds(X, label, 
 # ((v - typical taxi) / TAIL_THR)^2, clipped to [1, CLIP]. With CLIP=25 this
 # wins on all four splits (pooled robust -2.67, CI -4.34..-1.24 against the
 # four-member weather run); candidates alone without weights is -0.92 with the
-# interval spanning zero, CLIP=100 is -2.85. Like every tail change it is
-# unproven live until tested as its own submission, so it is off by default.
+# interval spanning zero, CLIP=100 is -2.85. Submitted on its own it took the
+# live score from 275.97 to 270.21. Off by default so the older recipes stay
+# reproducible. With --high-lobt the pooled classifier is not fitted at all
+# (fit_pooled=False): matched rows above APPLY_GAP_SEC go to the specialist and
+# smaller matched gaps are gated back to mu, so their p cannot matter.
 def _stakes_weights(X, y, v, clip):
     apt = X["ADEP_mvt"].astype(str).values
     normal = y <= TAIL_THR
@@ -318,7 +321,7 @@ def _stakes_weights(X, y, v, clip):
     return np.clip(((v - typical) / TAIL_THR) ** 2, 1.0, clip)
 
 
-def train_tail_clf(X, y, pooled="lgb", no_lobt="lgb", stakes=0.0):
+def train_tail_clf(X, y, pooled="lgb", no_lobt="lgb", stakes=0.0, fit_pooled=True):
     label = (y > TAIL_THR).astype(int)
     pooled_cols = _usable(TAIL_FEATURES, X)
     absent_cols = _usable(NO_LOBT_FEATURES, X)
@@ -334,7 +337,8 @@ def train_tail_clf(X, y, pooled="lgb", no_lobt="lgb", stakes=0.0):
     weight = (lambda sel: w[sel]) if stakes else (lambda sel: None)
     return {
         "pooled": (CLF_FAMILIES[pooled](X[sel_pooled], label[sel_pooled], pooled_cols,
-                                        weight(sel_pooled)), pooled_cols, pooled),
+                                        weight(sel_pooled)) if fit_pooled else [],
+                   pooled_cols, pooled),
         "no_lobt": (CLF_FAMILIES[no_lobt](X[sel_absent], label[sel_absent], absent_cols,
                                           weight(sel_absent)), absent_cols, no_lobt),
         "q_day": fit_day_late_rate(X, y),
@@ -349,6 +353,10 @@ def add_model_args(ap):
                          f"(final submission: {' '.join(FINAL_MU)})")
     ap.add_argument("--te", action=argparse.BooleanOptionalAction, default=True,
                     help="add out-of-fold target encodings")
+    ap.add_argument("--lobt-bounds", action=argparse.BooleanOptionalAction, default=True,
+                    help="project predictions onto the observed LOBT matching interval")
+    ap.add_argument("--high-lobt", action=argparse.BooleanOptionalAction, default=True,
+                    help="use a residual specialist when the matched LOBT gap exceeds 6000s")
     ap.add_argument("--clf-pooled", default="cat", choices=list(CLF_FAMILIES))
     ap.add_argument("--clf-nolobt", default="cat", choices=list(CLF_FAMILIES))
     ap.add_argument("--day-late", action=argparse.BooleanOptionalAction, default=False,
@@ -369,6 +377,11 @@ def predict_tail_proba(models, X):
         if not sel.any():
             continue
         boosters, cols, family = models[key]
+        # With the high-LOBT specialist, matched gaps >6000 are replaced and
+        # smaller gaps are gated back to mu. Their p cannot affect predictions.
+        if not boosters:
+            out[sel] = 0.0
+            continue
         p = np.mean([b.predict(X.loc[sel, cols]) for b in boosters], axis=0)
         out[sel] = np.clip(p * CLF_BOOST[family], 0.0, 1.0)
     return out

@@ -5,3 +5,4 @@ lightgbm==4.7.0
 numpy==2.5.3
 catboost==1.2.10
 xgboost==3.4.1
+minio==7.2.20

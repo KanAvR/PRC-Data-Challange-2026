@@ -98,11 +98,25 @@ comparable.
 saved model blends. Validation forecasts are saved under `output/validate/`.
 
 Both scripts share their model options (`--mu`, `--te/--no-te`, `--clf-pooled`,
-`--clf-nolobt`, `--day-late`, `--stakes`, `--lobt-bounds`, `--high-lobt`). The
-defaults are the fast development configuration (LightGBM + CatBoost `mu`,
-~1 hour for `predict.py` on a 16-core CPU); the four-member `mu` takes ~2h20m
-and is the submission recipe. `--mu lgb --clf-pooled lgb --clf-nolobt lgb
---no-te` is a LightGBM-only run that finishes in a few minutes.
+`--clf-nolobt`, `--day-late`, `--stakes`, `--lobt-bounds`, `--high-lobt`). `--mu`
+defaults to the fast development pair (LightGBM + CatBoost, ~1 hour for
+`predict.py` on a 16-core CPU); the four-member `mu` takes ~2h20m and is the
+submission recipe. `--lobt-bounds` and `--high-lobt` are **on** by default, so
+reproducing the pre-merge v10 pipeline needs them switched off explicitly:
+
+```bash
+# v10 exactly (stakes classifiers, no LOBT correction)
+.venv/bin/python src/predict.py --mu lgb cat cat_note cat_ctr1 --stakes 25     --no-lobt-bounds --no-high-lobt
+```
+
+`--mu lgb --clf-pooled lgb --clf-nolobt lgb --no-te` is a LightGBM-only run that
+finishes in a few minutes.
+
+Note that `--stakes` and `--high-lobt` overlap: `--high-lobt` skips the pooled
+classifier entirely (`fit_pooled=False`), so on matched rows `p` is zero and the
+specialist decides, discarding the stakes pooled classifier. The two are
+alternatives on matched rows, not additions. `--lobt-bounds` composes with
+either, since it only projects a prediction onto an interval.
 
 ## Stakes-weighted tail classifiers
 

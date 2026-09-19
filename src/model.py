@@ -125,8 +125,13 @@ def train_mu_nocat(X, y, num_boost_round=1500):
 # inner split at 900 rounds, normal rows: direct 228.83, residual on
 # gap_AOBT_3_flt 227.28, on gap_LOBT_flt 228.35, on gap_EOBT_1_flt 228.42;
 # averaging the direct model with the AOBT residual gives 226.69 and all four
-# 226.20. Most of the gain is ensemble diversity, not the anchoring itself: on
+# 226.20. Most of that is ensemble diversity, not the anchoring itself: on
 # AOBT-matched rows the anchored model reaches 130.7 against the direct 133.0.
+# INSIDE THE FOUR-MEMBER AVERAGE IT IS A WASH, like lgb_nocat: swapping lgb for
+# the anchored member moves the mean normal-row RMSE over four splits from
+# 211.67 to 211.41, and adding it as a fifth member to 211.65. blend.py calls
+# the swap a win (pooled robust -1.34) but that is three extreme tail rows, not
+# prediction quality -- see the mu-change caveat in NEXT_STEPS.md. Opt-in only.
 ANCHOR_DEFAULT = "gap_AOBT_3_flt"
 
 

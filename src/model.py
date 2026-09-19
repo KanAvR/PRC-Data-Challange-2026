@@ -119,6 +119,43 @@ def train_mu_nocat(X, y, num_boost_round=1500):
     return _DropCols(lgb.train(MU_PARAMS, ds, num_boost_round=num_boost_round), drop)
 
 
+# A GBM is piecewise constant, so "the label equals this timestamp gap" costs it
+# many splits to approximate. Re-targeting on y - gap makes that exactly
+# representable, which is the mechanism behind high_lobt.py. Measured on the
+# inner split at 900 rounds, normal rows: direct 228.83, residual on
+# gap_AOBT_3_flt 227.28, on gap_LOBT_flt 228.35, on gap_EOBT_1_flt 228.42;
+# averaging the direct model with the AOBT residual gives 226.69 and all four
+# 226.20. Most of the gain is ensemble diversity, not the anchoring itself: on
+# AOBT-matched rows the anchored model reaches 130.7 against the direct 133.0.
+ANCHOR_DEFAULT = "gap_AOBT_3_flt"
+
+
+class _AnchorMu:
+    """Adds the anchor back, so the booster only has to learn the residual."""
+
+    def __init__(self, booster, anchor):
+        self.booster, self.anchor = booster, anchor
+
+    def predict(self, X):
+        a = X[self.anchor].to_numpy(dtype=float)
+        raw = self.booster.predict(X)
+        return np.clip(np.where(np.isfinite(a), raw + np.nan_to_num(a), raw), 0, None)
+
+
+def train_mu_anchor(X, y, anchor=ANCHOR_DEFAULT, num_boost_round=900):
+    """LightGBM on y - anchor. Rows with a missing anchor keep the plain target,
+    and predict() mirrors that, so the two halves stay consistent."""
+    normal = y <= TAIL_THR
+    a = X[anchor].to_numpy(dtype=float)
+    target = y[normal] - np.nan_to_num(a[normal])
+    ds = lgb.Dataset(X[normal], label=target, categorical_feature=CAT_COLS)
+    return _AnchorMu(lgb.train(MU_PARAMS, ds, num_boost_round=num_boost_round), anchor)
+
+
+def train_mu_anchor_lobt(X, y):
+    return train_mu_anchor(X, y, anchor="gap_LOBT_flt")
+
+
 # Other GBM families for mu. Each handles the high-cardinality categoricals
 # (STAND, ADEP_STAND_RUNWAY) differently -- CatBoost with ordered target
 # statistics, XGBoost with partition splits -- which is the diversity a blend
@@ -236,7 +273,8 @@ def train_mu_cat_ctr1(X, y):
 FINAL_MU = ["lgb", "cat", "cat_note", "cat_ctr1"]
 MU_FAMILIES = {"lgb": train_mu, "cat": train_mu_cat, "xgb": train_mu_xgb,
                "cat_note": train_mu_cat_note, "cat_ctr1": train_mu_cat_ctr1,
-               "lgb_nocat": train_mu_nocat}
+               "lgb_nocat": train_mu_nocat, "lgb_anchor": train_mu_anchor,
+               "lgb_anchor_lobt": train_mu_anchor_lobt}
 
 
 def _has_lobt(X):

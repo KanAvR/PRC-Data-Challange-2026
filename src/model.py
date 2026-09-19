@@ -1,9 +1,9 @@
 """Two-component model for taxi-out time.
 
-A GBM predicts an average of the training labels in each leaf, so it can never
-output the 6000-131167s values that dominate RMSE. Those rows are supplied
-analytically instead: on them the recorded block time is the scheduled (or
-latest-off-block) time, so the target equals MVT_TIME minus that timestamp.
+The normal regressor is trained without labels above 6000 seconds and shrinks
+extreme taxi times. The mixture below supplies a separate analytic tail value.
+The default pipeline then uses high_lobt.py to refine matched long departures
+with a bounded residual model; unmatched departures retain this mixture.
 
     E[y|x] = (1 - p(x)) * mu(x) + p(x) * v(x)
 
@@ -275,13 +275,14 @@ CLF_FAMILIES = {"lgb": lambda X, label, cols: _fit_seeds(X, label, cols, 300),
                 "cat": _fit_seeds_cat}
 
 
-def train_tail_clf(X, y, pooled="lgb", no_lobt="lgb"):
+def train_tail_clf(X, y, pooled="lgb", no_lobt="lgb", fit_pooled=True):
     label = (y > TAIL_THR).astype(int)
     pooled_cols = _usable(TAIL_FEATURES, X)
     absent_cols = _usable(NO_LOBT_FEATURES, X)
     absent = ~_has_lobt(X)
     return {
-        "pooled": (CLF_FAMILIES[pooled](X, label, pooled_cols), pooled_cols, pooled),
+        "pooled": (CLF_FAMILIES[pooled](X, label, pooled_cols) if fit_pooled else [],
+                   pooled_cols, pooled),
         "no_lobt": (CLF_FAMILIES[no_lobt](X[absent], label[absent], absent_cols), absent_cols,
                     no_lobt),
         "q_day": fit_day_late_rate(X, y),
@@ -296,6 +297,10 @@ def add_model_args(ap):
                          f"(final submission: {' '.join(FINAL_MU)})")
     ap.add_argument("--te", action=argparse.BooleanOptionalAction, default=True,
                     help="add out-of-fold target encodings")
+    ap.add_argument("--lobt-bounds", action=argparse.BooleanOptionalAction, default=True,
+                    help="project predictions onto the observed LOBT matching interval")
+    ap.add_argument("--high-lobt", action=argparse.BooleanOptionalAction, default=True,
+                    help="use a residual specialist when the matched LOBT gap exceeds 6000s")
     ap.add_argument("--clf-pooled", default="cat", choices=list(CLF_FAMILIES))
     ap.add_argument("--clf-nolobt", default="cat", choices=list(CLF_FAMILIES))
     ap.add_argument("--day-late", action=argparse.BooleanOptionalAction, default=False,
@@ -312,6 +317,11 @@ def predict_tail_proba(models, X):
         if not sel.any():
             continue
         boosters, cols, family = models[key]
+        # With the high-LOBT specialist, matched gaps >6000 are replaced and
+        # smaller gaps are gated back to mu. Their p cannot affect predictions.
+        if not boosters:
+            out[sel] = 0.0
+            continue
         p = np.mean([b.predict(X.loc[sel, cols]) for b in boosters], axis=0)
         out[sel] = np.clip(p * CLF_BOOST[family], 0.0, 1.0)
     return out

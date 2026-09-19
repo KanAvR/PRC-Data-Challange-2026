@@ -1,11 +1,15 @@
+# Local environment and caches
 .venv/
-dataset/
-output/*.txt
-output/validate/
 __pycache__/
 *.pyc
+.featcache/
 .last
+
+# Data and generated artifacts
+dataset/
+output/
+
+# Credentials and local client configuration
 credentials.json
 *.pem
 .mc/
-.featcache/

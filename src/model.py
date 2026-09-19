@@ -17,6 +17,7 @@ import argparse
 
 import lightgbm as lgb
 import numpy as np
+import pandas as pd
 
 from features import CAT_COLS
 
@@ -93,6 +94,29 @@ def train_mu(X, y, num_boost_round=900):
     normal = y <= TAIL_THR
     ds = lgb.Dataset(X[normal], label=y[normal], categorical_feature=CAT_COLS)
     return lgb.train(MU_PARAMS, ds, num_boost_round=num_boost_round)
+
+
+# LightGBM splits a categorical by sorting its levels on the node's gradient
+# statistics, which with thousands of levels (ADEP_STAND_RUNWAY 12038,
+# ADEP_AIRLINE 5508) memorises rare levels. Withholding those keys -- the te_*
+# encodings still carry them -- takes the inner normal-row RMSE from 228.7 to
+# 223.3 at 1500 rounds and halves the fit time (bench_mu.py; stronger
+# cat_smooth/cat_l2/min_data_per_group only reached 226.4). But the native
+# splits are also what made LightGBM differ from CatBoost: its residual
+# correlation with cat rises from 0.944 to 0.966, and in the four-member
+# FINAL_MU average the swap is a wash on every split (pooled robust +0.01),
+# as is adding it as a fifth member (-0.01). Kept as an opt-in family only.
+LGB_DROP = ["ADEP_STAND_RUNWAY", "ADEP_AIRLINE", "ADEP_STAND", "STAND_mvt", "AIRLINE_mvt",
+            "ADES_mvt", "ADEP_AIRCRAFT_TYPE", "AIRCRAFT_OPERATOR_flt"]
+
+
+def train_mu_nocat(X, y, num_boost_round=1500):
+    drop = [c for c in LGB_DROP if c in X.columns]
+    Xl = X.drop(columns=drop)
+    cats = [c for c in CAT_COLS if c in Xl.columns]
+    normal = y <= TAIL_THR
+    ds = lgb.Dataset(Xl[normal], label=y[normal], categorical_feature=cats)
+    return _DropCols(lgb.train(MU_PARAMS, ds, num_boost_round=num_boost_round), drop)
 
 
 # Other GBM families for mu. Each handles the high-cardinality categoricals
@@ -211,19 +235,20 @@ def train_mu_cat_ctr1(X, y):
 # run time, so it is the final-submission recipe rather than the default:
 FINAL_MU = ["lgb", "cat", "cat_note", "cat_ctr1"]
 MU_FAMILIES = {"lgb": train_mu, "cat": train_mu_cat, "xgb": train_mu_xgb,
-               "cat_note": train_mu_cat_note, "cat_ctr1": train_mu_cat_ctr1}
+               "cat_note": train_mu_cat_note, "cat_ctr1": train_mu_cat_ctr1,
+               "lgb_nocat": train_mu_nocat}
 
 
 def _has_lobt(X):
     return ~np.isnan(X["gap_LOBT_flt"].values.astype(float))
 
 
-def _fit_seeds(X, label, cols, num_boost_round):
+def _fit_seeds(X, label, cols, num_boost_round, weight=None):
     cats = [c for c in CAT_COLS if c in cols]
     # Bin once, reuse for every seed. The seeds only move bagging and feature
     # sampling, never the binning, so constructing a Dataset per seed re-binned
     # the same 1.5M rows N_SEEDS times for nothing.
-    ds = lgb.Dataset(X[cols], label=label, categorical_feature=cats,
+    ds = lgb.Dataset(X[cols], label=label, categorical_feature=cats, weight=weight,
                      free_raw_data=False)
     ds.construct()
     return [lgb.train(dict(CLF_PARAMS, seed=s, bagging_seed=s, feature_fraction_seed=s),
@@ -260,30 +285,58 @@ class _CatClf:
         return self.model.predict_proba(_as_catboost(X)[0])[:, 1]
 
 
-def _fit_seeds_cat(X, label, cols, iterations=None):
+def _fit_seeds_cat(X, label, cols, iterations=None, weight=None):
     """CatBoost's ordered boosting is built to resist the target leakage that makes
     the LightGBM classifier memorise its few hundred positives."""
     from catboost import CatBoostClassifier, Pool
     Xc, cats = _as_catboost(X[cols])
-    pool = Pool(Xc, label, cat_features=cats)
+    pool = Pool(Xc, label, cat_features=cats, weight=weight)
     params = dict(CAT_CLF_PARAMS, **({"iterations": iterations} if iterations else {}))
     return [_CatClf(CatBoostClassifier(**params, random_seed=s).fit(pool))
             for s in range(N_SEEDS)]
 
 
-CLF_FAMILIES = {"lgb": lambda X, label, cols: _fit_seeds(X, label, cols, 300),
-                "cat": _fit_seeds_cat}
+CLF_FAMILIES = {"lgb": lambda X, label, cols, weight=None: _fit_seeds(X, label, cols, 300, weight),
+                "cat": lambda X, label, cols, weight=None: _fit_seeds_cat(X, label, cols, weight=weight)}
 
 
-def train_tail_clf(X, y, pooled="lgb", no_lobt="lgb"):
+# p only matters where v exceeds TAIL_THR: combine() gates v back to mu below
+# it, so a row's p is inert unless it is a tail *candidate*. Log-loss over all
+# 1.5M rows spends the classifier on rows it cannot affect and treats a 7000s
+# candidate like an 80000s one, although their RMSE stakes differ 100-fold.
+# --stakes trains on candidates only, each weighted by its stakes
+# ((v - typical taxi) / TAIL_THR)^2, clipped to [1, CLIP]. With CLIP=25 this
+# wins on all four splits (pooled robust -2.67, CI -4.34..-1.24 against the
+# four-member weather run); candidates alone without weights is -0.92 with the
+# interval spanning zero, CLIP=100 is -2.85. Like every tail change it is
+# unproven live until tested as its own submission, so it is off by default.
+def _stakes_weights(X, y, v, clip):
+    apt = X["ADEP_mvt"].astype(str).values
+    normal = y <= TAIL_THR
+    typical = pd.Series(apt).map(pd.Series(y[normal]).groupby(apt[normal]).median())
+    typical = typical.fillna(np.median(y[normal])).values
+    return np.clip(((v - typical) / TAIL_THR) ** 2, 1.0, clip)
+
+
+def train_tail_clf(X, y, pooled="lgb", no_lobt="lgb", stakes=0.0):
     label = (y > TAIL_THR).astype(int)
     pooled_cols = _usable(TAIL_FEATURES, X)
     absent_cols = _usable(NO_LOBT_FEATURES, X)
     absent = ~_has_lobt(X)
+    if stakes:
+        v = analytic_tail_value(X)
+        cand = v > TAIL_THR
+        w = _stakes_weights(X, y, v, stakes)
+        sel_pooled, sel_absent = cand, cand & absent
+    else:
+        w = np.ones(len(X))
+        sel_pooled, sel_absent = np.ones(len(X), bool), absent
+    weight = (lambda sel: w[sel]) if stakes else (lambda sel: None)
     return {
-        "pooled": (CLF_FAMILIES[pooled](X, label, pooled_cols), pooled_cols, pooled),
-        "no_lobt": (CLF_FAMILIES[no_lobt](X[absent], label[absent], absent_cols), absent_cols,
-                    no_lobt),
+        "pooled": (CLF_FAMILIES[pooled](X[sel_pooled], label[sel_pooled], pooled_cols,
+                                        weight(sel_pooled)), pooled_cols, pooled),
+        "no_lobt": (CLF_FAMILIES[no_lobt](X[sel_absent], label[sel_absent], absent_cols,
+                                          weight(sel_absent)), absent_cols, no_lobt),
         "q_day": fit_day_late_rate(X, y),
     }
 
@@ -300,6 +353,10 @@ def add_model_args(ap):
     ap.add_argument("--clf-nolobt", default="cat", choices=list(CLF_FAMILIES))
     ap.add_argument("--day-late", action=argparse.BooleanOptionalAction, default=False,
                     help="mix a normal-taxi-plus-one-day value into the tail of candidate rows")
+    ap.add_argument("--stakes", type=float, default=0.0, metavar="CLIP",
+                    help="train the tail classifiers on candidate rows (v > TAIL_THR) only, "
+                         "weighted by RMSE stakes clipped to [1, CLIP]; 1 = candidates "
+                         "unweighted, 0 = every row unweighted (default)")
 
 
 def predict_tail_proba(models, X):

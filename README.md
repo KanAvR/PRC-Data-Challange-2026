@@ -74,7 +74,7 @@ Then fetch the weather data (free, no key, ~10 min):
 (On Windows the interpreter is `.venv\Scripts\python.exe`.)
 
 Both scripts take the same model options (`--mu`, `--te/--no-te`,
-`--clf-pooled`, `--clf-nolobt`, `--day-late`). The defaults are the fast
+`--clf-pooled`, `--clf-nolobt`, `--day-late`, `--stakes`). The defaults are the fast
 development configuration (LightGBM + CatBoost `mu`, ~1 hour for `predict.py` on
 a 16-core CPU). The four-member `mu` above is ~1.3 RMSE better but takes ~2h15m,
 so it is kept for the final submission. `--mu lgb --clf-pooled lgb --clf-nolobt
@@ -119,6 +119,17 @@ encodings, and depth 10 with single-feature CTRs; they were chosen on inner
 normal rows with `src/bench_mu.py`, so the inner gain is optimistic. On the live
 leaderboard the four-member submission scored just under 2 points better than
 the LightGBM + CatBoost one.
+
+`--stakes 25` trains the tail classifiers on candidate rows only (those whose
+analytic tail value exceeds 6000s, the only rows where `p` changes the
+prediction), each weighted by its RMSE stakes clipped to [1, 25]. It wins on
+all four splits (pooled robust -2.67, CI -4.34..-1.24, against the four-member
+weather run) and took the live score from 275.97 to 270.21 as its own
+submission. It stays opt-in so the earlier recipe remains reproducible; the
+current submission is `--mu lgb cat cat_note cat_ctr1 --stakes 25`. `--mu lgb_nocat` is LightGBM without the high-cardinality keys:
+5 RMSE better alone on inner normal rows (223.3 vs 228.7) and twice as fast,
+but so much more CatBoost-like that swapping it into the four-member average is
+a wash (pooled +0.01), so it is not part of `FINAL_MU`.
 
 Tried and not kept: a day-late tail component (`--day-late`; mixed across
 splits, rests on ~16 rows), blending exact timestamp values into `mu` (the

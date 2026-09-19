@@ -49,7 +49,7 @@ def main():
     mu_pred = np.mean(mus, axis=0)
 
     print("Training tail classifier on all data...", flush=True)
-    clf = train_tail_clf(train_data, y_train, pooled=args.clf_pooled, no_lobt=args.clf_nolobt)
+    clf = train_tail_clf(train_data, y_train, pooled=args.clf_pooled, no_lobt=args.clf_nolobt, stakes=args.stakes)
 
     print("Predicting on ranking DEP rows...")
     p = predict_tail_proba(clf, ranking_dep)

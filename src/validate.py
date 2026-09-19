@@ -99,7 +99,7 @@ def run_split(name, X, y, meta, args):
             mus[f"mu_{fam}"] = np.clip(MU_FAMILIES[fam](X_tr, y_tr).predict(X_va), 0, None)
             print(f"  {fam}: done", flush=True)
         mu = np.mean(list(mus.values()), axis=0)
-    clf = train_tail_clf(X_tr, y_tr, pooled=args.clf_pooled, no_lobt=args.clf_nolobt)
+    clf = train_tail_clf(X_tr, y_tr, pooled=args.clf_pooled, no_lobt=args.clf_nolobt, stakes=args.stakes)
     p = predict_tail_proba(clf, X_va)
     v = analytic_tail_value(X_va)
     # always saved, so blend.py can switch the day-late component on or off

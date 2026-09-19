@@ -19,7 +19,7 @@ import pandas as pd
 sys.path.insert(0, "src")
 from data import align_categoricals, load_training
 from encode import add_target_encodings
-from model import MU_PARAMS, TAIL_THR, XGB_MU_PARAMS, train_mu_cat, train_mu_xgb
+from model import LGB_DROP, MU_PARAMS, TAIL_THR, XGB_MU_PARAMS, train_mu_cat, train_mu_xgb
 from validate import OUT_DIR, SPLITS
 
 
@@ -31,6 +31,10 @@ def main():
                     help="JSON overrides for CAT_MU_PARAMS")
     ap.add_argument("--xgb-rounds", type=int, default=2500)
     ap.add_argument("--lgb-rounds", type=int, default=2500)
+    ap.add_argument("--lgb-params", type=json.loads, default={},
+                    help="JSON overrides for MU_PARAMS")
+    ap.add_argument("--lgb-drop", nargs="*", default=[],
+                    help="columns withheld from LightGBM (LGB_DROP reproduces lgb_nocat)")
     ap.add_argument("--xgb-lr", type=float)
     ap.add_argument("--te", action="store_true", help="add target encodings, as the pipeline does")
     ap.add_argument("--name", help="output name (default: the family)")
@@ -59,11 +63,14 @@ def main():
         print(f"\n== {name}", flush=True)
         if fam == "lgb":
             normal = y_tr <= TAIL_THR
-            ds = lgb.Dataset(X_tr[normal], label=y_tr[normal], categorical_feature="auto")
-            dv = lgb.Dataset(X_vn, label=y_vn, reference=ds)
-            model = lgb.train(MU_PARAMS, ds, num_boost_round=args.lgb_rounds, valid_sets=[dv],
+            cols = [c for c in X_tr.columns if c not in args.lgb_drop]
+            params = dict(MU_PARAMS, **args.lgb_params)
+            print(f"   params {args.lgb_params} drop {args.lgb_drop}", flush=True)
+            ds = lgb.Dataset(X_tr.loc[normal, cols], label=y_tr[normal], categorical_feature="auto")
+            dv = lgb.Dataset(X_vn[cols], label=y_vn, reference=ds)
+            model = lgb.train(params, ds, num_boost_round=args.lgb_rounds, valid_sets=[dv],
                               callbacks=[lgb.log_evaluation(100)])
-            pred = model.predict(X_vn)
+            pred = model.predict(X_vn[cols])
         elif fam == "xgb":
             model = train_mu_xgb(X_tr, y_tr, num_boost_round=args.xgb_rounds, eval_set=(X_vn, y_vn))
             pred = model.predict(X_vn)

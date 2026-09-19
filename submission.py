@@ -1,5 +1,6 @@
 import argparse
 import json
+import re
 from minio import Minio
 
 BUCKET = "prc-2026-humble-giraffe"
@@ -22,10 +23,17 @@ def remote_name(version):
     return f"{TEAM}_{version}.parquet"
 
 
+def version_sort_key(name):
+    match = re.search(rf"{re.escape(TEAM)}_v(\d+)", name)
+    version = int(match.group(1)) if match else -1
+    return (version, name)
+
+
 def cmd_list(client, args):
     try:
-        for obj in client.list_objects(BUCKET, recursive=True):
-            print(obj.object_name)
+        names = [obj.object_name for obj in client.list_objects(BUCKET, recursive=True)]
+        for name in sorted(names, key=version_sort_key):
+            print(name)
     except Exception as e:
         print("Error listing bucket:", e)
 

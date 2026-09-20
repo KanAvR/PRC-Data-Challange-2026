@@ -1,0 +1,54 @@
+{
+  "branch": "lobt-refinement",
+  "frozen_source_commit": "4290754",
+  "best_submission": "v17",
+  "live_rmse": 265.7779,
+  "previous_best": {
+    "submission": "v15",
+    "rmse": 267.0668
+  },
+  "live_improvement": 1.2889,
+  "recipe": "Start with v15; transfer one-quarter of the AOBT residual-model change, then blend a 20-percent Rome expert into eligible matched normal departures. Preserve high-LOBT and boundary predictions.",
+  "local_validation": "Four temporal splits; corrected tail-value scaling; gain 0.9585459756 RMSE. Local proxy is not a reconstruction of the unknown original v14 ensemble.",
+  "artifact": "output/submitting_v17.parquet",
+  "artifact_sha256": "016e89500b0a797ec22c1b55f4bf80a75b52d7a3412c449b150270df54817fd3",
+  "source_paths": {
+    "neighbor_proxy": [
+      "features.py",
+      "anchor.py",
+      "normal_correction.py",
+      "test_features.py",
+      "test_normal_correction.py",
+      "screen.py",
+      "screen_cat.py",
+      "build_candidate.py",
+      "build_anchor_candidate.py",
+      "audit_anchor_candidate.py",
+      "recheck_tail_scaling.py",
+      "strong_check_corrected.py"
+    ],
+    "tail_neighbor": [
+      "screen.py",
+      "context_features.py",
+      "test_context.py",
+      "build_predictions.py",
+      "build_candidate.py"
+    ],
+    "airport_experts": [
+      "screen.py",
+      "weather_subset.py",
+      "build_rome_predictions.py"
+    ]
+  },
+  "workflow": [
+    "Run .venv/bin/python experiments/prepare.py to restore scripts into output/experiments and frozen v9 sources.",
+    "Training data, weather caches, previous prediction artifacts and model files remain local and are not committed.",
+    "Candidate builders require immutable prior submission predictions plus the referenced experiment baselines.",
+    "Ask for explicit approval before every future leaderboard submission."
+  ],
+  "known_limitations": [
+    "Original v14 ensemble recipe is unconfirmed.",
+    "The 250 RMSE objective has not been reached.",
+    "Separate root-level v10 edits are excluded from this checkpoint."
+  ]
+}

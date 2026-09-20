@@ -1,0 +1,16 @@
+{
+  "anchor": {
+    "sha256": "17115ea3b5db1936f23a51fa68607e65a43653d75f95fc28eaa7d04f2ac596bd",
+    "rows": 344841,
+    "changed_rows": 344523,
+    "protected_rows": 302,
+    "all_checks_passed": true
+  },
+  "anchor_rome": {
+    "sha256": "016e89500b0a797ec22c1b55f4bf80a75b52d7a3412c449b150270df54817fd3",
+    "rows": 344841,
+    "changed_rows": 344523,
+    "protected_rows": 302,
+    "all_checks_passed": true
+  }
+}

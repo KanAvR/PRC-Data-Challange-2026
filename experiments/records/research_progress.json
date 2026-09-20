@@ -41,7 +41,8 @@
     "selection": "12 matched missing-LOBT departures per airport; fixed random seed 1729; no target values used"
   },
   "active_runs": {
-    "neighbor_catboost": "3500-round weather inner run; latest2250 rounds"
+    "neighbor_catboost": "3500-round weather inner run; latest2250 rounds",
+    "long_residual": "1800 rounds versus900; first900 predictions must reproduce the existing control before scoring"
   },
   "public_only": true,
   "future_submission_permission": "Authorized without another question; max five per day, checked against remote history.",

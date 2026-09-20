@@ -16,7 +16,18 @@ import pandas as pd
 
 from model import TAIL_THR
 
-PRIOR_WEIGHT = 30
+# Shrinkage toward the global prior. 30 was never tested and is too strong:
+# sweeping the axis on the four-split harness gives a broad plateau over 3-10
+# (mean -0.345 to -0.215 on normal rows) decaying to nothing by 30, while 200
+# costs +0.24 and dropping the encodings entirely (--no-te) costs +0.96 -- so
+# the encodings are worth ~1.1 RMSE and want MORE say, not less. 10 is chosen
+# over the marginally better 3 as the conservative end of the plateau: more
+# shrinkage means less risk of overfitting rare levels on an unseen year.
+# Unlike a new ensemble member this survives averaging (two-member harness
+# -0.20 pooled robust against -0.23 for LightGBM alone), because it changes the
+# te_* columns that every mu family consumes. Live: v14 268.4067 -> v16 267.777
+# on an otherwise identical pipeline, i.e. -0.63 RMSE.
+PRIOR_WEIGHT = 10
 
 # name -> columns of X (or "flight", which comes from the raw data)
 TE_KEYS = {

@@ -54,5 +54,21 @@
       1.76,
       3.08
     ]
+  },
+  "residual_member": {
+    "status": "local candidate; defer promotion",
+    "weight": 0.2,
+    "scope": "matched normal departures outside Rome",
+    "four_fold_gain": 0.7070660937085904,
+    "four_fold_ci": [
+      -0.82,
+      -0.6
+    ],
+    "strong_weather_gain": 0.15851701645547678,
+    "strong_weather_ci": [
+      -0.32,
+      0.03
+    ],
+    "artifact_sha256": "dc02ea9dad7dd15ce703f4ef192b89d1ad36ac1dc39fd0e0a05532f364db6b58"
   }
 }

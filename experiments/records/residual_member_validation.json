@@ -1,0 +1,38 @@
+{
+  "recipe": "Fixed20percent residual expert, matchednormal nonRome only",
+  "comparisons": {
+    "inner": {
+      "rows": 334837,
+      "baseline_rmse": 257.46264255217966,
+      "candidate_rmse": 256.4888737914201,
+      "improvement": 0.9737687607595831
+    },
+    "dec_jun": {
+      "rows": 348738,
+      "baseline_rmse": 266.60399198903815,
+      "candidate_rmse": 265.95042778928826,
+      "improvement": 0.6535641997498942
+    },
+    "mar_sep": {
+      "rows": 348359,
+      "baseline_rmse": 225.69765402524664,
+      "candidate_rmse": 225.01062437900327,
+      "improvement": 0.68702964624336
+    },
+    "holdout": {
+      "rows": 344339,
+      "baseline_rmse": 317.1781770581315,
+      "candidate_rmse": 316.6033614666614,
+      "improvement": 0.5748155914700988
+    },
+    "strong_inner": {
+      "rows": 334837,
+      "baseline_rmse": 249.13442393386495,
+      "candidate_rmse": 248.97590691740947,
+      "improvement": 0.15851701645547678
+    }
+  },
+  "pooled_improvement": 0.7070660937085904,
+  "weight": 0.2,
+  "submitted": false
+}

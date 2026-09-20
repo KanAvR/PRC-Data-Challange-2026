@@ -41,9 +41,17 @@
     "selection": "12 matched missing-LOBT departures per airport; fixed random seed 1729; no target values used"
   },
   "active_runs": {
-    "neighbor_catboost": "3500-round weather inner run; latest2250 rounds",
-    "compact_residual": "127-leaf weather anchor inner; latest600 rounds"
+    "neighbor_catboost": "3500-round weather inner run; latest2250 rounds"
   },
   "public_only": true,
-  "future_submission_permission": "Authorized without another question; max five per day, checked against remote history."
+  "future_submission_permission": "Authorized without another question; max five per day, checked against remote history.",
+  "compact_residual": {
+    "status": "rejected",
+    "comparison": "127 versus 511 leaves; otherwise same weather anchor inner recipe",
+    "rmse_change": 2.36,
+    "day_bootstrap_ci": [
+      1.76,
+      3.08
+    ]
+  }
 }

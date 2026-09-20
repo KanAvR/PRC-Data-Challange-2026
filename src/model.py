@@ -90,10 +90,48 @@ def day_late_weight(models, X):
     return np.where(day_late_candidates(X), models["q_day"], 0.0)
 
 
-def train_mu(X, y, num_boost_round=900):
+# More departures ahead of you cannot make your taxi shorter. Constraining the
+# congestion and queue counts to be monotone increasing is free regularisation:
+# it removes a family of fits the physics forbids, which may generalise better to
+# an unseen year. Deliberately limited to the counts where "more implies slower"
+# is near-tautological -- NOT the gap_SCHED neighbour means or arrival taxi
+# means, whose direction is arguable.
+MONOTONE_UP = (
+    ["queue_ahead_apt", "queue_ahead_rwy"]
+    + [f"dep_off_apt_{w}m" for w in (5, 15, 30, 60, 120)]
+    + [f"dep_off_rwy_{w}m" for w in (5, 15, 30, 60)]
+)
+
+
+def monotone_vector(columns):
+    """LightGBM wants one entry per feature, in column order."""
+    return [1 if c in MONOTONE_UP else 0 for c in columns]
+
+
+def seasonal_weight(train_months, valid_months, tau):
+    """Up-weight training months seasonally close to the months being scored.
+
+    Every month is currently weighted equally and the model is handed `month` to
+    sort it out. The ranking set is Jan+Jul, so months adjacent to those may
+    deserve more say. Distance is circular (December is one month from January)
+    and the weight decays as exp(-d / tau), normalised to mean 1 so the effective
+    sample size does not change.
+    """
+    tm = np.asarray([int(m.split("-")[1]) for m in train_months])
+    vm = [int(m.split("-")[1]) for m in valid_months]
+    d = np.min(np.stack([np.minimum(np.abs(tm - v), 12 - np.abs(tm - v)) for v in vm]), axis=0)
+    w = np.exp(-d / float(tau))
+    return w / w.mean()
+
+
+def train_mu(X, y, num_boost_round=900, monotone=False, weight=None):
     normal = y <= TAIL_THR
-    ds = lgb.Dataset(X[normal], label=y[normal], categorical_feature=CAT_COLS)
-    return lgb.train(MU_PARAMS, ds, num_boost_round=num_boost_round)
+    ds = lgb.Dataset(X[normal], label=y[normal], categorical_feature=CAT_COLS,
+                     weight=None if weight is None else np.asarray(weight)[normal])
+    params = dict(MU_PARAMS)
+    if monotone:
+        params["monotone_constraints"] = monotone_vector(list(X.columns))
+    return lgb.train(params, ds, num_boost_round=num_boost_round)
 
 
 # LightGBM splits a categorical by sorting its levels on the node's gradient
@@ -431,6 +469,11 @@ def add_model_args(ap):
                     help="cap, in seconds, on how far the per-airport prediction "
                          "may sit from the global average before blending "
                          "(default: per_airport.PA_CLIP; 0 disables)")
+    ap.add_argument("--season-tau", type=float, default=0.0,
+                    help="up-weight training months near the scored ones; "
+                         "weight = exp(-circular month distance / tau), 0 = off")
+    ap.add_argument("--monotone", action="store_true",
+                    help="constrain congestion and queue counts to increase taxi time")
     ap.add_argument("--te", action=argparse.BooleanOptionalAction, default=True,
                     help="add out-of-fold target encodings")
     ap.add_argument("--lobt-bounds", action=argparse.BooleanOptionalAction, default=True,

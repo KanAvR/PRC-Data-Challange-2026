@@ -43,12 +43,38 @@
   "workflow": [
     "Run .venv/bin/python experiments/prepare.py to restore scripts into output/experiments and frozen v9 sources.",
     "Training data, weather caches, previous prediction artifacts and model files remain local and are not committed.",
-    "Candidate builders require immutable prior submission predictions plus the referenced experiment baselines.",
-    "Ask for explicit approval before every future leaderboard submission."
+    "Candidate builders require immutable prior submission predictions plus the referenced experiment baselines."
   ],
   "known_limitations": [
     "Original v14 ensemble recipe is unconfirmed.",
     "The 250 RMSE objective has not been reached.",
     "Separate root-level v10 edits are excluded from this checkpoint."
-  ]
+  ],
+  "research_sources": {
+    "neighbor_proxy": [
+      "ground_queue.py",
+      "test_ground_queue.py",
+      "screen_compact.py"
+    ],
+    "public_data": [
+      "route_geometry.py",
+      "screen_route_geometry.py",
+      "check_opdi_coverage.py",
+      "trace_sample.py",
+      "trace_random_sample.py",
+      "check_trace_ground.py"
+    ],
+    "tail_reporting": [
+      "reporting_features.py",
+      "screen.py",
+      "compare.py"
+    ]
+  },
+  "submission_policy": {
+    "authorized": true,
+    "limit": 5,
+    "period": "per day; check current server rules and submission history before every upload",
+    "selection": "Use completed local validation and artifact audits; avoid redundant candidates",
+    "user_instruction": "Permission to upload further candidates without asking, within five daily slots."
+  }
 }

@@ -1,0 +1,49 @@
+{
+  "ground_congestion": {
+    "status": "rejected",
+    "comparison": "weather anchor inner",
+    "rmse_change": 0.7,
+    "day_bootstrap_ci": [
+      -0.02,
+      1.63
+    ]
+  },
+  "public_route_geometry": {
+    "status": "rejected",
+    "comparison": "weather anchor inner",
+    "training_coverage": 0.9949291929017335,
+    "rmse_change": 0.3,
+    "day_bootstrap_ci": [
+      -0.13,
+      0.84
+    ]
+  },
+  "reporting_completeness": {
+    "status": "inconclusive; not promoted",
+    "comparison": "corrected v15 temporal proxy",
+    "split_rmse_changes": {
+      "inner": -0.16,
+      "dec_jun": 0.01,
+      "mar_sep": 0.01,
+      "holdout": -0.14
+    },
+    "all_split_confidence_intervals_include_zero": true,
+    "pooled_rmse_change": -0.07306993026605824,
+    "day_bootstrap_ci": [
+      -0.27,
+      0.13
+    ]
+  },
+  "public_trace_ground_coverage": {
+    "status": "direct ground timing recovery set aside",
+    "random_sample_departures": 24,
+    "usable_ground_coverage": 0,
+    "selection": "12 matched missing-LOBT departures per airport; fixed random seed 1729; no target values used"
+  },
+  "active_runs": {
+    "neighbor_catboost": "3500-round weather inner run; latest2250 rounds",
+    "compact_residual": "127-leaf weather anchor inner; latest600 rounds"
+  },
+  "public_only": true,
+  "future_submission_permission": "Authorized without another question; max five per day, checked against remote history."
+}

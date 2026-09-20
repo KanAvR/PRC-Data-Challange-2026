@@ -76,5 +76,10 @@
     "period": "per day; check current server rules and submission history before every upload",
     "selection": "Use completed local validation and artifact audits; avoid redundant candidates",
     "user_instruction": "Permission to upload further candidates without asking, within five daily slots."
+  },
+  "git_policy": {
+    "commit": "Make local commits under the configured user identity with one line of context in the commit body.",
+    "push": "Do not push unless the user explicitly asks again.",
+    "preserve": "Exclude the separate root-level v10 edits."
   }
 }

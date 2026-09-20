@@ -160,5 +160,16 @@
       -0.15,
       -0.09
     ]
+  },
+  "cat_ranking_preparation": {
+    "status": "Scripts prepared; not executed. Waiting for temporal validation before full-data fits.",
+    "training": "Paired baseline/neighbor weather CatBoost, same 3500-round CTR1 recipe.",
+    "candidate": "Immutable v17 plus fixed quarter-sized neighbor-minus-baseline correction; 0.8 multiplier on matched normal Rome rows.",
+    "audit": "Builder checks source and input hashes, IDs/schema, finite values, protected rows, and independent correction arithmetic. Runtime audit still pending.",
+    "checks_completed": [
+      "Python syntax",
+      "Tracked/runnable script identity",
+      "Experiment restoration consistency"
+    ]
   }
 }

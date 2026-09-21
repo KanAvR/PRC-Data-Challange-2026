@@ -128,5 +128,39 @@ class ProxyFeatureTest(unittest.TestCase):
         self.assertEqual(len(drop_proxy(d).columns), 1)  # idempotent
 
 
+
+class NeighbourAnchorTest(unittest.TestCase):
+    """The anchor ported from experiments/neighbor_proxy/anchor.py."""
+
+    def frame(self):
+        return pd.DataFrame({
+            "gap_AOBT_3_flt": [900.0, np.nan, np.nan, 7000.0, -50.0, np.nan],
+            "proxy_apt_AOBT_3_flt_before_30": [800.0, 1000.0, np.nan, 800.0, 800.0, 500.0],
+            "proxy_apt_AOBT_3_flt_before_30_count": [10, 10, 0, 10, 10, 4],
+            "proxy_apt_AOBT_3_flt_after_30": [600.0, 2000.0, np.nan, 600.0, 600.0, np.nan],
+            "proxy_apt_AOBT_3_flt_after_30_count": [10, 30, 0, 10, 10, 0],
+        })
+
+    def test_matches_the_reference_formula(self):
+        from model import neighbour_anchor
+        f = self.frame()
+        got = neighbour_anchor(f)
+        # own value wins where finite; peer mean is count-weighted across both
+        # directions; no peers -> 0; and everything is clipped to [0, 6000]
+        want = np.array([900.0, (1000 * 10 + 2000 * 30) / 40, 0.0, 6000.0, 0.0, 500.0])
+        np.testing.assert_allclose(got, want)
+
+    def test_is_always_finite_unlike_the_raw_column(self):
+        from model import neighbour_anchor
+        f = self.frame()
+        self.assertTrue(np.isfinite(neighbour_anchor(f)).all())
+        self.assertFalse(np.isfinite(f["gap_AOBT_3_flt"].to_numpy()).all())
+
+    def test_falls_back_to_the_clipped_column_without_proxy_features(self):
+        from model import neighbour_anchor
+        bare = self.frame()[["gap_AOBT_3_flt"]]
+        got = neighbour_anchor(bare)
+        np.testing.assert_allclose(got, [900.0, np.nan, np.nan, 6000.0, 0.0, np.nan])
+
 if __name__ == "__main__":
     unittest.main()

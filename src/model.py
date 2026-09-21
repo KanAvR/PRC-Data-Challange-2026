@@ -19,7 +19,7 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 
-from features import CAT_COLS
+from features import CAT_COLS, PROXY_MAX_SEC
 
 TAIL_THR = 6000
 N_SEEDS = 5  # classifier AUC swings ~0.015 between seeds, worth ~7 RMSE points
@@ -172,6 +172,30 @@ def train_mu_nocat(X, y, num_boost_round=1500):
 # prediction quality -- see the mu-change caveat in NEXT_STEPS.md. Opt-in only.
 ANCHOR_DEFAULT = "gap_AOBT_3_flt"
 
+# The teammate's v17/v18 chain anchors on a different quantity, and the
+# difference was not buildable here until the proxy features landed: where
+# AOBT_3 is absent it falls back to the count-weighted mean of nearby
+# departures' AOBT_3 gaps, then clips to [0, PROXY_MAX_SEC]. ANCHOR_DEFAULT is
+# NaN on those ~1.5% of rows, so train_mu_anchor drops them to the plain target
+# -- exactly the unmatched rows where an anchor would help most. The clip also
+# stops a single long gap from defining a residual target.
+# Ported from experiments/neighbor_proxy/anchor.py::normal_anchor.
+def neighbour_anchor(X):
+    own = X["gap_AOBT_3_flt"].to_numpy(dtype=float)
+    total = np.zeros(len(X))
+    count = np.zeros(len(X))
+    for direction in ("before", "after"):
+        key = f"proxy_apt_AOBT_3_flt_{direction}_30"
+        if key not in X.columns:  # --no-proxy: no peers to fall back on
+            return np.clip(own, 0, PROXY_MAX_SEC)
+        mean = X[key].to_numpy(dtype=float)
+        n = X[key + "_count"].to_numpy(dtype=float)
+        ok = np.isfinite(mean) & np.isfinite(n) & (n > 0)
+        total[ok] += mean[ok] * n[ok]
+        count[ok] += n[ok]
+    peer = np.divide(total, count, out=np.zeros(len(X)), where=count > 0)
+    return np.clip(np.where(np.isfinite(own), own, peer), 0, PROXY_MAX_SEC)
+
 
 class _AnchorMu:
     """Adds the anchor back, so the booster only has to learn the residual."""
@@ -197,6 +221,26 @@ def train_mu_anchor(X, y, anchor=ANCHOR_DEFAULT, num_boost_round=900):
 
 def train_mu_anchor_lobt(X, y):
     return train_mu_anchor(X, y, anchor="gap_LOBT_flt")
+
+
+class _NbrAnchorMu(_AnchorMu):
+    """Anchor computed from the frame rather than read from a column."""
+
+    def __init__(self, booster):
+        self.booster, self.anchor = booster, None
+
+    def predict(self, X):
+        a = neighbour_anchor(X)
+        return np.clip(self.booster.predict(X) + a, 0, None)
+
+
+def train_mu_anchor_nbr(X, y, num_boost_round=900):
+    """LightGBM on y - neighbour_anchor(X). The anchor is always finite, so
+    unlike train_mu_anchor there is no plain-target half to keep consistent."""
+    normal = y <= TAIL_THR
+    a = neighbour_anchor(X)
+    ds = lgb.Dataset(X[normal], label=y[normal] - a[normal], categorical_feature=CAT_COLS)
+    return _NbrAnchorMu(lgb.train(MU_PARAMS, ds, num_boost_round=num_boost_round))
 
 
 # Other GBM families for mu. Each handles the high-cardinality categoricals
@@ -339,7 +383,7 @@ def train_mu_neural(X, y):
 MU_FAMILIES = {"lgb": train_mu, "cat": train_mu_cat, "xgb": train_mu_xgb,
                "cat_note": train_mu_cat_note, "cat_ctr1": train_mu_cat_ctr1,
                "lgb_nocat": train_mu_nocat, "lgb_anchor": train_mu_anchor,
-               "lgb_anchor_lobt": train_mu_anchor_lobt, "neural": train_mu_neural,
+               "lgb_anchor_lobt": train_mu_anchor_lobt, "lgb_anchor_nbr": train_mu_anchor_nbr, "neural": train_mu_neural,
                "pa": train_mu_per_airport}
 
 

@@ -1,0 +1,71 @@
+{
+  "comparison": "corrected two-model weather v17 proxy; not exact production ensemble",
+  "weight": 0.25,
+  "Rome_matched_delta_scale": 0.8,
+  "baseline_rmse": 249.13442393386495,
+  "candidate_rmse": 247.8832555947158,
+  "by_airport": [
+    {
+      "airport": "EDDF",
+      "rows": 36567,
+      "base_rmse": 151.9098468099695,
+      "candidate_rmse": 151.3302883715053
+    },
+    {
+      "airport": "EDDM",
+      "rows": 25943,
+      "base_rmse": 151.11951508558292,
+      "candidate_rmse": 150.34247292391677
+    },
+    {
+      "airport": "EGLL",
+      "rows": 38784,
+      "base_rmse": 208.5335654967691,
+      "candidate_rmse": 206.97310623316207
+    },
+    {
+      "airport": "EHAM",
+      "rows": 40473,
+      "base_rmse": 152.46218778187986,
+      "candidate_rmse": 151.8650609681607
+    },
+    {
+      "airport": "LEBL",
+      "rows": 28763,
+      "base_rmse": 202.28029578404536,
+      "candidate_rmse": 200.6662679892058
+    },
+    {
+      "airport": "LEMD",
+      "rows": 33880,
+      "base_rmse": 163.61936568287126,
+      "candidate_rmse": 163.12093214391408
+    },
+    {
+      "airport": "LFPG",
+      "rows": 38873,
+      "base_rmse": 218.07101684069252,
+      "candidate_rmse": 216.96878372320813
+    },
+    {
+      "airport": "LIRF",
+      "rows": 26162,
+      "base_rmse": 498.70018615523355,
+      "candidate_rmse": 497.8899001836881
+    },
+    {
+      "airport": "LSZH",
+      "rows": 21625,
+      "base_rmse": 197.8229303766579,
+      "candidate_rmse": 197.3578601026996
+    },
+    {
+      "airport": "LTFM",
+      "rows": 43767,
+      "base_rmse": 352.34885640986454,
+      "candidate_rmse": 349.2469669350196
+    }
+  ],
+  "submitted": false,
+  "remaining_gate": "Require additional temporal splits and full artifact audit before promotion."
+}

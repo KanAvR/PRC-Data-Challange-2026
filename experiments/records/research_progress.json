@@ -1,0 +1,209 @@
+{
+  "ground_congestion": {
+    "status": "rejected",
+    "comparison": "weather anchor inner",
+    "rmse_change": 0.7,
+    "day_bootstrap_ci": [
+      -0.02,
+      1.63
+    ]
+  },
+  "public_route_geometry": {
+    "status": "rejected",
+    "comparison": "weather anchor inner",
+    "training_coverage": 0.9949291929017335,
+    "rmse_change": 0.3,
+    "day_bootstrap_ci": [
+      -0.13,
+      0.84
+    ]
+  },
+  "reporting_completeness": {
+    "status": "inconclusive; not promoted",
+    "comparison": "corrected v15 temporal proxy",
+    "split_rmse_changes": {
+      "inner": -0.16,
+      "dec_jun": 0.01,
+      "mar_sep": 0.01,
+      "holdout": -0.14
+    },
+    "all_split_confidence_intervals_include_zero": true,
+    "pooled_rmse_change": -0.07306993026605824,
+    "day_bootstrap_ci": [
+      -0.27,
+      0.13
+    ]
+  },
+  "public_trace_ground_coverage": {
+    "status": "direct ground timing recovery set aside",
+    "random_sample_departures": 24,
+    "usable_ground_coverage": 0,
+    "selection": "12 matched missing-LOBT departures per airport; fixed random seed 1729; no target values used"
+  },
+  "active_runs": {
+    "cat_temporal_baseline": "Holdout complete and audited; dec_jun running, then mar_sep.",
+    "cat_temporal_neighbor": "Holdout complete and paired comparison passed; dec_jun running, then mar_sep."
+  },
+  "public_only": true,
+  "future_submission_permission": "Authorized without another question; max five per day, checked against remote history.",
+  "compact_residual": {
+    "status": "rejected",
+    "comparison": "127 versus 511 leaves; otherwise same weather anchor inner recipe",
+    "rmse_change": 2.36,
+    "day_bootstrap_ci": [
+      1.76,
+      3.08
+    ]
+  },
+  "residual_member": {
+    "status": "local candidate; defer promotion",
+    "weight": 0.2,
+    "scope": "matched normal departures outside Rome",
+    "four_fold_gain": 0.7070660937085904,
+    "four_fold_ci": [
+      -0.82,
+      -0.6
+    ],
+    "strong_weather_gain": 0.15851701645547678,
+    "strong_weather_ci": [
+      -0.32,
+      0.03
+    ],
+    "artifact_sha256": "dc02ea9dad7dd15ce703f4ef192b89d1ad36ac1dc39fd0e0a05532f364db6b58"
+  },
+  "neighbor_catboost_inner": {
+    "comparison": "corrected two-model weather v17 proxy; not exact production ensemble",
+    "weight": 0.25,
+    "Rome_matched_delta_scale": 0.8,
+    "baseline_rmse": 249.13442393386495,
+    "candidate_rmse": 247.8832555947158,
+    "by_airport": [
+      {
+        "airport": "EDDF",
+        "rows": 36567,
+        "base_rmse": 151.9098468099695,
+        "candidate_rmse": 151.3302883715053
+      },
+      {
+        "airport": "EDDM",
+        "rows": 25943,
+        "base_rmse": 151.11951508558292,
+        "candidate_rmse": 150.34247292391677
+      },
+      {
+        "airport": "EGLL",
+        "rows": 38784,
+        "base_rmse": 208.5335654967691,
+        "candidate_rmse": 206.97310623316207
+      },
+      {
+        "airport": "EHAM",
+        "rows": 40473,
+        "base_rmse": 152.46218778187986,
+        "candidate_rmse": 151.8650609681607
+      },
+      {
+        "airport": "LEBL",
+        "rows": 28763,
+        "base_rmse": 202.28029578404536,
+        "candidate_rmse": 200.6662679892058
+      },
+      {
+        "airport": "LEMD",
+        "rows": 33880,
+        "base_rmse": 163.61936568287126,
+        "candidate_rmse": 163.12093214391408
+      },
+      {
+        "airport": "LFPG",
+        "rows": 38873,
+        "base_rmse": 218.07101684069252,
+        "candidate_rmse": 216.96878372320813
+      },
+      {
+        "airport": "LIRF",
+        "rows": 26162,
+        "base_rmse": 498.70018615523355,
+        "candidate_rmse": 497.8899001836881
+      },
+      {
+        "airport": "LSZH",
+        "rows": 21625,
+        "base_rmse": 197.8229303766579,
+        "candidate_rmse": 197.3578601026996
+      },
+      {
+        "airport": "LTFM",
+        "rows": 43767,
+        "base_rmse": 352.34885640986454,
+        "candidate_rmse": 349.2469669350196
+      }
+    ],
+    "submitted": false,
+    "remaining_gate": "Require additional temporal splits and full artifact audit before promotion.",
+    "rmse_change_ci": [
+      -1.69,
+      -0.87
+    ],
+    "status": "Promising; additional paired temporal validation running. No upload."
+  },
+  "long_residual": {
+    "status": "Deferred behind stronger CatBoost evidence; not promoted",
+    "900_round_control": "Reproduced to absolute tolerance 1e-7",
+    "standalone_rmse_change": 0.14,
+    "standalone_ci": [
+      -0.01,
+      0.29
+    ],
+    "v17_proxy_rmse_change": -0.11766519182799584,
+    "v17_proxy_ci": [
+      -0.15,
+      -0.09
+    ]
+  },
+  "cat_ranking_preparation": {
+    "status": "Scripts prepared; not executed. Waiting for temporal validation before full-data fits.",
+    "training": "Paired baseline/neighbor weather CatBoost, same 3500-round CTR1 recipe.",
+    "candidate": "Immutable v17 plus fixed quarter-sized neighbor-minus-baseline correction; 0.8 multiplier on matched normal Rome rows.",
+    "audit": "Builder checks source and input hashes, IDs/schema, finite values, protected rows, and independent correction arithmetic. Runtime audit still pending.",
+    "checks_completed": [
+      "Python syntax",
+      "Tracked/runnable script identity",
+      "Experiment restoration consistency"
+    ]
+  },
+  "cat_temporal_two_splits": {
+    "comparison": "Fixed .25 paired weather CatBoost change transferred to corrected no-weather v17 temporal proxy; not an exact production ensemble.",
+    "splits": [
+      {
+        "split": "inner",
+        "rows": 334837,
+        "base_rmse": 257.46264255217966,
+        "candidate_rmse": 256.7814248912794,
+        "normal_raw_cat_baseline_rmse": 213.23147968340342,
+        "normal_raw_cat_neighbor_rmse": 210.467940605898
+      },
+      {
+        "split": "holdout",
+        "rows": 344339,
+        "base_rmse": 317.1781770581315,
+        "candidate_rmse": 316.51387405226944,
+        "normal_raw_cat_baseline_rmse": 219.05346627166497,
+        "normal_raw_cat_neighbor_rmse": 215.22584865642122
+      }
+    ],
+    "verdict": "wins (pooled robust CI below zero over 2 splits)",
+    "submitted": false,
+    "status": "Two completed splits improve; dec_jun and mar_sep still pending; no upload.",
+    "rmse_change_ci": {
+      "holdout": [
+        -0.93,
+        -0.43
+      ],
+      "pooled": [
+        -0.95,
+        -0.44
+      ]
+    }
+  }
+}

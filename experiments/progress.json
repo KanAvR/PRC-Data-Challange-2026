@@ -1,0 +1,91 @@
+{
+  "branch": "lobt-refinement",
+  "frozen_source_commit": "4290754",
+  "best_submission": "v18",
+  "live_rmse": 265.5251,
+  "previous_best": {
+    "submission": "v17",
+    "rmse": 265.7779
+  },
+  "live_improvement": 0.2528,
+  "recipe": "Start with immutable v17; blend a 20-percent residual expert into matched normal non-Rome rows strictly inside existing support. Preserve other rows.",
+  "local_validation": "Four temporal splits: pooled proxy gain 0.7070660937 RMSE. Strong weather inner proxy gain 0.1585170165 with confidence interval crossing zero. Live gain verified at 0.2528.",
+  "artifact": "output/submitting_v18.parquet",
+  "artifact_sha256": "dc02ea9dad7dd15ce703f4ef192b89d1ad36ac1dc39fd0e0a05532f364db6b58",
+  "source_paths": {
+    "neighbor_proxy": [
+      "features.py",
+      "anchor.py",
+      "normal_correction.py",
+      "test_features.py",
+      "test_normal_correction.py",
+      "screen.py",
+      "screen_cat.py",
+      "build_candidate.py",
+      "build_anchor_candidate.py",
+      "audit_anchor_candidate.py",
+      "recheck_tail_scaling.py",
+      "strong_check_corrected.py"
+    ],
+    "tail_neighbor": [
+      "screen.py",
+      "context_features.py",
+      "test_context.py",
+      "build_predictions.py",
+      "build_candidate.py"
+    ],
+    "airport_experts": [
+      "screen.py",
+      "weather_subset.py",
+      "build_rome_predictions.py"
+    ]
+  },
+  "workflow": [
+    "Run .venv/bin/python experiments/prepare.py to restore scripts into output/experiments and frozen v9 sources.",
+    "Training data, weather caches, previous prediction artifacts and model files remain local and are not committed.",
+    "Candidate builders require immutable prior submission predictions plus the referenced experiment baselines."
+  ],
+  "known_limitations": [
+    "Original v14 ensemble recipe is unconfirmed.",
+    "The 250 RMSE objective has not been reached.",
+    "Separate root-level v10 edits are excluded from this checkpoint."
+  ],
+  "research_sources": {
+    "neighbor_proxy": [
+      "ground_queue.py",
+      "test_ground_queue.py",
+      "screen_compact.py"
+    ],
+    "public_data": [
+      "route_geometry.py",
+      "screen_route_geometry.py",
+      "check_opdi_coverage.py",
+      "trace_sample.py",
+      "trace_random_sample.py",
+      "check_trace_ground.py"
+    ],
+    "tail_reporting": [
+      "reporting_features.py",
+      "screen.py",
+      "compare.py"
+    ]
+  },
+  "submission_policy": {
+    "authorized": true,
+    "limit": 5,
+    "period": "per day; check current server rules and submission history before every upload",
+    "selection": "Use completed local validation and artifact audits; avoid redundant candidates",
+    "user_instruction": "Permission to upload further candidates without asking, within five daily slots."
+  },
+  "git_policy": {
+    "commit": "Make local commits under the configured user identity with one line of context in the commit body.",
+    "push": "Do not push unless the user explicitly asks again.",
+    "preserve": "Exclude the separate root-level v10 edits."
+  },
+  "training_status": {
+    "state": "stopped_on_user_request",
+    "instruction": "Upload fast stop all tests",
+    "catboost_full_fits": "Both interrupted; preserve snapshots. No restart authorized since stop request.",
+    "pending_candidate": "CatBoost neighbor correction passed four temporal splits but full prediction files remain incomplete."
+  }
+}

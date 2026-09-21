@@ -6,13 +6,15 @@ that passed validation is reproduced exactly.
 import argparse
 import sys
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
 sys.path.insert(0, "src")
 from data import align_categoricals, flight_ids, load_training
 from constraints import check_lobt_support, project_lobt
-from high_lobt import train_high_lobt
+from high_lobt import APPLY_GAP_SEC, train_high_lobt
 from encode import add_target_encodings
 from featcache import build_features_cached
 from features import drop_proxy
@@ -65,13 +67,19 @@ def main():
     print("Predicting on ranking DEP rows...")
     p = predict_tail_proba(clf, ranking_dep)
     q_day = day_late_weight(clf, ranking_dep) if args.day_late else None
-    preds = combine(mu_pred, p, analytic_tail_value(ranking_dep), q_day=q_day)
+    v = analytic_tail_value(ranking_dep)
+    gap_lobt = ranking_dep["gap_LOBT_flt"].values.astype(float)
+    preds = combine(mu_pred, p, v, q_day=q_day)
     if args.lobt_bounds:
-        preds = project_lobt(preds, ranking_dep["gap_LOBT_flt"].values)
+        preds = project_lobt(preds, gap_lobt)
+    high_pred = np.full(len(preds), np.nan)
     if args.high_lobt:
         print("Training matched long-taxi specialist...", flush=True)
         specialist = train_high_lobt(train_data, y_train)
-        preds = specialist.refine(preds, ranking_dep)
+        high = gap_lobt > APPLY_GAP_SEC
+        if high.any():
+            high_pred[high] = specialist.predict(ranking_dep.loc[high])
+            preds[high] = high_pred[high]
 
     pred_df = pd.DataFrame({"MVT_ID_mvt": ranking_ids, "TAXITIME_SEC_mvt": preds})
 
@@ -86,6 +94,20 @@ def main():
     submission["MVT_ID_mvt"] = submission["MVT_ID_mvt"].astype("float64")
 
     submission.to_parquet(args.out, index=False)
+    # The pieces a post-hoc correction needs, saved beside the submission the way
+    # refine_submission.py writes its audit files. predict.py emits only ids and
+    # predictions, so without this a mu-keyed correction cannot be applied to a
+    # finished submission without retraining the whole ensemble.
+    parts = pd.DataFrame({
+        "MVT_ID_mvt": ranking_ids, "mu": mu_pred, "p": p, "v": v,
+        "q_day": np.zeros(len(preds)) if q_day is None else q_day,
+        "day_late": bool(args.day_late), "gap_LOBT_flt": gap_lobt,
+        "lobt_bounds": bool(args.lobt_bounds), "high_lobt": bool(args.high_lobt),
+        "high_lobt_pred": high_pred, "pred": preds,
+    })
+    parts_path = str(Path(args.out).with_suffix("")) + ".parts.parquet"
+    parts.to_parquet(parts_path, index=False)
+    print(f"Wrote {parts_path} with {len(parts)} rows")
     print(f"Wrote {args.out} with {len(submission)} rows")
     print(f"  predictions above 6000s: {(preds > 6000).sum()}")
     print(submission["TAXITIME_SEC_mvt"].describe())

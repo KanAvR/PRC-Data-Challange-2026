@@ -1,0 +1,16 @@
+{
+  "version": "v19",
+  "sha256": "9841916cec5956a9a213b2d1a7f5e52fcf7256343fe8d7dab38bd2f524e0600a",
+  "md5": "ab1380855b2ae6384296bc1f40953f1b",
+  "bytes": 4707625,
+  "uploaded_at": "2026-09-21 12:08:03+00:00",
+  "verified": true,
+  "source_version": "v18",
+  "local_pooled_gain": 0.4697529238713969,
+  "authorization": "User authorized upload for rounded improvement >=0.5; four temporal splits passed.",
+  "status": "Succeeded",
+  "used_pairs": 344841,
+  "live_rmse": 265.0574,
+  "previous_best_rmse": 265.5251,
+  "live_improvement": 0.4677
+}

@@ -1,0 +1,27 @@
+{
+  "source_version": 18,
+  "source_sha256": "dc02ea9dad7dd15ce703f4ef192b89d1ad36ac1dc39fd0e0a05532f364db6b58",
+  "source_live_rmse": 265.5251,
+  "candidate": "output/submitting_v18_cat_neighbor_candidate.parquet",
+  "sha256": "9841916cec5956a9a213b2d1a7f5e52fcf7256343fe8d7dab38bd2f524e0600a",
+  "rows": 344841,
+  "weight": 0.25,
+  "matched_normal_delta_scale": 0.8,
+  "input_sha256": {
+    "baseline": "88e5377308312346195d945366653df841775b5732ded7547ae3266e83c88f42",
+    "neighbor": "d1450ffeab752b92f946b102444fc824f972cb76eb42c7f9460a9daedbd06411"
+  },
+  "changed_rows": 344519,
+  "protected_rows": 305,
+  "delta_quantiles_sec": [
+    -300.94472153186825,
+    -41.559304008736376,
+    -0.3936926271245511,
+    42.56926772056724,
+    327.06762324606916
+  ],
+  "arithmetic_audit_passed": true,
+  "uploaded": true,
+  "limitations": "Original v14 ensemble is unknown; normal-share probabilities approximate its preserved mixture. Temporal validation and fresh remote quota/version checks remain separate gates.",
+  "version": "v19"
+}

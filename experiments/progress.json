@@ -1,17 +1,17 @@
 {
   "branch": "lobt-refinement",
   "frozen_source_commit": "4290754",
-  "best_submission": "v18",
-  "live_rmse": 265.5251,
+  "best_submission": "v19",
+  "live_rmse": 265.0574,
   "previous_best": {
-    "submission": "v17",
-    "rmse": 265.7779
+    "submission": "v18",
+    "rmse": 265.5251
   },
-  "live_improvement": 0.2528,
-  "recipe": "Start with immutable v17; blend a 20-percent residual expert into matched normal non-Rome rows strictly inside existing support. Preserve other rows.",
-  "local_validation": "Four temporal splits: pooled proxy gain 0.7070660937 RMSE. Strong weather inner proxy gain 0.1585170165 with confidence interval crossing zero. Live gain verified at 0.2528.",
-  "artifact": "output/submitting_v18.parquet",
-  "artifact_sha256": "dc02ea9dad7dd15ce703f4ef192b89d1ad36ac1dc39fd0e0a05532f364db6b58",
+  "live_improvement": 0.4677,
+  "recipe": "Immutable v18 plus a quarter of the paired neighbor-minus-baseline CatBoost correction, scaled by 0.8 on matched normal rows. Preserve long-gap and boundary predictions; weight missing-LOBT corrections by the normal contribution.",
+  "local_validation": "Four temporal splits against the v18 proxy: pooled RMSE gain 0.4697529239 (rounds to 0.5). Verified leaderboard gain 0.4677.",
+  "artifact": "output/submitting_v19.parquet",
+  "artifact_sha256": "9841916cec5956a9a213b2d1a7f5e52fcf7256343fe8d7dab38bd2f524e0600a",
   "source_paths": {
     "neighbor_proxy": [
       "features.py",
@@ -83,9 +83,8 @@
     "preserve": "Exclude the separate root-level v10 edits."
   },
   "training_status": {
-    "state": "stopped_on_user_request",
-    "instruction": "Upload fast stop all tests",
-    "catboost_full_fits": "Both interrupted; preserve snapshots. No restart authorized since stop request.",
-    "pending_candidate": "CatBoost neighbor correction passed four temporal splits but full prediction files remain incomplete."
+    "state": "completed",
+    "catboost_full_fits": "Both paired CatBoost models completed 3500 iterations; candidate passed artifact checks.",
+    "submission": "v19 uploaded and verified; live RMSE 265.0574."
   }
 }

@@ -34,7 +34,7 @@ from data import align_categoricals, load_training
 from features import drop_proxy
 from constraints import check_lobt_support, project_lobt
 from high_lobt import APPLY_GAP_SEC, train_high_lobt
-from encode import add_target_encodings
+from encode import KEY_SETS, add_target_encodings
 from model import (MU_FAMILIES, seasonal_weight, TAIL_THR, add_model_args, combine_mu,
                    analytic_tail_value, combine, day_late_weight,
                    predict_tail_proba, train_tail_clf)
@@ -87,7 +87,9 @@ def run_split(name, X, y, meta, args):
     align_categoricals(X_tr, X_va)
     if args.te:
         add_target_encodings(X_tr, y_tr, meta.loc[tr, "month"].values, meta.loc[tr, "flight"].values,
-                             X_va, meta.loc[va, "flight"].values)
+                             X_va, meta.loc[va, "flight"].values,
+                             keys=KEY_SETS[args.te_keys],
+                             counts=args.te_counts, fold_size=args.te_fold_size)
     print(f"\n[{name}] train={len(X_tr)} valid={len(X_va)} "
           f"tail={int((y_tr > TAIL_THR).sum())}/{int((y_va > TAIL_THR).sum())}", flush=True)
 

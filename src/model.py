@@ -526,6 +526,12 @@ def add_model_args(ap):
                          "whether the models see them")
     ap.add_argument("--te", action=argparse.BooleanOptionalAction, default=True,
                     help="add out-of-fold target encodings")
+    ap.add_argument("--te-keys", default="base",
+                    help="named set of target-encoding keys (encode.KEY_SETS)")
+    ap.add_argument("--te-counts", action=argparse.BooleanOptionalAction, default=True,
+                    help="add the _n log-count column beside each encoding")
+    ap.add_argument("--te-fold-size", type=int, default=1, metavar="MONTHS",
+                    help="months per out-of-fold encoding block (1 = shipped)")
     ap.add_argument("--lobt-bounds", action=argparse.BooleanOptionalAction, default=True,
                     help="project predictions onto the observed LOBT matching interval")
     ap.add_argument("--high-lobt", action=argparse.BooleanOptionalAction, default=True,

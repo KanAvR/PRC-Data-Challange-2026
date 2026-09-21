@@ -39,6 +39,42 @@ TE_KEYS = {
     "te_rwy_hour": ["ADEP_RUNWAY", "hour_int"],
 }
 
+# Candidate additions, opt-in via --te-keys. Each crosses two things the shipped
+# set only holds separately: the stand-to-runway route by time of day, the
+# aircraft type by the runway it is sent to, and the operator by runway (an
+# airline's stands cluster, so its taxi differs by departure direction).
+EXTRA_TE_KEYS = {
+    "te_stand_rwy_hour": ["ADEP_STAND_RUNWAY", "hour_int"],
+    "te_actype_rwy": ["ADEP_AIRCRAFT_TYPE", "RUNWAY_mvt"],
+    "te_airline_rwy": ["ADEP_AIRLINE", "RUNWAY_mvt"],
+}
+
+KEY_SETS = {
+    "base": list(TE_KEYS),
+    "plus_stand_rwy_hour": list(TE_KEYS) + ["te_stand_rwy_hour"],
+    "plus_actype_rwy": list(TE_KEYS) + ["te_actype_rwy"],
+    "plus_airline_rwy": list(TE_KEYS) + ["te_airline_rwy"],
+    "plus_all": list(TE_KEYS) + list(EXTRA_TE_KEYS),
+    # ablations: does each shipped key earn its place?
+    "drop_flight": [k for k in TE_KEYS if k != "te_flight"],
+    "drop_rwy_hour": [k for k in TE_KEYS if k != "te_rwy_hour"],
+    "drop_actype": [k for k in TE_KEYS if k != "te_actype"],
+}
+
+ALL_KEYS = {**TE_KEYS, **EXTRA_TE_KEYS}
+
+
+def _fold_ids(folds, size):
+    """Coarsen the out-of-fold grouping. size=1 is the shipped month-level
+    scheme; larger blocks make a row's encoding exclude more neighbouring
+    months, which is stricter but leaves less data behind each level."""
+    folds = np.asarray(folds)
+    if size <= 1:
+        return folds
+    uniq = np.unique(folds)  # month strings sort chronologically
+    block = {m: i // size for i, m in enumerate(uniq)}
+    return np.array([block[f] for f in folds])
+
 
 def _key(X, flight, cols):
     parts = []
@@ -79,10 +115,20 @@ def _encode(k_fit, y, folds, k_apply):
     return (fit_mean, np.log1p(fit_n)), (app_mean, np.log1p(app_n))
 
 
-def add_target_encodings(X_fit, y_fit, folds, flight_fit, X_apply, flight_apply):
-    """Add te_* columns to both frames in place."""
-    for name, cols in TE_KEYS.items():
-        (fm, fn), (am, an) = _encode(_key(X_fit, flight_fit, cols), y_fit, np.asarray(folds),
+def add_target_encodings(X_fit, y_fit, folds, flight_fit, X_apply, flight_apply,
+                         keys=None, counts=True, fold_size=1):
+    """Add te_* columns to both frames in place.
+
+    keys: names from KEY_SETS' vocabulary (default: the shipped TE_KEYS).
+    counts: also add the _n log-count column beside each encoding.
+    fold_size: months per out-of-fold block (1 = the shipped scheme).
+    """
+    names = list(TE_KEYS) if keys is None else list(keys)
+    ids = _fold_ids(folds, fold_size)
+    for name in names:
+        cols = ALL_KEYS[name]
+        (fm, fn), (am, an) = _encode(_key(X_fit, flight_fit, cols), y_fit, ids,
                                      _key(X_apply, flight_apply, cols))
-        X_fit[name], X_fit[name + "_n"] = fm, fn
-        X_apply[name], X_apply[name + "_n"] = am, an
+        X_fit[name], X_apply[name] = fm, am
+        if counts:
+            X_fit[name + "_n"], X_apply[name + "_n"] = fn, an

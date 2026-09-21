@@ -15,7 +15,7 @@ sys.path.insert(0, "src")
 from data import align_categoricals, flight_ids, load_training
 from constraints import check_lobt_support, project_lobt
 from high_lobt import APPLY_GAP_SEC, train_high_lobt
-from encode import add_target_encodings
+from encode import KEY_SETS, add_target_encodings
 from featcache import build_features_cached
 from features import drop_proxy
 from model import (MU_FAMILIES, add_model_args, analytic_tail_value, combine,
@@ -52,7 +52,9 @@ def main():
     align_categoricals(train_data, ranking_dep)
     if args.te:
         add_target_encodings(train_data, y_train, meta["month"].values, meta["flight"].values,
-                             ranking_dep, flight_ids(ranking_raw.loc[dep_mask]))
+                             ranking_dep, flight_ids(ranking_raw.loc[dep_mask]),
+                             keys=KEY_SETS[args.te_keys],
+                             counts=args.te_counts, fold_size=args.te_fold_size)
 
     mus = []
     for fam in args.mu:

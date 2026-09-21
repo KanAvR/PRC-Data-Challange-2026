@@ -6,6 +6,20 @@ from weather import weather_features
 
 WINDOWS_MIN = [15, 30, 60]
 
+# Neighbour taxi-proxy settings. PROXY_MAX_SEC keeps the proxy a *normal* taxi
+# estimate; it is a module constant rather than an argument so training and
+# ranking cannot be built with different filters.
+PROXY_MAX_SEC = 6000
+PROXY_SOURCES = ["AOBT_3_flt", "LOBT_flt"]
+PROXY_WINDOWS = [15, 30, 60]
+PROXY_COUNT_WINDOW = 30
+
+PROXY_COLS = [
+    f"proxy_{scope}_{src}_{d}_{w}{suffix}"
+    for scope in ("apt", "rwy") for src in PROXY_SOURCES for d in ("before", "after")
+    for w, suffix in [(w, "") for w in PROXY_WINDOWS] + [(PROXY_COUNT_WINDOW, "_count")]
+]
+
 AIRPORT_TZ = {
     "EDDF": "Europe/Berlin", "EDDM": "Europe/Berlin", "EGLL": "Europe/London",
     "EHAM": "Europe/Amsterdam", "LEBL": "Europe/Madrid", "LEMD": "Europe/Madrid",
@@ -220,6 +234,63 @@ def _arr_context(g: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _dep_proxy(g: pd.DataFrame) -> pd.DataFrame:
+    """Nearby departures' own taxi proxies: how long is taxi here, right now.
+
+    _arr_context already gives the arrival-side version of this, because ARR rows
+    keep TAXITIME_SEC_mvt in ranking.parquet. DEP rows do not, but MVT_TIME minus
+    a flight-plan off-block time is the same quantity, and AOBT_3/LOBT survive on
+    98.5% of ranking DEP rows against 99.1-99.3% of training ones -- so this is
+    the departure-side counterpart that was missing, not a serve-time fiction.
+
+    _dep_dynamics deliberately keys off scheduled time only; that constraint is
+    about TAXITIME_SEC_mvt being stripped on DEP rows, which this does not touch.
+
+    Self is excluded: _bounds is a strict [t-w, t) or (t, t+w]. Departures
+    sharing an exact second are excluded from each other's window too, which
+    thins the 15-minute windows at peak times, identically in training and
+    ranking.
+
+    Ported from the teammate's experiments/neighbor_proxy/features.py, which
+    imported _window_mean and _window_counts from a frozen copy of this file.
+    """
+    out = pd.DataFrame(index=g.index)
+    for col in PROXY_COLS:
+        out[col] = np.nan
+
+    t = g["MVT_TIME_UTC_mvt"].values.astype("datetime64[s]")
+    # RUNWAY_mvt is non-null on every row of training and ranking alike; the
+    # fillna matches _dep_dynamics so an unknown runway would pool, not vanish.
+    rwy = g["RUNWAY_mvt"].fillna("missing").astype(str).values
+
+    gaps = {}
+    for src in PROXY_SOURCES:
+        gap = (g["MVT_TIME_UTC_mvt"] - g[src]).dt.total_seconds().values
+        # out-of-range gaps become NaN and drop out of _window_mean's average
+        gaps[src] = np.where((gap >= 0) & (gap <= PROXY_MAX_SEC), gap, np.nan)
+
+    scopes = [("apt", [np.ones(len(g), dtype=bool)]),
+              ("rwy", [rwy == r for r in pd.unique(rwy)])]
+    for scope, selections in scopes:
+        for sel in selections:
+            ts = t[sel]
+            for src in PROXY_SOURCES:
+                gv = gaps[src][sel]
+                finite = np.isfinite(gv)
+                for after in (False, True):
+                    d = "after" if after else "before"
+                    for w, v in _window_mean(ts, gv, ts, PROXY_WINDOWS, after=after).items():
+                        out.loc[sel, f"proxy_{scope}_{src}_{d}_{w}"] = v
+                    n = _window_counts(ts[finite], ts, [PROXY_COUNT_WINDOW], after=after)
+                    out.loc[sel, f"proxy_{scope}_{src}_{d}_{PROXY_COUNT_WINDOW}_count"] =                         n[PROXY_COUNT_WINDOW]
+    return out
+
+
+def drop_proxy(frame: pd.DataFrame) -> pd.DataFrame:
+    """The --no-proxy arm: same cache build, without the neighbour-proxy columns."""
+    return frame.drop(columns=[c for c in PROXY_COLS if c in frame.columns])
+
+
 def _secs_since_prev_arr_block(df: pd.DataFrame) -> pd.Series:
     """Seconds from the last arrival that parked on this stand to this takeoff.
     Bounds how long the aircraft could have been off-block."""
@@ -318,8 +389,11 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     dyn_parts = [_dep_dynamics(g) for _, g in dep_only.groupby("apt", observed=True)]
     dyn = pd.concat(dyn_parts).reindex(df.index)
 
+    proxy_parts = [_dep_proxy(g) for _, g in dep_only.groupby("apt", observed=True)]
+    proxy = pd.concat(proxy_parts).reindex(df.index)
+
     wx = weather_features(df["apt"].values, df["MVT_TIME_UTC_mvt"].values, df["RUNWAY_mvt"].values)
     wx.index = df.index
 
-    feats = pd.concat([feats, counts, arr_ctx, queue, dyn, wx], axis=1)
+    feats = pd.concat([feats, counts, arr_ctx, queue, dyn, proxy, wx], axis=1)
     return feats

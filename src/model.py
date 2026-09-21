@@ -474,6 +474,12 @@ def add_model_args(ap):
                          "weight = exp(-circular month distance / tau), 0 = off")
     ap.add_argument("--monotone", action="store_true",
                     help="constrain congestion and queue counts to increase taxi time")
+    ap.add_argument("--proxy", action=argparse.BooleanOptionalAction, default=False,
+                    help="use the neighbour taxi-proxy features (features.PROXY_COLS): "
+                         "nearby departures' MVT_TIME-to-AOBT_3/LOBT gaps, per airport "
+                         "and per runway. Built unconditionally, so both arms of a "
+                         "comparison share one feature cache; this flag only chooses "
+                         "whether the models see them")
     ap.add_argument("--te", action=argparse.BooleanOptionalAction, default=True,
                     help="add out-of-fold target encodings")
     ap.add_argument("--lobt-bounds", action=argparse.BooleanOptionalAction, default=True,

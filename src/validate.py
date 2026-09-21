@@ -31,6 +31,7 @@ from sklearn.metrics import roc_auc_score
 
 sys.path.insert(0, "src")
 from data import align_categoricals, load_training
+from features import drop_proxy
 from constraints import check_lobt_support, project_lobt
 from high_lobt import APPLY_GAP_SEC, train_high_lobt
 from encode import add_target_encodings
@@ -248,6 +249,8 @@ def main():
 
     print("Loading training data and building features...", flush=True)
     X, y, meta = load_training()
+    if not args.proxy:
+        X = drop_proxy(X)
 
     out = OUT_DIR / args.tag
     out.mkdir(parents=True, exist_ok=True)

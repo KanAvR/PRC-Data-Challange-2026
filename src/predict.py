@@ -15,6 +15,7 @@ from constraints import check_lobt_support, project_lobt
 from high_lobt import train_high_lobt
 from encode import add_target_encodings
 from featcache import build_features_cached
+from features import drop_proxy
 from model import (MU_FAMILIES, add_model_args, analytic_tail_value, combine,
                    combine_mu,
                    day_late_weight, predict_tail_proba, train_tail_clf)
@@ -31,6 +32,8 @@ def main():
 
     print("Loading training data and building features...")
     train_data, y_train, meta = load_training()
+    if not args.proxy:
+        train_data = drop_proxy(train_data)
     if args.lobt_bounds:
         check_lobt_support(y_train, train_data["gap_LOBT_flt"].values)
     print("Training rows:", len(train_data))
@@ -40,6 +43,8 @@ def main():
     ranking_feats = build_features_cached(RANKING_FILE, ranking_raw)
     dep_mask = (ranking_raw["PHASE_mvt"] == "DEP").values
     ranking_dep = ranking_feats.loc[dep_mask].copy()
+    if not args.proxy:
+        ranking_dep = drop_proxy(ranking_dep)
     ranking_ids = ranking_raw.loc[dep_mask, "MVT_ID_mvt"].values
 
     align_categoricals(train_data, ranking_dep)

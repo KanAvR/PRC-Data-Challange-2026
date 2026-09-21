@@ -1,17 +1,17 @@
 {
   "branch": "lobt-refinement",
   "frozen_source_commit": "4290754",
-  "best_submission": "v17",
-  "live_rmse": 265.7779,
+  "best_submission": "v18",
+  "live_rmse": 265.5251,
   "previous_best": {
-    "submission": "v15",
-    "rmse": 267.0668
+    "submission": "v17",
+    "rmse": 265.7779
   },
-  "live_improvement": 1.2889,
-  "recipe": "Start with v15; transfer one-quarter of the AOBT residual-model change, then blend a 20-percent Rome expert into eligible matched normal departures. Preserve high-LOBT and boundary predictions.",
-  "local_validation": "Four temporal splits; corrected tail-value scaling; gain 0.9585459756 RMSE. Local proxy is not a reconstruction of the unknown original v14 ensemble.",
-  "artifact": "output/submitting_v17.parquet",
-  "artifact_sha256": "016e89500b0a797ec22c1b55f4bf80a75b52d7a3412c449b150270df54817fd3",
+  "live_improvement": 0.2528,
+  "recipe": "Start with immutable v17; blend a 20-percent residual expert into matched normal non-Rome rows strictly inside existing support. Preserve other rows.",
+  "local_validation": "Four temporal splits: pooled proxy gain 0.7070660937 RMSE. Strong weather inner proxy gain 0.1585170165 with confidence interval crossing zero. Live gain verified at 0.2528.",
+  "artifact": "output/submitting_v18.parquet",
+  "artifact_sha256": "dc02ea9dad7dd15ce703f4ef192b89d1ad36ac1dc39fd0e0a05532f364db6b58",
   "source_paths": {
     "neighbor_proxy": [
       "features.py",
@@ -81,5 +81,11 @@
     "commit": "Make local commits under the configured user identity with one line of context in the commit body.",
     "push": "Do not push unless the user explicitly asks again.",
     "preserve": "Exclude the separate root-level v10 edits."
+  },
+  "training_status": {
+    "state": "stopped_on_user_request",
+    "instruction": "Upload fast stop all tests",
+    "catboost_full_fits": "Both interrupted; preserve snapshots. No restart authorized since stop request.",
+    "pending_candidate": "CatBoost neighbor correction passed four temporal splits but full prediction files remain incomplete."
   }
 }

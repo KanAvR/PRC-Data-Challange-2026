@@ -1,12 +1,11 @@
 # PRC Data Challenge 2026 — Taxi-Out Time Prediction
 
 Predict `TAXITIME_SEC_mvt` for departures at ten European airports using 2025
-training data. The ranking set covers January and July 2026.
+training data. The ranking set is 344,841 departures from January and July 2026,
+scored by RMSE.
 
-**Latest live scores: 269.41 RMSE (v9, LOBT bounds + specialist) and 270.21
-(v10, stakes-weighted tail classifiers)**, both down from **275.97 (v8)** and
-developed independently; this branch combines them. All 344,841 ranking
-departures were scored. The next target is 250–260.
+**Current best: 265.219 RMSE (v20).** v20 is the v16 recipe plus neighbour
+taxi-proxy features.
 
 ## Setup
 
@@ -27,133 +26,154 @@ models, and generated submissions stay local and are ignored by Git.
 
 ## What the model does
 
-- **Normal taxi times:** average LightGBM and CatBoost regressors trained on
-  labels up to 6,000 seconds. Features include off-block time gaps, airport,
-  stand, runway, aircraft, standardized airline codes, local time, congestion,
-  weather, and out-of-fold target encodings.
-- **Extreme times:** a separate classifier and timestamp-based estimate handle
-  the tail. Departures without a matched LOBT retain this mixture.
-- **LOBT correction:** matched predictions are bounded to the movement-to-LOBT
-  gap ±3,660 seconds, intersected with nonnegative taxi times. All 2,062,448
-  matched training labels lie within ±3,606 seconds. This is an observed data
-  property, not a guarantee for future data; training checks for violations.
-- **Long-taxi specialist:** a small LightGBM model learns `target - gap_LOBT`
-  on matched gaps above 3,000 seconds, including extreme labels. It replaces
-  the mixture above 6,000 seconds, then applies the same bounds.
+Each prediction mixes a normal-regime regressor `mu` with a tail estimate, then
+applies two corrections keyed on the flight plan's LOBT.
 
-## Progress and validation
+- **Normal taxi times (`mu`).** Regressors are trained on labels up to 6,000 s
+  (`TAIL_THR`). The submission averages four global members and blends in a
+  per-airport family:
+  - `lgb`: LightGBM.
+  - `cat`: CatBoost.
+  - `cat_note`: CatBoost without target encodings.
+  - `cat_ctr1`: depth-10 CatBoost with single-feature CTRs only.
+  - `pa`: one LightGBM and one CatBoost per airport, averaged. It is clipped
+    to within 150 s of the global average and then blended in at weight 0.5,
+    so it moves a prediction by at most 75 s (`PA_CLIP` and `PA_WEIGHT` in
+    `src/per_airport.py`).
+- **Features.**
+  - Off-block time gaps (`MVT_TIME` minus `AOBT_3`, `LOBT` and `EOBT`).
+  - Airport, stand, runway, aircraft and standardized airline codes.
+  - Local time, congestion counts and METAR weather.
+  - Out-of-fold target encodings, shrunk with `PRIOR_WEIGHT = 10`.
+- **Neighbour taxi-proxy features (`--proxy`).** Nearby departures'
+  `MVT_TIME`-to-`AOBT_3` and `MVT_TIME`-to-`LOBT` gaps, averaged over the 15,
+  30 and 60 minutes before and after each row. They are computed for the whole
+  airport and for each runway, 32 columns in all (`PROXY_COLS` in
+  `src/features.py`). A row never sees itself or departures sharing its exact
+  second. The features are always built, so both arms of a comparison share one
+  cache; the flag only decides whether the models see them.
+- **Extreme times.** A CatBoost classifier gives the probability that a row is
+  in the tail, and a timestamp-based estimate gives its value. `combine()` uses
+  this mixture only where that estimate exceeds 6,000 s. Everywhere else the
+  prediction is `mu`.
+- **LOBT bounds (`--lobt-bounds`, on by default).** Predictions for rows with a
+  matched LOBT are projected onto the movement-to-LOBT gap ±3,660 s, intersected
+  with nonnegative times. All 2,062,448 matched training labels lie within
+  ±3,606 s. This is an observed property of the data, not a guarantee, and
+  training fails loudly if new data violates it.
+- **Long-taxi specialist (`--high-lobt`, on by default).** A small LightGBM
+  learns `target - gap_LOBT` on matched gaps above 3,000 s, extreme labels
+  included. It replaces the prediction wherever the gap exceeds 6,000 s.
 
-The initial LightGBM mixture gained standardized airline codes, congestion
-features, and target encodings. CatBoost tail classifiers and a four-member
-normal-model ensemble improved it further; METAR weather produced the v8
-baseline. The latest change adds the LOBT correction and residual specialist.
+## Leaderboard history
 
-Rare large errors matter disproportionately: in the latest validation study,
-0.053% of rows contributed 30% of squared error. This motivated the specialist.
-Flight-code format features gave mixed results and were rejected; richer weather
-features and an earlier tail-feature expansion also failed to generalize.
+| version | change | RMSE |
+|---|---|---:|
+| v8 | weather + four-member `mu` | 275.97 |
+| v9 | + LOBT bounds + long-taxi specialist | 269.41 |
+| v14 | + per-airport blend | 268.41 |
+| v16 | + target-encoding shrinkage 30 → 10 | 267.78 |
+| **v20** | **+ neighbour taxi-proxy features** | **265.219** |
+| v21 | v20 + out-of-fold band calibration of `mu` (rejected) | ~265.8 |
 
-Validation uses four temporal splits: Jan+Jul, Feb+Aug, Dec+Jun, and Mar+Sep.
-The last three exclude Jan+Jul from training. Comparisons use a paired day-level
-bootstrap. The loader excludes 369 invalid negative labels but retains the
-positive extreme tail; a separate robust metric excludes unexplained tail rows.
+The v16 → v20 gain was -2.56 live against -3.20 offline, so this `mu` change
+kept about 81% of its offline gain on the leaderboard. Offline gains do not
+always carry over:
 
-The controlled refinement study kept the baseline forecasts fixed (LightGBM
-normal model with target encodings, no weather, LightGBM pooled tail classifier,
-and CatBoost classifier for unmatched rows):
+- A richer feature set for the tail classifiers won offline and lost about 25
+  points live.
+- `--stakes 25` gained 5.76 live on its own (v10). Once the specialist owned
+  the matched rows, it only changed unmatched (no-flight-plan) rows, and there
+  it cost 0.23 (v11).
+- The band calibration in v21 was worth -0.44 offline and cost about 0.6 live.
+  2026 has two to three times as many rows in the upper `mu` bands it
+  corrects.
 
-| Correction | Jan+Jul | Feb+Aug | Dec+Jun | Mar+Sep |
-|---|---:|---:|---:|---:|
-| None | 327.48 | 263.41 | 271.46 | 231.05 |
-| LOBT bounds | 321.35 | 263.01 | 270.66 | 229.35 |
-| Bounds + specialist | 320.14 | 262.16 | 270.23 | 228.93 |
+## Validation
 
-Pooled RMSE improved by **3.22 seconds** (95% interval: 1.19–7.07 seconds).
-All four splits improved. Applied to the full v8 ensemble, the correction changed
-307 predictions and improved the **live score by 6.5617 seconds** in v9.
-Local validation and leaderboard scores cover different data and are not directly
-comparable.
+`src/validate.py` trains and scores four temporal splits:
+
+| split | scored months | trained on |
+|---|---|---|
+| holdout | Jan + Jul | the other 10 months |
+| inner | Feb + Aug | 8 months, excluding Jan + Jul |
+| dec_jun | Dec + Jun | 8 months, excluding Jan + Jul |
+| mar_sep | Mar + Sep | 8 months, excluding Jan + Jul |
+
+Every run saves its predictions under `output/validate/<tag>/`. `--compare`
+scores the run against a saved one with a paired day-level bootstrap. It reports
+each split and the pooled result, on all rows, on robust rows (tail rows that
+match no timestamp are dropped) and on normal rows. A change wins when the
+pooled robust interval is below zero and no split is significantly worse.
+
+A few extreme tail rows can pass that rule without the model predicting
+anything better. For a change to `mu`, check the normal-row delta as well, and
+check how much of the gain the top handful of rows carry.
+
+```bash
+# Cheap screen (~13 min per arm): LightGBM with proxy features on two splits,
+# against the saved run of the identical configuration.
+.venv/bin/python src/validate.py --mu lgb --proxy --splits holdout mar_sep \
+    --tag mychange --compare prox_lgb
+```
+
+A screen like this can reject a change but not promote one. There is no saved
+four-split run of the full v20 recipe. Build one before comparing anything
+against the full ensemble.
 
 ## Run
 
 ```bash
-# Validate the full ensemble with the current corrections.
-.venv/bin/python src/validate.py --mu lgb cat cat_note cat_ctr1 --tag refined
-
-# Train on all months; write output/submitting.parquet.
-.venv/bin/python src/predict.py --mu lgb cat cat_note cat_ctr1
-
-# Or refine an existing pre-correction ensemble without retraining it.
-# Preserves the input; writes output/submitting_improved.parquet.
-.venv/bin/python src/refine_submission.py --input output/submitting.parquet
-
-# Compare corrections against saved pre-correction validation forecasts.
-.venv/bin/python src/evaluate_refinement.py --baseline baseline --tag refinement_check
+# Reproduce v20: train on all twelve months and score the ranking set (~3h on 16 cores).
+.venv/bin/python src/predict.py --mu lgb cat cat_note cat_ctr1 pa --proxy \
+    --out output/submitting_v20.parquet
 
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-`--no-lobt-bounds --no-high-lobt` reproduces the previous prediction pipeline.
-`src/constrain_submission.py` applies bounds alone; `src/blend.py` compares
-saved model blends. Validation forecasts are saved under `output/validate/`.
+`predict.py` is deterministic on this machine: rerunning the v20 command gives
+a bit-identical file. Next to each submission it writes a `.parts.parquet` with
+`mu`, `p`, `v`, `gap_LOBT_flt` and the final prediction, so a post-hoc
+correction does not need a retrain.
 
-Both scripts share their model options (`--mu`, `--te/--no-te`, `--clf-pooled`,
-`--clf-nolobt`, `--day-late`, `--stakes`, `--lobt-bounds`, `--high-lobt`). `--mu`
-defaults to the fast development pair (LightGBM + CatBoost, ~1 hour for
-`predict.py` on a 16-core CPU); the four-member `mu` takes ~2h20m and is the
-submission recipe. `--lobt-bounds` and `--high-lobt` are **on** by default, so
-reproducing the pre-merge v10 pipeline needs them switched off explicitly:
-
-```bash
-# v10 exactly (stakes classifiers, no LOBT correction)
-.venv/bin/python src/predict.py --mu lgb cat cat_note cat_ctr1 --stakes 25     --no-lobt-bounds --no-high-lobt
-```
-
+`predict.py` and `validate.py` share their model options through
+`add_model_args` (`src/model.py`), so a configuration that passed validation is
+reproduced exactly. `--help` lists them. `--mu` defaults to the fast development pair `lgb cat`.
 `--mu lgb --clf-pooled lgb --clf-nolobt lgb --no-te` is a LightGBM-only run that
 finishes in a few minutes.
 
-Note that `--stakes` and `--high-lobt` overlap: `--high-lobt` skips the pooled
-classifier entirely (`fit_pooled=False`), so on matched rows `p` is zero and the
-specialist decides, discarding the stakes pooled classifier. The two are
-alternatives on matched rows, not additions. `--lobt-bounds` composes with
-either, since it only projects a prediction onto an interval.
+### Cheaper experiments
 
-## Stakes-weighted tail classifiers
+| script | what it does |
+|---|---|
+| `validate.py --reuse-mu TAG` | retrains only the tail parts against a saved `mu` (~20 min for four splits) |
+| `blend.py` | re-scores saved runs and swaps `mu` members between them, with no training |
+| `evaluate_refinement.py` | applies the LOBT corrections to saved predictions; matches a from-scratch run bit-for-bit |
+| `refine_submission.py` | rebuilds a submission from its predecessor with the corrections applied |
+| `constrain_submission.py` | applies the LOBT bounds alone to a submission |
 
-`p` only changes a prediction where the analytic tail value exceeds 6000s,
-because `combine()` gates smaller values back to `mu`. `--stakes 25` therefore
-trains the tail classifiers on those candidate rows only, each weighted by its
-RMSE stakes clipped to [1, 25]. Against the v8 four-member weather run it wins
-on all four splits (pooled robust -2.67, CI -4.34..-1.24) and, submitted on its
-own as v10, took the live score from 275.97 to 270.21. It is **not** in the
-current recipe: once the specialist owns the matched rows, the only rows
-`--stakes` still changes are unmatched ones, and those cost 0.225 live
-(v11 269.64 against v9 269.41). Off by default.
+## Submitting
 
-| configuration | holdout | inner | dec_jun | mar_sep |
-|---|---|---|---|---|
-| v8: weather + four-member mu | 319.45 | 250.10 | 265.61 | 226.45 |
-| v10: v8 + `--stakes 25` | 313.61 | 248.18 | 263.46 | 223.44 |
-
-With `--high-lobt` the pooled classifier is not fitted, so on matched rows the
-specialist and the stakes weighting are alternatives; on unmatched rows
-(no flight plan) the stakes classifier still applies. `--mu lgb_nocat` is
-LightGBM without the eight high-cardinality keys: 5 RMSE better alone on inner
-normal rows (223.3 vs 228.7) and twice as fast, but so much more CatBoost-like
-that swapping it into the four-member average is a wash, so it is opt-in only.
-
-Tried and not kept: a day-late tail component (`--day-late`; mixed across
-splits, rests on ~16 rows), blending exact timestamp values into `mu` (the
-dominant AOBT match is not predictable, AUC 0.70), XGBoost, and a richer
-feature set for the tail classifiers, which won on all four splits offline
-(pooled -3.0) but lost ~25 points live. Tail changes are therefore submitted on
-their own before being bundled.
-
-For leaderboard access, keep `accessKey` and `secretKey` in local
-`credentials.json`. Upload explicitly using a new, unused version number:
+Keep `accessKey` and `secretKey` in a local `credentials.json`. Check which
+versions are taken first, since uploading to an existing version overwrites it:
 
 ```bash
 .venv/bin/python submission.py list
-.venv/bin/python submission.py upload VERSION --file output/submitting_improved.parquet
+.venv/bin/python submission.py upload VERSION --file output/submitting_v20.parquet
 .venv/bin/python submission.py read VERSION
 ```
+
+Before uploading, check the file against `dataset/submitting.parquet`: columns,
+dtypes, row order, and no NaN or negative values.
+
+## Layout
+
+- `src/`: the pipeline. `data.py`, `features.py`, `airline.py`, `weather.py`
+  and `featcache.py` build features; `encode.py` adds target encodings;
+  `model.py`, `per_airport.py` and `neural.py` hold the models;
+  `constraints.py` and `high_lobt.py` apply the LOBT corrections.
+- `experiments/`: a teammate's research scripts and result records (v17–v19).
+  They document that line of work, including anything that may still be worth
+  porting into `src/`.
+- `tests/`: unit tests for the LOBT projection, the specialist and the
+  proxy features.

@@ -37,7 +37,7 @@ from constraints import check_lobt_support, project_lobt
 from high_lobt import APPLY_GAP_SEC, train_high_lobt
 from encode import KEY_SETS, add_target_encodings
 from resproxy import RES_PROXY_COLS, add_residual_proxy
-from model import (MU_FAMILIES, seasonal_weight, TAIL_THR, add_model_args, combine_mu,
+from model import (MU_FAMILIES, apply_model_args, seasonal_weight, TAIL_THR, add_model_args, combine_mu,
                    analytic_tail_value, combine, day_late_step_weight, day_late_weight,
                    predict_tail_proba, tail_options, train_tail_clf)
 
@@ -313,6 +313,7 @@ def main():
                          "July 2026 share of flights as unseen (renamed callsigns). The masked "
                          "run is saved as TAG, the same models unmasked as TAG_unmasked")
     args = ap.parse_args()
+    apply_model_args(args)
     if args.mask_flight and args.reuse_mu:
         ap.error("--mask-flight needs the mu models, not a saved mu")
 

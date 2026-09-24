@@ -573,6 +573,10 @@ def add_model_args(ap):
                     help="use the ARVT_1/ARVT_3 trajectory features (features.ARVT_COLS). "
                          "Built unconditionally like --proxy; this flag only chooses "
                          "whether the models see them")
+    ap.add_argument("--cat-iterations", type=int, default=CAT_MU_PARAMS["iterations"], metavar="N",
+                    help="iterations for the cat and cat_note families (cat_ctr1 and the per-airport "
+                         "CatBoost set their own). Swept 2026-09-24: the best count grows with "
+                         "training size, ~4000 at 8 months and still falling at 6000 with 10")
     ap.add_argument("--episode", action=argparse.BooleanOptionalAction, default=False,
                     help="use the long-taxi episode features (features.EPISODE_COLS): matched "
                          "neighbours' uncapped LOBT gaps. Built unconditionally like --proxy")
@@ -618,6 +622,11 @@ def add_model_args(ap):
                     help="train the tail classifiers on candidate rows (v > TAIL_THR) only, "
                          "weighted by RMSE stakes clipped to [1, CLIP]; 1 = candidates "
                          "unweighted, 0 = every row unweighted (default)")
+
+
+def apply_model_args(args):
+    """Module-level settings that add_model_args exposes. Call once after parsing."""
+    CAT_MU_PARAMS["iterations"] = args.cat_iterations
 
 
 def mu_weights(args, families):

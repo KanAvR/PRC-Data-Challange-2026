@@ -19,7 +19,7 @@ from high_lobt import APPLY_GAP_SEC, train_high_lobt
 from encode import KEY_SETS, add_target_encodings
 from featcache import build_features_cached
 from features import drop_arvt, drop_episode, drop_proxy
-from model import (MU_FAMILIES, add_model_args, analytic_tail_value, combine,
+from model import (MU_FAMILIES, apply_model_args, add_model_args, analytic_tail_value, combine,
                    combine_mu,
                    predict_tail_proba, tail_options, train_tail_clf)
 
@@ -32,6 +32,7 @@ def main():
     add_model_args(ap)
     ap.add_argument("--out", default="output/submitting.parquet")
     args = ap.parse_args()
+    apply_model_args(args)
 
     print("Loading training data and building features...")
     train_data, y_train, meta = load_training()

@@ -36,6 +36,7 @@ from features import drop_arvt, drop_proxy
 from constraints import check_lobt_support, project_lobt
 from high_lobt import APPLY_GAP_SEC, train_high_lobt
 from encode import KEY_SETS, add_target_encodings
+from resproxy import RES_PROXY_COLS, add_residual_proxy
 from model import (MU_FAMILIES, seasonal_weight, TAIL_THR, add_model_args, combine_mu,
                    analytic_tail_value, combine, day_late_step_weight, day_late_weight,
                    predict_tail_proba, tail_options, train_tail_clf)
@@ -126,6 +127,14 @@ def run_split(name, X, y, meta, args, rates=None):
                              flight_backoff=args.te_flight_backoff, flight_dropout=args.te_flight_dropout,
                              airport_prior=args.te_airport_prior,
                              X_apply_masked=X_va_m, flight_unseen=unseen)
+    if args.res_proxy:
+        if not args.te:
+            raise SystemExit("--res-proxy needs --te (it subtracts te_stand_rwy)")
+        add_residual_proxy(X_tr, meta.loc[tr, "t"].values)
+        add_residual_proxy(X_va, meta.loc[va, "t"].values)
+        if X_va_m is not None:  # te_stand_rwy is not flight-keyed, so the mask leaves these alone
+            for c in RES_PROXY_COLS:
+                X_va_m[c] = X_va[c].values
     print(f"\n[{name}] train={len(X_tr)} valid={len(X_va)} "
           f"tail={int((y_tr > TAIL_THR).sum())}/{int((y_va > TAIL_THR).sum())}", flush=True)
 

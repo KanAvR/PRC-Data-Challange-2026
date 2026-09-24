@@ -18,6 +18,12 @@ def flight_ids(df):
     return (df["ADEP_mvt"].astype(str) + "_" + flight_key(df["FLIGHT_mvt"])).values
 
 
+def mvt_seconds(df):
+    """Take-off time as seconds since the epoch."""
+    t = pd.to_datetime(df["MVT_TIME_UTC_mvt"], utc=True)
+    return (t - pd.Timestamp("1970-01-01", tz="UTC")).dt.total_seconds().values
+
+
 def month_of(path):
     return re.search(r"training_(\d{4}-\d{2})", path).group(1)
 
@@ -40,6 +46,9 @@ def load_training():
             "date": df.loc[dep, "MVT_TIME_UTC_mvt"].dt.strftime("%Y-%m-%d"),
             "ADEP_mvt": df.loc[dep, "ADEP_mvt"],
             "flight": flight_ids(df.loc[dep]),
+            # absolute take-off time, for features computed after the target
+            # encodings (resproxy.py); metadata never reaches a model
+            "t": mvt_seconds(df.loc[dep]),
         }))
     X = pd.concat(xs, ignore_index=True)
     y = pd.concat(ys, ignore_index=True).values

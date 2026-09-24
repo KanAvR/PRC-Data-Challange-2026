@@ -12,7 +12,8 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, "src")
-from data import align_categoricals, flight_ids, load_training
+from data import align_categoricals, flight_ids, load_training, mvt_seconds
+from resproxy import add_residual_proxy
 from constraints import check_lobt_support, project_lobt
 from high_lobt import APPLY_GAP_SEC, train_high_lobt
 from encode import KEY_SETS, add_target_encodings
@@ -61,6 +62,11 @@ def main():
                              counts=args.te_counts, fold_size=args.te_fold_size,
                              flight_backoff=args.te_flight_backoff, flight_dropout=args.te_flight_dropout,
                              airport_prior=args.te_airport_prior)
+    if args.res_proxy:
+        if not args.te:
+            raise SystemExit("--res-proxy needs --te (it subtracts te_stand_rwy)")
+        add_residual_proxy(train_data, meta["t"].values)
+        add_residual_proxy(ranking_dep, mvt_seconds(ranking_raw.loc[dep_mask]))
 
     mus = []
     for fam in args.mu:

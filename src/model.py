@@ -573,6 +573,9 @@ def add_model_args(ap):
                     help="use the ARVT_1/ARVT_3 trajectory features (features.ARVT_COLS). "
                          "Built unconditionally like --proxy; this flag only chooses "
                          "whether the models see them")
+    ap.add_argument("--episode", action=argparse.BooleanOptionalAction, default=False,
+                    help="use the long-taxi episode features (features.EPISODE_COLS): matched "
+                         "neighbours' uncapped LOBT gaps. Built unconditionally like --proxy")
     ap.add_argument("--res-proxy", action=argparse.BooleanOptionalAction, default=False,
                     help="add the residualised neighbour proxy (resproxy.RES_PROXY_COLS): "
                          "neighbours' gaps minus their own te_stand_rwy, averaged. Needs --te")

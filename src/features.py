@@ -326,6 +326,50 @@ def _arvt_features(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+EPISODE_WINDOWS = [30, 60]
+EPISODE_CLIP = 20000.0
+EPISODE_COLS = [f"ep_{k}_{w}" for w in EPISODE_WINDOWS for k in ("long_share", "gap_mean")]
+
+
+def _episode(g: pd.DataFrame) -> pd.DataFrame:
+    """Long-taxi episodes, seen through matched neighbours, uncapped.
+
+    PROXY_MAX_SEC drops neighbour gaps above 6000s, so no model can see that the
+    flights around a departure are taxiing for hours. In 2025 an unmatched row
+    whose matched neighbours (+/-30 min) are >25% long-taxi has a mean label of
+    3,646s and a 20% tail rate, against 1,316s and 2.7% otherwise, and v20 was
+    biased low there by up to 1,267s. Symmetric window, self excluded; gaps
+    clipped at EPISODE_CLIP so a day-late artifact cannot dominate a mean.
+    """
+    out = pd.DataFrame(index=g.index, columns=EPISODE_COLS, dtype=float)
+    t = g["MVT_TIME_UTC_mvt"].values.astype("datetime64[s]").astype("int64")
+    gap = (g["MVT_TIME_UTC_mvt"] - g["LOBT_flt"]).dt.total_seconds().values
+    ok = np.isfinite(gap)
+    order = np.argsort(t, kind="mergesort")
+    ts, gs, oks = t[order], np.where(ok, np.clip(gap, 0, EPISODE_CLIP), 0.0)[order], ok[order]
+    c_n = np.concatenate([[0], np.cumsum(oks)])
+    c_long = np.concatenate([[0], np.cumsum(oks & (gs > PROXY_MAX_SEC))])
+    c_gap = np.concatenate([[0.0], np.cumsum(gs)])
+    for w in EPISODE_WINDOWS:
+        lo = np.searchsorted(ts, ts - w * 60, side="left")
+        hi = np.searchsorted(ts, ts + w * 60, side="right")
+        n = c_n[hi] - c_n[lo] - oks  # self excluded
+        n_long = c_long[hi] - c_long[lo] - (oks & (gs > PROXY_MAX_SEC))
+        s_gap = c_gap[hi] - c_gap[lo] - np.where(oks, gs, 0.0)
+        share = np.where(n > 0, n_long / np.maximum(n, 1), np.nan)
+        mean = np.where(n > 0, s_gap / np.maximum(n, 1), np.nan)
+        res_share, res_mean = np.empty(len(t)), np.empty(len(t))
+        res_share[order], res_mean[order] = share, mean
+        out[f"ep_long_share_{w}"] = res_share
+        out[f"ep_gap_mean_{w}"] = res_mean
+    return out
+
+
+def drop_episode(frame: pd.DataFrame) -> pd.DataFrame:
+    """The --no-episode arm: same cache build, without the episode columns."""
+    return frame.drop(columns=[c for c in EPISODE_COLS if c in frame.columns])
+
+
 def drop_arvt(frame: pd.DataFrame) -> pd.DataFrame:
     """The --no-arvt arm: same cache build, without the ARVT columns."""
     return frame.drop(columns=[c for c in ARVT_COLS if c in frame.columns])
@@ -437,5 +481,8 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
 
     arvt = _arvt_features(df)
 
-    feats = pd.concat([feats, counts, arr_ctx, queue, dyn, proxy, wx, arvt], axis=1)
+    ep_parts = [_episode(g) for _, g in dep_only.groupby("apt", observed=True)]
+    episode = pd.concat(ep_parts).reindex(df.index)
+
+    feats = pd.concat([feats, counts, arr_ctx, queue, dyn, proxy, wx, arvt, episode], axis=1)
     return feats

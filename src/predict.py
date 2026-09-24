@@ -18,7 +18,7 @@ from constraints import check_lobt_support, project_lobt
 from high_lobt import APPLY_GAP_SEC, train_high_lobt
 from encode import KEY_SETS, add_target_encodings
 from featcache import build_features_cached
-from features import drop_arvt, drop_proxy
+from features import drop_arvt, drop_episode, drop_proxy
 from model import (MU_FAMILIES, add_model_args, analytic_tail_value, combine,
                    combine_mu,
                    predict_tail_proba, tail_options, train_tail_clf)
@@ -39,6 +39,8 @@ def main():
         train_data = drop_proxy(train_data)
     if not args.arvt:
         train_data = drop_arvt(train_data)
+    if not args.episode:
+        train_data = drop_episode(train_data)
     if args.lobt_bounds:
         check_lobt_support(y_train, train_data["gap_LOBT_flt"].values)
     print("Training rows:", len(train_data))
@@ -52,6 +54,8 @@ def main():
         ranking_dep = drop_proxy(ranking_dep)
     if not args.arvt:
         ranking_dep = drop_arvt(ranking_dep)
+    if not args.episode:
+        ranking_dep = drop_episode(ranking_dep)
     ranking_ids = ranking_raw.loc[dep_mask, "MVT_ID_mvt"].values
 
     align_categoricals(train_data, ranking_dep)

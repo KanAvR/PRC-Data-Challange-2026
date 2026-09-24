@@ -223,7 +223,8 @@ ANCHOR_DEFAULT = "gap_AOBT_3_flt"
 # NaN on those ~1.5% of rows, so train_mu_anchor drops them to the plain target
 # -- exactly the unmatched rows where an anchor would help most. The clip also
 # stops a single long gap from defining a residual target.
-# Ported from experiments/neighbor_proxy/anchor.py::normal_anchor.
+# Ported from experiments/neighbor_proxy/anchor.py::normal_anchor (removed; in
+# git history at 2918b73).
 def neighbour_anchor(X):
     own = X["gap_AOBT_3_flt"].to_numpy(dtype=float)
     total = np.zeros(len(X))
@@ -296,6 +297,12 @@ CAT_MU_PARAMS = dict(
     l2_leaf_reg=3.0, border_count=254, one_hot_max_size=4,
     thread_count=-1, verbose=0, allow_writing_files=False,
 )
+
+# CAT_MU_PARAMS' 3000 came from early stopping on the inner split (8 training
+# months). The optimum grows with the data (4000 at 8 months, still falling at
+# 6000 with 10), and the submission fits on 12, so --cat-iterations defaults to
+# this. Swept 2026-09-24; v25 took it live, -0.37.
+CAT_FULL_FIT_ITERATIONS = 6000
 
 XGB_MU_PARAMS = dict(
     objective="reg:squarederror", eval_metric="rmse", tree_method="hist",
@@ -573,10 +580,11 @@ def add_model_args(ap):
                     help="use the ARVT_1/ARVT_3 trajectory features (features.ARVT_COLS). "
                          "Built unconditionally like --proxy; this flag only chooses "
                          "whether the models see them")
-    ap.add_argument("--cat-iterations", type=int, default=CAT_MU_PARAMS["iterations"], metavar="N",
+    ap.add_argument("--cat-iterations", type=int, default=CAT_FULL_FIT_ITERATIONS, metavar="N",
                     help="iterations for the cat and cat_note families (cat_ctr1 and the per-airport "
-                         "CatBoost set their own). Swept 2026-09-24: the best count grows with "
-                         "training size, ~4000 at 8 months and still falling at 6000 with 10")
+                         "CatBoost set their own). The best count grows with training size: ~4000 "
+                         "at 8 months, still falling at 6000 with 10. v25: -0.37 live. "
+                         "--cat-iterations 3000 reproduces v24")
     ap.add_argument("--episode", action=argparse.BooleanOptionalAction, default=False,
                     help="use the long-taxi episode features (features.EPISODE_COLS): matched "
                          "neighbours' uncapped LOBT gaps. Built unconditionally like --proxy")

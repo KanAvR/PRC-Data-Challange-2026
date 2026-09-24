@@ -9,6 +9,10 @@ __pycache__/
 dataset/
 output/
 
+# Local agent notes (machine-specific; the shared rules are AGENTS.md)
+CLAUDE.md
+.claude/
+
 # Credentials and local client configuration
 credentials.json
 *.pem

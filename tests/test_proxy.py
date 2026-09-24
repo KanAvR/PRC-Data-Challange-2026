@@ -130,7 +130,7 @@ class ProxyFeatureTest(unittest.TestCase):
 
 
 class NeighbourAnchorTest(unittest.TestCase):
-    """The anchor ported from experiments/neighbor_proxy/anchor.py."""
+    """The anchor ported from experiments/neighbor_proxy/anchor.py (removed; in git history at 2918b73)."""
 
     def frame(self):
         return pd.DataFrame({

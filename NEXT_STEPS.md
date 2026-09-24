@@ -1,0 +1,1416 @@
+# Next steps: the experimental record
+
+Deadline: **2026-10-11 23:59:59 CET**. Scoring is RMSE over Jan and Jul 2026
+departures at ten European airports, on a fixed 344,841-row set.
+**The final ranking takes your BEST submission**, so a worse upload costs
+nothing and the leaderboard is an exact, deterministic test. **Limit: 5
+submissions per day** (the challenge's `ranking.html`). There is no private
+set: the final ranking is on the same fixed rows.
+
+Working rules are in `AGENTS.md`; this file is the record of what was measured.
+**Paths under `output/`** (saved validation runs such as `output/validate/v20_full`,
+diagnostic scripts under `output/diag/`, submission files, logs) are
+git-ignored artifacts on the machine that produced them. They are cited as
+provenance and are not in the repository; the numbers quoted here are the
+record. Anything that ships lives in `src/`.
+
+---
+
+## 1. Status
+
+| submission | recipe | score |
+|---|---|---|
+| v8 | weather + four-member mu | 275.97 |
+| v10 | v8 + `--stakes 25` | 270.21 |
+| v9 | v8 + LOBT bounds + long-taxi specialist | 269.41 |
+| v11 / v12 | merges of stakes + bounds (+ specialist) | 269.64 / 269.89 |
+| v13 | not ours, recipe unknown | 269.30 |
+| v14 | v9 recipe + per-airport blend | 268.41 |
+| v15 | teammate | 267.07 |
+| v16 | v14 recipe + `PRIOR_WEIGHT=10` | 267.78 |
+| v17 | teammate: v15 + 0.25 x residual-anchor mu delta + 0.2 Rome expert | 265.78 |
+| v18 | teammate: v17 + 0.2 residual expert on matched normal non-Rome rows | 265.53 |
+| **v19** | **teammate: v18 + 0.20 x neighbour-proxy CatBoost correction** | **265.06** |
+| v20 | ours: v16 + neighbour proxy features (`--proxy`) | 265.219 |
+| v21 | v20 + band calibration -- **lost 0.6, section 5** | 265.8643 |
+| v22 | ours: v20 + `--tail-cap` (6 rows, 2 material) | 264.7491 |
+| v23 | v22 + `--day-late-step` -- **lost 0.62 against v22** | 265.3724 |
+| v24 | ours: v22 + `te_flight` backoff + dropout 0.2 (renamed callsigns) | 264.2436 |
+| **v25** | **ours: v24 + CatBoost `cat`/`cat_note` at 6000 iterations (12-month fit)** | **263.8731** |
+
+**Team best is v25 (263.8731, 2026-09-25).** Reproduce with `predict.py --mu
+lgb cat cat_note cat_ctr1 pa --proxy`; the tail cap, the flight backoff and
+dropout, and `--cat-iterations 6000` are all defaults. Built from commit
+`64a7b85` with `--cat-iterations 6000` passed explicitly (it became the
+default afterwards); sha256 prefix `978eef415fb508ce`. Upload log:
+
+| version | commit | command (beyond `predict.py --mu lgb cat cat_note cat_ctr1 pa --proxy`) | sha256 prefix | live | vs previous |
+|---|---|---|---|---|---|
+| v22 | `313743b` (code), built post-hoc | `tail_submission.py --input <v20> --tail-cap` | `1d7f8c21a1a3bffb` | 264.7491 | -0.470 vs v20 |
+| v23 | `313743b` (code), built post-hoc | `tail_submission.py --input <v20> --tail-cap --day-late-step` | `102498394821de6d` | 265.3724 | +0.623 vs v22 |
+| v24 | `313743b` | `--te-flight-backoff --te-flight-dropout 0.2` (tail cap default) | `b3d92829a4ccb558` | 264.2436 | -0.506 vs v22 |
+| v25 | `64a7b85` | `--cat-iterations 6000` | `978eef415fb508ce` | 263.8731 | -0.371 vs v24 |
+
+v20 -> v25 is -1.35 live. Transfer: the flight fix -0.506 live against -0.53
+all-row in the masked lgb screen (~1:1); the CatBoost iterations -0.37 live
+from a single-member -1.13 on holdout, diluted by the blend (two of five
+families). v19 was a post-hoc chain over v15 and is not reproducible from
+`src/` (`AGENTS.md`, "Every submission is generated from `src/`"); its own
+gain was our proxy signal at a fifth of the weight (section 5, "Porting v19").
+
+**Check `submission.py list` for the next free number** before uploading.
+
+### v20: recipe, transfer, reproducibility
+
+- Recipe: `predict.py --mu lgb cat cat_note cat_ctr1 pa --proxy`. `--lobt-bounds`
+  and `--high-lobt` default on, `--stakes` off. Built from `dev` with no
+  hand-edited parquet in the chain.
+- File: `output/submitting_proxy2.parquet`, sha256
+  `fcb29a6a80f313f8e3b8ff57f7e23298e1e1334bb4f30c005bde083793f7f3f3`, with
+  `submitting_proxy2.parts.parquet` beside it (`mu`, `p`, `v`, `gap_LOBT_flt`,
+  specialist prediction, final prediction).
+- Against v16: 344,826 rows changed, delta quantiles -1222 / -147 / -18 / -2 /
+  +13 / +151 / +1013, mean 1042.64 -> 1040.38, >6000s rows 167 -> 170.
+- **Transfer: -2.558 live against -3.20 offline** (two-member pooled robust),
+  i.e. **81%**, not the 1:1 the per-airport blend showed. Use 81% when
+  projecting `mu` work.
+- **`predict.py` has been deterministic**: re-running the v20 command gave a
+  bit-identical file, even though `MU_PARAMS` and `CAT_MU_PARAMS` carry no
+  explicit seed and use `thread_count=-1`. That is luck, not design; see
+  section 4, lead 3.
+- Reproduce v16: `predict.py --mu lgb cat cat_note cat_ctr1 pa
+  --no-tail-cap --no-te-flight-backoff --te-flight-dropout 0
+  --cat-iterations 3000` (no `--proxy`).
+
+**Evidence for the proxy features** (commit `eab65c8`, 2026-09-21). `--mu lgb`,
+two splits, against an identical `--no-proxy` arm sharing one feature cache:
+
+| split | all rows | robust | normal rows |
+|---|---|---|---|
+| holdout | -2.60 (CI -3.54..-1.79) | -3.15 | **-3.39** |
+| mar_sep | -3.17 (CI -3.96..-2.48) | -3.24 | **-3.44** |
+
+Normal-row delta *larger* than all-row on both splits, the opposite of the
+tail-row artifact. Per airport on holdout: LTFM 251->242, EGLL 265->261, LEBL
+221->219, LIRF 607->604. CatBoost gains as much (normal rows holdout
+242.59->238.97, mar_sep 207.72->204.13), and the lgb+cat blend keeps 100%
+(-3.20 pooled robust, normal rows -3.48 / -3.45). That two-member baseline was
+normal-row 241.24/206.21 against ~221/197 for five families. The teammate's
+independent single-CatBoost four-split run agreed: normal rows
+213.2->210.5, 219.1->215.2, 204.5->200.8, 196.6->193.4, pooled CI -0.81..-0.50
+against their v17 proxy.
+
+Older submission files can be re-downloaded from the bucket if needed.
+
+---
+
+## 2. Where the error actually is (measured 2026-09-21, on `pa_v9`)
+
+Measured on the four-split harness using `pa_v9` -- the v14 recipe,
+`PRIOR_WEIGHT=30`, **no proxy features**. The structure should still hold for
+v20, but these are not v20's numbers. Pooled RMSE 264.39 over 1,376,273 rows.
+
+### 91 unpredictable rows carry 13% of the score
+
+**91 tail rows carry 34.76 of the 264.39 pooled RMSE, and they are
+unpredictable.** They are tail rows (y > 6000) with no flight plan whose label
+matches *no* available timestamp within 600s.
+
+    pooled RMSE                                264.39
+      of which 91 unpredictable rows            34.76   irreducible
+      best conceivable score otherwise         229.63
+
+**The real target is 229.63, not 0.** Plan headroom against that number.
+
+- **Airport.** LTFM 41, LIRF 31, EGLL 9, LFPG 6, EDDM 2, EHAM 1, LSZH 1. Count is
+  not cost: LTFM's 41 carry **0.7%** of all squared error (labels just over
+  6000), LIRF's 31 carry **12.2%**, LFPG's 6 carry **10.8%**.
+- **Month.** February 42 (LTFM-dominated, the LTFM/inner snow episode), July 19,
+  August 10.
+- **Data.** All 91 have zero flight-plan data. `AIRCRAFT_TYPE_mvt` present on
+  **66%** against 100% overall.
+- **Two populations:**
+
+  | sub-population | rows | share of ALL squared error |
+  |---|---|---|
+  | labels 6,000-20,000s | 80 | 6.6% |
+  | **labels near 24h (day-late)** | **11** | **18.0%** |
+
+- **The 11 day-late rows are recording artifacts, not long taxis.** `MVT_TIME` is
+  `BLOCK_TIME` + 24h + a normal taxi (e.g. LIRF ITY332: block 2025-06-25
+  01:01:06, movement 2025-06-26 01:13:54, label 87,168s, i.e. ~768s real). 10
+  LIRF + 1 LFPG, across all splits, so they recur. Ten have no aircraft type;
+  several have doubled-prefix callsigns (`ITYTY680`, `RYRR90BN`, `CHHHH438`,
+  `EXSXS1GT`, `NOSOS610`, `SWUU1919`). **External data cannot help**: a real
+  movement source would say ~13 minutes, and we are scored against the artifact.
+  Within the 16,326 unmatched rows they look distinctive (median `gap_SCHED`
+  65,463 against 5,404; aircraft type missing on 90.9% against 7.1%), and the
+  model already fires on them (mean p 0.83, mean v 59,362, mean prediction
+  60,868 against mean label 87,202). Correcting the under-shoot is measured and ruinous
+  (section 5, "Tail-side changes").
+- **The other 80 are non-scheduled movements** (GA, positioning, maintenance;
+  e.g. a C172 at LSZH stand "MFG", a DH8A at EHAM "HG01"); 24 have `BLOCK_TIME`
+  before scheduled time. Never in the Network Manager system, so no flight plan
+  exists to find. Oracle over all 80: **8.81 RMSE**.
+- **Already exploited:** `unmatched + aircraft type missing` is 1,505 rows (1,487
+  LIRF), **38.7% tail** against a 0.053% base rate (~730x). The classifier sees
+  `AIRCRAFT_TYPE_mvt` = "missing".
+- Within the 91: the worst row is 7.2% of all squared error, the top 3 17.4%,
+  the top 10 21.9%. **A gain of a few RMSE that moves a handful of tail rows is
+  noise.**
+
+### Once those 91 rows are set aside
+
+| population | rows | share of remaining SSE |
+|---|---|---|
+| normal rows (y <= 6000) | 1,375,542 | **92.8%** |
+| explainable tail | 640 | 7.2% |
+
+**The tail is essentially closed.** Oracle over the matched tail (specialist's
+domain): **1.88**. Over the explainable unmatched tail: **5.33**.
+
+### Where the normal-row error sits
+
+| make this perfect | rows | RMSE gain |
+|---|---|---|
+| labels 3000-6000s | 5,271 | **16.63** |
+| labels 1500-3000s | 121,807 | 24.52 |
+| labels under 1500s | 1,248,464 | 59.86 |
+
+**The 3000-6000s band: 0.38% of normal rows, 19.5% of normal-row squared
+error**, under-predicted by a mean of 1,163s. LIRF 1,637 rows (8.3% of normal
+SSE), LTFM 1,248 (4.6%), EGLL 1,155 (2.0%), LFPG 611 (2.2%). Mechanism: block
+time precedes `AOBT_3` by 20-50 min and usually `EOBT` -- pushed back, then held
+for a slot. Per-flight ATFM would see it and is not open.
+
+### LIRF is two problems
+
+LIRF is 7.7% of normal rows and **21.5% of normal-row squared error**.
+
+| | LIRF | next worst | typical |
+|---|---|---|---|
+| normal-row RMSE, as shipped | 429.4 | LTFM 243.9 | ~160-200 |
+| normal-row RMSE, `mu` only | **351.6** | LTFM 244.1 | ~155-220 |
+| false-positive cost | **+77.8** | -- | -0.5 to +0.6 |
+
+1. **False positives**: 184 LIRF normal rows at p >= 0.3, predicted at a mean
+   6,133s against labels of 1,237s, 32.5% of LIRF's normal error. **Measured
+   unfixable** (section 5, "The LIRF false-positive lead is closed").
+2. **A harder airport**: `mu`-only 351.6, worst by 107. Broad, not concentrated
+   (top 1,000 of 106,138 rows carry 40%); labels 3000-6000s are 38.7% of its
+   normal error at RMSE 1,760, 1800-3000s another 16.3%. Over-predicts short
+   taxis (+282s under 600s, +92s at 600-1200s), under-predicts long ones (-389s
+   at 1800-3000s, -1,422s at 3000-6000s). **Mechanism found 2026-09-23, not
+   reachable:** LIRF often records the *scheduled* time as block time on
+   delayed departures, so those labels are the delay, not a taxi. This is the
+   **largest single component** (41.9% of LIRF normal SSE), but even under its
+   oracle LIRF stays worst (262.7 against EGLL 226). See section 5, "LIRF:
+   block time recorded as scheduled time". (Corrects the earlier "a harder
+   airport, open".)
+
+### What 2026 over-weights
+
+- **Unmatched**: 1.53% of 2026 against a 2025 per-split mean of 1.19% (+29%).
+  EHAM 1.80 -> 3.16%, LSZH 1.69 -> 2.85%, LIRF 1.08 -> 1.42%.
+- **Matched long-taxi** (`gap_LOBT > 6000`): 287 rows = 0.083% against 0.025%,
+  **3.25x**; EHAM alone is 141.
+- **Upper `mu` bands**: 2000-2500 1.78x, 2500-3000 2.24x, 3000-4000 2.99x,
+  4000-6000 2.89x (table in section 5, band calibration).
+- **Snow**: 4.52% of 2026 scored rows against 1.71% of 2025 normal rows, 2.6x.
+
+---
+
+## 3. What transfers, and by how much
+
+| kind of change | live record |
+|---|---|
+| normal-row `mu` work (features, members, encodings) | carried every time; **81%** for v20, 1:1 for the per-airport blend |
+| shared-input change (`PRIOR_WEIGHT`) | **2.82x** |
+| hard constraint (LOBT interval projection) | carried |
+| bounded residual regression on matched rows | carried, ~2x |
+| **post-hoc `mu` correction keyed on `mu` bands** | **reversed: -0.44 offline, +0.6 live** |
+| classifier *feature* expansion | **lost 25 points** |
+| classifier reweighting on unmatched rows | **lost 0.23** |
+
+Measured transfer rates:
+
+- per-airport blend: -1.08 offline -> -1.01 live, **1:1**
+- neighbour proxy features (v20): -3.20 -> -2.558, **0.81x**
+- `--stakes 25` (matched long-taxi): -2.67 -> -5.76, **2.2x**
+- long-taxi specialist (matched long-taxi): -3.22 -> -6.56, **2.0x**
+- `PRIOR_WEIGHT` 30->10: -0.223 -> **-0.630, 2.82x** (offline was two-member,
+  submission five-family; probably understated offline)
+- band calibration: -0.44 -> **+0.6** (see section 5)
+
+> Corrects the earlier "normal-row `mu` work carried every time" (and the same
+> line in the working rules, now `AGENTS.md`). It holds for changes to what the models *learn*. It
+> failed for a post-hoc correction applied to `mu` by band.
+
+**The 2x on matched long-taxi comes from the 3.25x composition shift, and the
+same shift cuts both ways.** The shift that doubled the specialist's gain
+multiplied the band calibration's error by the same mechanism. Amplification is
+not a bonus: it multiplies whatever the offline estimate got wrong, for any
+change concentrated in the upper `mu` bands or the matched long tail.
+
+**Teaching classifiers more about unmatched rows has failed live three
+times.** A measured risk, not a prohibition (decided 2026-09-24, section 4):
+the leaderboard gap sits in these rows, so the work is wanted, but validate it
+harder than anything else.
+
+---
+
+## 4. Open leads
+
+### The leaderboard gap points at a handful of extreme rows (2026-09-24)
+
+The leaderboard best is **~235**, the next team ~259, us 265.219.
+
+| | total squared error | the gap equals |
+|---|---|---|
+| us, 265.219 | 2.43e10 | |
+| leader, 235 | 1.90e10 | **5.2e9: one row wrong by ~72,000s** |
+| next, 259 | 2.31e10 | 1.1e9: one row wrong by ~33,500s |
+
+- **One false positive** (predicted 60,000s, label ~1,000s) is worth **~20
+  points**. **One day-late row** at our validation under-shoot (60,868 against
+  87,202) is worth **~3.8 points**. All normal-row leads together are worth a
+  few points at most.
+- The gap is the size of the 91 "unpredictable" rows' share in validation
+  (34.76 of 264.39, section 2).
+- Competitor READMEs put the leader at ~246 on 2026-09-09 and 245.02 on
+  09-13, while strong public pipelines sat at 268-285. That looks like one
+  insight on a few extreme rows, not a better GBM. It fits either a real
+  mechanism or leaderboard-derived information; **we pursue only the first.**
+- **So the tail (leads 18-22) now ranks above every normal-row lead.**
+
+**Decided 2026-09-24 (user): every lead is in scope, unmatched-row tail
+work included.** The old "never teach a classifier about unmatched rows" is
+now a measured risk, not a prohibition. Best-submission scoring makes a live
+loss cost only a slot, and 5/day x 17 days is ~85 slots, so compute is the
+constraint. Adjusting settings after a live score is fine **when the change
+is spread over many rows**. The one guard: a variant whose squared change in
+predictions sits mostly in its top 10 rows reveals those rows' labels with
+each live score, so set it on 2025 data and submit it once rather than
+iterating it live. The full allowed / not-allowed list is in `AGENTS.md`,
+"What is allowed and ethical, and what is not".
+
+**Rules checked 2026-09-24** (challenge site `eligibility.html`,
+`ranking.html`, `data.html`): 5 submissions/day, best counts, no private set;
+external data must be open-licensed and documented; prize eligibility needs
+GPLv3 source on GitHub; no reuse of another team's code without permission
+and significant modification (ideas from READMEs are fine); `ARVT_1`/`ARVT_3`
+are documented, provided columns. Off limits regardless: probing, signals from
+row or ID order (e.g. whether `MVT_ID` follows off-block order), hand-edited
+rows or rules keyed to specific ranking rows, and live-tuning a change
+concentrated on a few rows.
+
+**Competitor ideas seen (ideas only, re-derive):**
+- kind-mango (284.74): a three-way LIRF mixture (label = `sd`, 86,400 + base,
+  or base), an "ITY340" day-late constant resting on **one** 2025 row, a band
+  table with exactly 4 rows at p_24h = 1; `plan_taxi_res` = `MVT - ARVT_1`
+  minus the route median clipped at +/-3600s, **-1.22 live**; "base retrained
+  on served rows only" -5.99 live (our `TAIL_THR` already does this); per-airport
+  caps (inapplicable here, section 5); isotonic p gate -1.14 live (close to our
+  recalibration, which failed offline).
+- Phoenix-Ops (273.56): where `AOBT_3 - LOBT > 7200`, replace the prediction
+  (31 rows changed, one row 45.8% of the gain); "following-aircraft" features
+  -1.42 live.
+- javidmardanov (268.56): TimesFM-3 airport-level forecasts, seasonal
+  CatBoost, a LOBT residual expert.
+
+### Results of the tail leads (2026-09-24)
+
+Scripts and logs in `output/diag/` (git-ignored): `stake_map.py`,
+`tail_forensics.py`, `dayl_callsign.py`, `three_way.py`, `rescore_tail.py`,
+`episode.py`, `episode_shift.py`.
+
+- **18, at-stake map.** Validation (`v20_full`, pooled 261.32): **misses**
+  (pred <= 6000, y > 6000) are 341 rows worth **24.4 RMSE points**; unmatched
+  non-LIRF tail rows alone (88) are **18 points**, at p ~ 0. False positives
+  (pred > 6000, y <= 6000) are 92 rows, 7.2 points. Realized top 3 rows = 17.8%
+  of SSE. Ranking: 170 predictions > 6000 (57 specialist, 113 unmatched LIRF);
+  the mixture's own expected error p(1-p)(tail-mu)^2 totals ~31 points, top 50
+  rows ~17. That expectation overstates the "actually normal" risk: see 20.
+- **19, other rows' timestamps: negative.** On the 95 unexplained unmatched tail
+  rows, a same-callsign / same-stand / previous-day timestamp within 600s of
+  the implied block time hits **11.6% against 12.6% at the B+3h chance
+  control**. Previous-day same callsign: no row's block within 600s. Redone
+  with de-corrupted callsigns (`ITYTY680` -> `ITY680`) on the 49 corrupted
+  unmatched rows with gap_SCHED > 4h: a sibling 24h earlier on 1/9 day-late
+  vs 1/40 scheduled-gap rows. **The labels do not come from other rows.**
+- **20, the three classes.** Unmatched DEP, gap_SCHED > 4h, 2025:
+
+  | subgroup | rows | day-late | label = gap_SCHED | normal |
+  |---|---|---|---|---|
+  | corrupted callsign | 37 | 7 | 30 | **0** |
+  | no aircraft type | 68 | 2 | 53 | 13 |
+  | aircraft type present | 309 | 0 | 0 | **302** |
+
+  Corrupted, unmatched: gap < 50k 0 day-late / 35 sched; 50-66k 6 / 4;
+  66-100k 3 / 0; > 100k 0 / 1 (`NOS739`, label = gap exactly). Day-late labels
+  are 86,400 + 770..1,990 (median ~960), whatever the gap. Exact rescore on
+  `v20_full` (verified pred == `combine()` on unmatched rows):
+
+  | variant | holdout | inner | dec_jun | mar_sep | pooled |
+  |---|---|---|---|---|---|
+  | `--day-late` (existing) | -2.96 | +3.53 | -0.74 | -2.04 | -0.69 |
+  | day-late value DAY+960 | -3.06 | +3.27 | -0.54 | -2.72 | -0.87 |
+  | **hedge cap only** | -0.41 | -0.61 | -0.13 | -0.00 | **-0.29** |
+  | **gap step (LOSO) + DAY+960 + cap** | -2.56 | +1.19 | -1.38 | -2.71 | **-1.41** |
+
+  Hedge cap: `V_HI_RATIO` 1.08 pushes v > ~81k above *both* candidate labels;
+  cap the tail at max(v, DAY+960). Never worse on any split. Gap step:
+  q = P(day-late | tail candidate) at gs 50.4-66k and 66-108k, Laplace
+  smoothed; LOSO rates 0.33-0.46 and 0.75-0.86; all-2025 rates 0.385 / 0.857.
+  **Concentrated by construction** (9 day-late vs 9 sched rows): set on 2025,
+  submit once. On ranking it moves 6 LIRF rows (`TAY9LA`, `WMTT3508`,
+  `SVII3006`, `ITYTY672`, `QFAA7006`, `NOSOS431`) plus 13 negligible
+  low-p rows; expected ~1.3 points under the 2025 class rates.
+- **21b, long-taxi episodes.** Unmatched rows whose matched neighbours
+  (+/-30 min, uncapped gap_LOBT) are long-taxi: v20 bias by neighbour share
+  0: -8 (15,658 rows); 0-10%: -414 (477); 10-25%: -967 (99); >25%: -1,267 (32).
+  Per split holdout -591, inner -1,833, dec_jun -915 (mar_sep n=2). Real, but a
+  LOSO band shift is only -0.07..-0.11 pooled with holdout/dec_jun flipping
+  sign by shrinkage, and ranking has ~4x the exposure (644 rows vs 608 in 1.38M;
+  EHAM Jan 2-9 2026 is 78 of the 94 rows at >25%). Band-keyed post-hoc is the
+  category that reversed live. **Not established as post-hoc;** worth trying
+  as a `mu` feature (uncapped neighbour long-taxi share and median), since
+  `PROXY_MAX_SEC` hides exactly this from every model today.
+- **Built 2026-09-24, not yet uploaded.** Code: `combine(..., day_value, cap)`,
+  `fit_day_late_steps`, `day_late_step_weight`, `tail_options` in `model.py`;
+  flags `--tail-cap` and `--day-late-step` (default off, so v20 reproduces);
+  `blend.py --tail-cap/--day-late-step`; `src/tail_submission.py` rebuilds a
+  submission from its `.parts.parquet` exactly (checks the parts reproduce the
+  input first); `tests/test_tail.py`. `blend.py --clf v20_full --mu
+  v20_full:mu --high-lobt --tail-cap --compare v20_full` reproduces the cap's
+  -0.29 (CI -0.73..-0.00, "wins", normal rows 0.00). Step rates on all 12
+  months: 0.4375 / 0.857.
+  - `output/submitting_v22_cap.parquet` = v20 + `--tail-cap`, 6 rows changed
+    (`NOSOS431` 119,022 -> 110,208; `QFAA7006` 93,374 -> 86,460; four <= 40s).
+  - `output/submitting_v23_step.parquet` = v20 + `--tail-cap --day-late-step`,
+    19 rows changed (the two above, plus `TAY9LA` +10.3k, `WMTT3508` +8.7k,
+    `SVII3006` +6.8k, `ITYTY672` +5.9k; 13 rows <= 80s).
+  - Both verified against the template (schema, dtypes, order, no NaN or
+    negatives). v20 backed up in `output/backup/`.
+  - **Live (2026-09-24): v22 264.7491 (-0.470 vs v20; offline -0.29). v23
+    265.3724 (+0.623 vs v22).** The cap carried at ~1.6x. The step lost:
+    SSE +1.1e8 over the 4 LIRF rows it raised by 5.9-10.3k, i.e. in aggregate
+    the 2025 day-late rates (6/10 at 50-66k, n tiny) did not hold. **Closed.**
+    Per the concentration guard, no per-row inference is drawn from this score
+    and no subset or reweighted variant of the step is to be submitted.
+    `--day-late-step` stays in the code, default off, as the record.
+- **23, ARVT residual diagnostic (2026-09-24).** Linear: nothing, every
+  |corr| <= 0.014 with the normal-row residual, quintile spread <= 8s. But a
+  cross-split residual stack beats its control (airport + gap_LOBT +
+  gap_AOBT_3) in all four directions: holdout->mar_sep +0.156 vs +0.254,
+  mar_sep->holdout +0.168 vs +0.236, inner->dec_jun +0.205 vs +0.310,
+  dec_jun->inner -0.082 vs +0.125. The proxy features had the same shape
+  before winning 3.2. Columns added as `features.ARVT_COLS` behind `--arvt`
+  (built always, like `--proxy`); `tests/test_arvt.py`. **Screen: not
+  established.** `arvt_ctrl` reproduces `prox_lgb` bit-for-bit (+0.00). Against
+  it, `arvt_lgb` (`--mu lgb --proxy --arvt`): holdout all +0.02, normal -0.06;
+  mar_sep all -0.21 (CI -0.50..+0.06), normal -0.10; pooled robust **-0.07
+  (CI -0.25..+0.10)**. The same size as the disruption screen, in a single
+  LightGBM with ~24 points of headroom the ensemble lacks. Not worth a
+  full run. The code stays, default off.
+- **13, unseen levels: renamed callsigns (2026-09-24). The biggest
+  validation/ranking mismatch found.** 21.9% of ranking DEP rows have a
+  flight key (`te_flight`) never seen in 2025, against 1.8-2.5% on the four
+  splits. By month: **January 2026 2.3%, July 2026 37.4%.** Airlines reissue
+  alphanumeric callsigns each IATA season (`RYR86FZ`, `THY6BZ`); January is
+  covered by Nov-Dec 2025 (same winter season), July 2026 is summer 2026, whose
+  callsigns 2025 never saw. A 2025 split crossing a season change (score
+  Nov-Dec, train Mar-Sep) shows 35%. July 2026 per airport: EHAM 6.8%, EDDF
+  9.8%, LSZH 11.3%, EGLL 17.7%, LTFM 45.1%, LIRF 48.0%, LEMD 52.5%, LFPG 54.2%,
+  EDDM 57.2%, **LEBL 74.8%**. Of unseen flights 90.6% have a seen route
+  (airport, airline, ADES); schedule linkage (same route, sched time +/-15
+  min) finds a 2025 candidate for 61.8% (unique for 32.6%). Unseen fallback
+  was the **global** prior. Stands: EDDM 4.6%, EDDF 0.8% unseen (vs <0.2%).
+  Seconds-field (lead 24): whole-minute AOBT_3 separates the block = AOBT_3
+  class only weakly (7.3% vs 1.8%, but 97.7% of values are whole-minute); low
+  value. Scripts: `seconds_unseen.py`, `unseen_flight.py`, `sched_link.py`.
+  - **Masked validation** (`validate.py --mask-flight`, evaluation only): in
+    each split's summer month, a stable hash selects each airport's July 2026
+    unseen share of flight keys and encodes them as unseen at predict time,
+    exactly what a renamed callsign does. The same models also predict
+    unmasked (saved as `TAG_unmasked`). `--mu lgb --proxy` (`mask_lgb`):
+    **masking costs +0.92 normal-row RMSE on holdout (masked flights 288.1 ->
+    292.0, n=67,677) and +0.48 on mar_sep (227.5 -> 229.8, n=65,252).** A cost
+    July 2026 carries and validation never showed; it also fits
+    `PRIOR_WEIGHT`'s 2.82x live transfer (2026 has far more low-support keys).
+  - **Fix under test**: `--te-flight-backoff` (unseen flight -> slot key
+    airport|airline|ADES|30-min scheduled local slot -> route -> global, each
+    shrunk toward the next) and `--te-flight-dropout 0.2` (20% of flight keys,
+    by a hash salted differently from the mask, encoded as unseen on training
+    rows too). Dropout 0.2 was set before any run, not tuned.
+  - **Result (`mask_fix` vs `mask_lgb`, `--mu lgb --proxy`, holdout + mar_sep):
+    wins.** Masked (2026-like): holdout all -0.61, normal **-0.84**; mar_sep
+    all -0.43, normal **-0.40**; pooled robust **-0.57 (CI -0.79..-0.36)**,
+    better in 100% of resamples. Masking cost falls from +0.92 to +0.14
+    (holdout) and +0.48 to +0.06 (mar_sep); masked flights 292.0 -> 288.6 and
+    229.8 -> 227.8, with those rows unmasked unchanged (288.1 -> 288.0).
+    Unmasked (January-like): pooled robust -0.01 (CI -0.16..+0.15), normal
+    -0.06 / +0.02, Jan 2025 212.83 -> 212.79: **no regression**. (The unmasked
+    -0.06 on holdout rests on 3 rows; noise.)
+  - Shared-input change (the `te_flight` column every family reads), so the
+    ensemble should keep it, as it kept `PRIOR_WEIGHT` and the proxy features.
+    `predict.py --mu lgb cat cat_note cat_ctr1 pa --proxy --te-flight-backoff
+    --te-flight-dropout 0.2` (tail cap on by default) ->
+    `output/submitting_v24_flight.parquet` (sha256 prefix `b3d92829a4ccb558`),
+    one change against v22. Verified against the template; p, v and the
+    specialist are identical to v22's, so only `mu` moved. Diff vs v22: delta
+    quantiles 1/5/25/50/75/95/99% = -58/-24/-7/-0.4/+6/+23/+49s, mean 1040.33 ->
+    1039.72; sd of the change 39s on unseen-flight rows vs 15-19s on seen ones;
+    July unseen rows move -2.4s on average; 89 rows > 500s, none > 2000s.
+    **Live: v24 264.2436, -0.506 against v22** (screen -0.53 all-row masked,
+    so ~1:1). Both flags now default on. **Method lesson:** the masked harness
+    (`--mask-flight`) found a cost validation could not see and predicted its
+    live value. Before any encoding or key change, compare its effect masked
+    and unmasked.
+  - **Follow-ups (2026-09-24), each vs `mask_fix`, `--mu lgb --proxy
+    --mask-flight`, holdout / mar_sep normal-row deltas; script
+    `output/diag/unmasked_compare.py`:**
+
+    | arm | masked (2026-like) | unmasked (Jan-like) | verdict |
+    |---|---|---|---|
+    | `--te-airport-prior` (every key shrinks to its airport mean) | +0.01 / -0.23 | +0.00 / -0.23 | not established, pooled robust -0.11 (CI -0.26..+0.05) |
+    | backoff only (dropout 0) | +0.29 / +0.09 | +0.05 / -0.03 | worse, pooled +0.11 |
+    | dropout only (no backoff) | +0.40 / +0.28 | +0.34 / +0.15 | **significantly worse**, both gates |
+    | dropout 0.35 | +0.08 / +0.07 | +0.12 / +0.12 | worse, pooled +0.09 / +0.13 |
+
+    **v24's configuration is confirmed; do not retune it.** Both halves are
+    needed: backoff alone keeps about half the masked cost (+0.38 / +0.18
+    against +0.14 / +0.06); dropout alone is worse than nothing, because
+    hiding the key in training with only the global mean behind it teaches
+    the model to distrust a column that then carries no information. Dropout
+    0 and 0.35 are both worse than 0.2, so 0.2 sits between two worse
+    settings; not refined further. The airport prior is split-dependent
+    (mar_sep broad, top-3 rows 16%; holdout flat) and validation has almost
+    no unseen stands to test it on (0.04-0.13% against EDDM's 4.6% in 2026).
+    Kept, default off. Not yet tried: an airport-level fallback for every `te_*`
+    key (EDDM stands 4.6% unseen also fall to the global mean), and backoff
+    vs dropout separately.
+- **26, usage shift (2026-09-24, `output/diag/usage_shift.py`): no action.**
+  Jan+Jul 2026 against Jan+Jul 2025, DEP runway total-variation distance
+  0.02-0.41 per airport-month; the big ones are wind-direction flips, not
+  closures: EGLL 09R 20% -> 46% (Jan) and 11% -> 38% (Jul), LFPG Jul 26R 49%
+  -> 25% with 08L 12% -> 31%, LEBL Jul 06R 23% -> 39%. No runway is new
+  except LFPG `NA`; stand-area TVD <= 0.12. Runway, `te_rwy_hour` and
+  `te_stand_rwy` already carry it. Arrival taxi-in medians move -77..+47s;
+  v24's predicted DEP mean sits 125-221s above Jan 2025's actual at EDDF,
+  EDDM, EHAM, LSZH and LTFM while arrivals rose only 5-41s there (corr of
+  the two shifts across airport-months 0.22). Plausibly Jan 2026 snow and
+  de-icing (snow 2.6x 2025) seen through the proxy features; not checkable
+  without labels, so recorded, not acted on.
+- **5, residualised neighbour proxy (2026-09-24, `src/resproxy.py`,
+  `--res-proxy`, default off).** 16 columns: neighbours' gap_AOBT_3 /
+  gap_LOBT (0..6000s) minus their own `te_stand_rwy`, averaged over 30/60 min
+  before/after, airport and runway scope, self excluded. Computed after the
+  encodings, per frame (fit rows' neighbours share their month and their
+  out-of-fold encodings exclude it). `meta["t"]` (take-off seconds) added to
+  `data.load_training` for it. Against `mask_fix`, `--mu lgb --proxy
+  --mask-flight`, holdout + mar_sep: masked normal rows **-0.22** (holdout,
+  top-3 rows 15%) / -0.06 (mar_sep, top-3 62%), pooled robust **-0.17 (CI
+  -0.37..+0.02)**; unmasked -0.16 / -0.02, pooled -0.13 (CI -0.34..+0.05).
+  **Four splits: not established, split-dependent.** Normal-row deltas
+  masked holdout -0.22, mar_sep -0.06, **inner +0.32** (robust CI
+  -0.03..+0.77), dec_jun -0.23; pooled robust **-0.05 (CI -0.22..+0.12)**;
+  unmasked the same shape (-0.16 / -0.02 / +0.33 / -0.22, pooled -0.04).
+  Not shipped; flag kept, default off. The four-split runs also confirm v24's
+  fix: with it, the masking cost on inner / dec_jun is only +0.03 / +0.05
+  normal (holdout +0.14, mar_sep +0.06).
+- **21b, episode features in `mu` (2026-09-24, `--episode`, default off).**
+  `features.EPISODE_COLS`: share of matched neighbours (+/-30, +/-60 min, self
+  excluded) with gap_LOBT > 6000, and their mean gap clipped at 20,000s.
+  Four masked splits against `mask_fix` / `mask_fix2`: normal rows holdout
+  -0.16 (top-3 rows 49%), mar_sep -0.06 (63%), **inner +0.21**, dec_jun -0.31
+  (20%); pooled robust **-0.11 (CI -0.33..+0.09)**; unmasked identical in
+  shape. Unmatched normal rows improve on three splits (holdout 864.9 ->
+  863.2, inner 1002.3 -> 997.4, dec_jun 656.8 -> 652.3). **Not established.**
+  Same three-for-one-against shape as the residualised proxy, with inner
+  (Feb+Aug, the LTFM snow month) the loser both times.
+- **Why inner loses (checked 2026-09-24).** Residualised proxy: LTFM
+  2025-02-19..24 (the snow episode) carries **92%** of inner's normal-row
+  loss (Feb 19 alone 50%); without those six days 8% remains. Episode
+  features: more mixed, 72% remains without them. **Extrapolation warning for
+  any episode- or disruption-style feature:** inner is the one split whose
+  training holds no comparable episode, and the feature then misfires on the
+  episode itself. EHAM Jan 2026 lies beyond every 2025 value in the same way
+  (section 5, disruption), so such a feature risks its worst behaviour exactly
+  on the ranking set. Do not combine `--res-proxy` and `--episode` to chase
+  significance.
+- **16, adversarial validation (2026-09-24, `output/diag/adversarial.py`):
+  no new construction mismatch.** Jan+Jul 2025 training rows against Jan+Jul
+  2026 ranking rows, on the exact v24 model matrix, LightGBM, 5 folds grouped
+  by day. With encodings: AUC 1.000, an artifact: training rows carry
+  out-of-fold `te_*_n` counts (own month excluded) and ranking rows full
+  12-month ones, so a count plus its category fingerprints every row.
+  Validation builds fit and apply rows the same way (fit out-of-fold, apply
+  full, ratio ~9/10 there against 11/12 live), so this is not a hidden live
+  cost. Without `te_*`: **AUC 0.761** (airports 0.68-0.83), driven by world
+  changes already in the inputs: runway direction (EGLL 09R +3.1 pts, 27R
+  +1.7), temperature (median 17 -> 19C, p90 28 -> 30), dew-point spread,
+  day-of-week composition, fleet (A21N +2.2 pts, BCS3 +1.2), airline mix. No
+  single feature separates alone (best single-feature AUC 0.549). Proxy
+  features and missing shares match across years. Closed.
+- **9, re-matching unmatched departures via the destination's ARR row
+  (2026-09-24, `output/diag/rematch.py`): negative.** Same callsign (and
+  de-corrupted form), landing 20 min-14 h after take-off, ARR row with a plan
+  whose ADEP is this airport: 915 of 22,470 unmatched 2025 DEP rows (4.1%),
+  229 of 5,290 in ranking (4.3%). In 2025 the recovered LOBT puts the label
+  within the +/-3606s bound on only **2.5%** of rows (median |y - gap| 4,499s;
+  0 of 19 tail rows): the plan belongs to another flight with the same
+  callsign. Feeding it to the projection would be harmful. Closed.
+- **N1, January 2026 level (2026-09-24, `output/diag/jan_level.py`):
+  plausibly real, no action.** v24 predicts Jan 2026 departures 119-210s
+  above Jan 2025's actual mean at EDDF, EDDM, EHAM, LSZH, LTFM. The model was
+  level on Jan 2025 out of sample (bias 0-18s). In Jan 2026 those airports ran
+  late and snowy: median gap_LOBT +50..+240s, gap_SCHED +250..+400s, snow
+  share 0.7-2.8% -> 6.6-9.0%, own gap_AOBT_3 +47..+50s at EDDF / EHAM. SHAP on
+  an all-2025 LightGBM puts the rise on gap_EOBT (+21..+43), gap_AOBT_3
+  (+21..+32), gap_IOBT, temperature and te_stand_rwy; the neighbour proxies
+  add only +4..+14. No sign of an AOBT_3 recording change. Unverifiable
+  without labels.
+- **22, Phoenix's `AOBT_3 - LOBT > 7200` rule: covered.** 111 such 2025
+  rows: the label is within the LOBT bound on 100%, within 600s of
+  gap_AOBT_3 on 0%; v20 RMSE 868 there against 8,496 for predicting
+  gap_AOBT_3. 27 ranking rows, v24 follows LOBT. Closed.
+- **14, PRU `Taxi-Out_Additional_Time.xlsx`: off limits (user decision
+  2026-09-24: "technically seeing into the future"; rule added to
+  `AGENTS.md`).** Sheet `DATA` holds per airport and month
+  `TOTAL_REF_TIME_MIN`, `TOTAL_ADD_TIME_MIN`, `TOTAL_REF_NB_FL` **for Jan and
+  Jul 2026**: an aggregate of the scored labels for the scored period. Using
+  it to set or check levels is test-label leakage from outside, even if the
+  file is public. No comparison was computed. (The daily ATFM arrival-delay
+  data is a different quantity and stays fine.)
+- **N3, tree counts for the 12-month fit (2026-09-24,
+  `output/diag/rounds.py`).** Round counts were set by early stopping on
+  inner (8 training months); `predict.py` fits on 12. One model per family
+  trained past its count, normal-row `mu` RMSE scored at several counts from
+  the same model, v24 matrix:
+
+  | family | split (train months) | curve | best | shipped |
+  |---|---|---|---|---|
+  | LightGBM (lr 0.02) | inner (8) | 600: 224.42, 900: 223.84, 1200: 223.81, 1500: 223.94, 2700: 224.71 | 1200 (-0.03) | 900 |
+  | LightGBM | holdout (10) | 600: 225.17, **900: 224.75**, 1200: 224.79, 2700: 225.63 | 900 | 900 |
+  | CatBoost `cat` (lr 0.08, depth 8) | inner (8) | 2000: 216.88, 3000: 216.01, **4000: 215.57**, 5000: 215.58, 6000: 215.62 | 4000 (-0.44) | 3000 |
+  | CatBoost `cat` | holdout (10) | 2000: 222.40, 3000: 221.33, 4000: 220.76, 5000: 220.43, **6000: 220.20** | >= 6000 (-1.13) | 3000 |
+
+  **LightGBM is right; CatBoost is under-trained, and its optimum grows
+  with the data** (~4000 at 8 months, still falling at 6000 with 10), so the
+  12-month fit is short of trees too. 6000 was chosen from the trend across
+  sizes, not by tuning on holdout, and sits on inner's 4000-6000 plateau.
+  `--cat-iterations N` (default 3000 so v24 reproduces; `model.apply_model_args`
+  sets it) applies to `cat` and `cat_note`; `cat_ctr1` (3500) and the
+  per-airport CatBoost (2000) set their own and were not swept.
+  `predict.py --mu lgb cat cat_note cat_ctr1 pa --proxy --cat-iterations 6000`
+  -> `output/submitting_v25_cat6k.parquet` (commit `64a7b85`, sha256 prefix
+  `978eef415fb508ce`, 4h35m). One change against v24; p, v and the
+  specialist identical to v24's. Diff vs v24 is small: sd 5.6s, 1/99% quantiles
+  -13 / +17s, no row > 500s; corr(v24 mu, v25 mu) 0.99991. Two of five
+  families changed, carrying ~a quarter of `mu` with `pa` at 0.5, so the
+  single-member -1.13 dilutes to a guessed -0.1..-0.3 live. **Live: v25
+  263.8731, -0.371 against v24**, above the guess. Now the default
+  (`model.CAT_FULL_FIT_ITERATIONS`). Next: sweep `cat_ctr1` (3500, depth 10)
+  and the per-airport CatBoost (2000) the same way; `pa` carries half of `mu`.
+- **9 and 16** are recorded above; N2-N4 in the table.
+- **Honest ceiling.** Nothing found reaches 30 points. The biggest validated
+  component, unmatched non-LIRF misses (18 points at p ~ 0), has no signal in
+  the rows' own timestamps or in other rows'. The legitimate levers found
+  total a few points.
+
+### All leads
+
+Nothing here is measured positive. Re-ranked 2026-09-23 by expected gain per
+hour, after triaging an externally generated list of 30 ideas. Most were
+already in section 5. The two feature leads ranked first that day
+(airport-relative and long-window disruption state; queue over the taxi window)
+were residual-diagnosed and then screened the same day: **not established**
+(pooled robust -0.10, CI -0.25..+0.06; holdout a wash). Numbers are in
+section 5, "Features that do not carry". "Hands-on" is your time; "machine" is
+unattended compute. Gains are live-RMSE guesses, not measurements.
+
+Leads 5-17 come from a brainstorm on 2026-09-24, checked against section 5;
+none is measured. **The ranking principle:** the one family that won big
+measures the *target itself on neighbouring flights* (the proxy features,
+-3.2 offline, -2.56 live, 100% kept through the ensemble). Ideas that add
+*state* which should merely correlate with taxi time have lost about ten
+times (counts, weather x3, daily ATFM, disruption, runway config, OSM,
+sectors). Each new lead is tagged **[target]** or **[state]** and ranked on
+that first.
+
+**Budget.** The deadline is 2026-10-11. A four-split validation of the full
+ensemble takes about half a day and `predict.py` several hours, so full runs
+are few and must be chosen. Every lead goes through the cheapest decisive test first: a
+residual diagnostic against `v20_full` or `blend_prox` (minutes), then a
+`--mu lgb --proxy` screen on holdout + mar_sep (~13 min per arm), which can
+reject but never promote.
+
+**Suggested order (revised 2026-09-24 for the gap above):** 18 first (~30
+min); then 19 (~2h), which decides the session: a mechanism covering a real
+share of the 91 rows at high precision outweighs everything else combined;
+then 20-22 as 18 directs; then the diagnostics for 23, 24, 8, 9, 13 and 14 in
+one day; then 5 as the normal-row main line. At most two full four-split runs
+and one or two `predict.py` runs, keeping ~3 days of slack. Do 3 before the
+final submission regardless.
+
+| # | lead | hands-on | machine | plausible live gain | prior |
+|---|---|---|---|---|---|
+| 0 | ~~`--mu lgb` screen of disruption features~~ | done 2026-09-23 | -- | not established | closed |
+| 1 | ~~Four-split baseline of full v20~~ | done 2026-09-24 | -- | enabler, saved as `v20_full` | closed |
+| 2 | ~~LIRF `mu`-only 351.6 diagnosis~~ | done 2026-09-23 | -- | mechanism found, not reachable | closed |
+| 3 | Seed the `mu` families | ~15 min | ~2h20m `predict.py` | 0 (insurance) | -- |
+| 4 | Reference-scaled target | ~2h | full runs | 0-0.3 | low |
+| 5 | ~~Residualised neighbour proxy~~ | done 2026-09-24 | -- | 4 splits -0.05, inner +0.32; not established | closed |
+| 6 | Destination-scoped proxy, network-wide [target] | ~2h | 2 screens | 0.3-1.5 | **top**, widest spread |
+| 7 | Proxy over time: per-key drift tracker [target] | ~3h | 2 screens | 0.2-0.8 | medium |
+| 8 | ~~`ARVT_1`/`ARVT_3` diagnostic~~ | done 2026-09-24 | -- | see 23: not established | closed |
+| 9 | ~~Re-match unmatched DEP via destination ARR row~~ | done 2026-09-24 | -- | **negative**: recovered LOBT wrong flight | closed |
+| 10 | Narrower proxy neighbour sets [target] | with 5 | with 5 | 0.1-0.5 | medium |
+| 11 | Proxy sources and summaries [target] | with 5 | with 5 | 0-0.3 | low |
+| 12 | Arrival taxi-in at stand-area / runway scope [target-adjacent] | ~1h | 1 screen | 0-0.3 | low |
+| 13 | ~~Unseen levels: renamed callsigns~~ | done 2026-09-24 | -- | **v24: -0.506 live** | shipped |
+| 13b | ~~Airport-level fallback; backoff vs dropout; dropout rate~~ | done 2026-09-24 | -- | v24 config confirmed; airport prior not established | closed |
+| 14 | ~~2026 airport-month level check from PRU xlsx~~ | stopped 2026-09-24 | -- | **file holds Jan/Jul 2026 label aggregates: leakage, not used** | **off limits (user, 2026-09-24)** |
+| 15 | Stand rotation as a `mu` feature [state] | ~2h | 1 screen | 0-0.4 | low |
+| 16 | ~~Adversarial validation 2025 vs 2026~~ | done 2026-09-24 | -- | no new construction mismatch; AUC 0.761 from world change | closed |
+| 17 | Destination arrival ATFM, external [state] | ~2h | 1 screen | ~0 | low, only if 6 shows signal |
+| 18 | ~~At-stake map of ranking rows~~ | done 2026-09-24 | -- | see results below | closed |
+| 19 | ~~Tail labels vs other rows' timestamps~~ | done 2026-09-24 | -- | **negative** | closed |
+| 20 | Three-way tail: hedge cap / gap step | **cap: v22 -0.470 live; step: v23 +0.623, closed** | -- | -- | done |
+| 21 | ~~Audit our 170 predictions above 6,000s~~ | done 2026-09-24 | -- | folded into 18/20 | closed |
+| 21b | ~~Episode shift / uncapped neighbour long-taxi share~~ | done 2026-09-24 | -- | post-hoc and `mu` feature both not established (4 splits -0.11) | closed |
+| 22 | ~~Check Phoenix's `AOBT_3 - LOBT > 7200` rule~~ | done 2026-09-24 | -- | already covered by the LOBT projection | closed |
+| 23 | ~~Planned taxi hidden in `ARVT_1`~~ | done 2026-09-24 | -- | screen -0.07, not established | closed |
+| 24 | ~~Timestamp seconds-field forensics~~ | done 2026-09-24 | -- | weak, low value | closed |
+| 25 | Saturated-run queue length at the runway [state, physical] | ~1h | 1 screen | 0-0.4 | low |
+| 26 | ~~Runway / stand-area usage shift 2026 vs 2025~~ | done 2026-09-24 | -- | wind-direction flips, covered; no action | closed |
+| 27 | Validation scored with 2026 weights | ~2h | -- | enabler | -- |
+| 28 | Aircraft rotation via the inbound flight's `ARVT_3` | ~2h | 1 screen | 0-0.4 | low |
+| 29 | Raw OpenSky state vectors: push-back proxy (gate: coverage) | ~2h | -- | unknown | low |
+| N1 | ~~January 2026 level: artifact?~~ | done 2026-09-24 | -- | plausibly real (delays + snow) | closed |
+| N2 | Scale TE `_n` counts to the fit rows' out-of-fold basis | ~1h | 1 screen | 0-0.2 | low-medium |
+| N3 | ~~Tree counts for the 12-month fit~~ | done 2026-09-24 | -- | **v25: -0.371 live**; LightGBM right, CatBoost under-trained | shipped |
+| N3b | Sweep `cat_ctr1` (3500) and the per-airport CatBoost (2000) the same way | ~2h | sweep + full run | 0-0.4 | **top** |
+| N4 | Validation scored with 2026 row weights (= lead 27) | ~2h | -- | enabler | -- |
+
+1. **Four-split baseline of the full v20 recipe: done 2026-09-24**, saved as
+   `output/validate/v20_full` (`validate.py --mu lgb cat cat_note cat_ctr1 pa
+   --proxy`, log `output/logs/v20_full.log`). This is the `--compare` target for
+   anything aimed at the full ensemble. **Pooled all-row 261.32, normal-row
+   217.76** over 1,376,273 rows (`pa_v9`: 264.39 all-row).
+
+   | split | all rows | robust | normal rows | `mu`-only normal |
+   |---|---|---|---|---|
+   | holdout | 311.70 | 254.37 | 235.24 | 217.27 |
+   | inner | 244.83 | | 226.70 | 214.23 |
+   | dec_jun | 261.16 | | 207.93 | 202.44 |
+   | mar_sep | 218.75 | | 199.92 | 192.85 |
+
+   Holdout per airport: EDDF 175, EDDM 166, EGLL 253, EHAM 178, LEBL 214,
+   LEMD 167, LFPG 563, LIRF 598, LSZH 187, LTFM 234.
+2. **LIRF's `mu`-only 351.6: diagnosed 2026-09-23, closed.** Mostly a label
+   artefact: delayed LIRF departures often have block time = scheduled time.
+   Worth an oracle -9.4 pooled normal-row RMSE, with no observable that
+   separates it. Full numbers are in section 5, "LIRF: block time recorded as
+   scheduled time". Scripts: `output/diag/diag_lirf*.py`.
+3. **Seed the `mu` families explicitly.** Cheap insurance for determinism
+   (section 1). Check that it does not change v20's predictions, or record by
+   how much. Do it before the final submission, not before.
+4. **Reference-scaled target.** Divide the target by a physical
+   reference (the stand-runway unimpeded time) and weight the loss by the
+   square of that reference, so the model still optimises absolute RMSE (the
+   2024 winner's trick for take-off mass). The neighbours are negative: the P10
+   stand-runway encoding was +0.025, and the residual-anchored member -0.08 CI
+   crossing zero. It also changes what `mu` learns wholesale, which puts it
+   closer to the "new member" category that has failed five times. Last.
+5. **Residualised neighbour proxy [target, shared input].** Neighbours' gap
+   minus each neighbour's *expected* gap (its OOF `te_stand_rwy`, or a
+   first-stage `mu`), averaged over the same windows. The raw proxy mixes "taxi
+   is slow right now" with "the neighbours happened to use remote stands", and
+   a tree cannot undo that once ~20 neighbours are averaged. *Differs from the
+   disruption features* (section 5): those normalised **counts** and arrival
+   taxi-in against hour-of-week norms; this normalises the **target proxy**
+   against each neighbour's own expectation. The expectation **must be
+   out-of-fold** or it leaks. Test: residual diagnostic on `blend_prox`, then
+   one lgb screen shared with 10 and 11.
+6. **Destination-scoped proxy, network-wide [target].** For a departure to X:
+   `MVT - AOBT_3` and `MVT - EOBT` of departures to X from *all ten airports*
+   within +/-2h. Aimed at the 3000-6000s band (19.5% of normal SSE, mechanism
+   "pushed back, then held for a slot"); ATFM regulations are keyed to the
+   destination and the airspace on the way, so flights facing the same
+   regulation should show it in their gaps. *Differs from destination bearing
+   + same-sector counts* (section 5, a measured loss): those were **counts**;
+   this is the **measured gaps** of flights under the same regulation. **Risk:**
+   this band is where 2026 over-weights ~3x; amplification scales an offline
+   error as readily as a gain. The population-share check (section 5, band
+   calibration) is mandatory before shipping.
+7. **Proxy over time, a per-key drift tracker [target].** For a key (flight
+   number, stand-runway, operator at the airport): mean `MVT - AOBT_3` over the
+   last N days against its long-run mean. Needs no labels, so it can follow
+   drift *inside 2026*, which the static `te_*` encodings cannot. *Differs from
+   the arrival taxi-in drift correction* (section 5): different quantity, key
+   level not airport level. **Parity trap:** training features are built per
+   month while `ranking.parquet` is one file with a five-month gap (see
+   `_secs_since_prev_arr_block`), so any lookback longer than a day must reset
+   identically in both.
+8. **`ARVT_1_flt` / `ARVT_3_flt` are unused.** Parsed in `TIME_COLS`, never
+   turned into a feature (checked by grep 2026-09-24). Candidates: `ARVT_3 -
+   MVT` (flight time) against the route norm; arrival delay `ARVT_3 - ARVT_1`
+   against off-block delay `AOBT_3 - EOBT_1`. Hope: if part of NM's `AOBT_3` is
+   back-computed from take-off, these may show which rows' `AOBT_3` is real,
+   which touches the block = `AOBT_3` class (AUC 0.70, section 5). **Allowed:**
+   the challenge's `data.html` documents both columns as provided data, and
+   only `BLOCK_TIME` and `TAXITIME` are blanked on ranking DEP rows (checked
+   2026-09-24). Supporting evidence: another team's `MVT - ARVT_1` minus the
+   route median, clipped to +/-3600s, was worth -1.22 live for them (from a
+   weaker base, 285.95 -> 284.74).
+9. **Re-match unmatched departures through the destination's ARR row.** For
+   flights between the ten airports, the ARR row at the destination may carry
+   a flight plan the DEP row lacks. A recovered LOBT feeds the bounds and the
+   specialist, the two categories that carried. Motivation: 2026 unmatched is
+   +29% (EHAM 1.80 -> 3.16%); if the extra rows look like airline flights
+   (normal callsigns, aircraft type present) rather than GA, it is a join
+   failure, not a population change. **Risk:** it changes the no-LOBT
+   classifier's training population, the area that has lost live three times;
+   in scope, but validate hard. **Gate:** count re-matchable rows on
+   `ranking.parquet` first; build nothing unless the count is material.
+10. **Narrower proxy neighbour sets [target].** Stand area (stand prefix or
+    cluster), same operator (a proxy for the ground handler), same stand-runway
+    pair, same wake category. Only airport and runway scopes exist today.
+    Screen together with 5.
+11. **Proxy sources and summaries [target].** `EOBT_1` and `IOBT` as sources;
+    median, spread, and the share of neighbours whose gap looks like a normal
+    taxi. An add-on to 5's screen, not a lead on its own.
+12. **Arrival taxi-in at a finer scope [target-adjacent].** `arr_taxi_mean` is
+    airport-wide only. By stand area or runway it measures real ground movement
+    on the same apron.
+13. **Unseen-level diagnostic.** Share of ranking rows whose stand,
+    stand-runway or flight key never appears in training, against the same share
+    on the four splits, per airport. Stand renumbering or a new schedule in 2026
+    falls silently to the prior. Might explain part of the 81% transfer.
+14. **2026 level check from the PRU xlsx files** (`dataset/atfm/Taxi-Out_Additional_Time.xlsx`,
+    `ATFM_Slot_Adherence.xlsx`, both unread, granularity unchecked, probably
+    monthly per airport). If additional taxi-out time covers Jan/Jul 2026, its
+    year-on-year change approximates the change in the airport-month mean of
+    the target, which tests whether v20's 2026 level per airport is right. A
+    20s bias at one airport is worth ~0.75 RMSE. **It is an aggregate of the
+    scored quantity for the scored period: check the rules with the organisers
+    before using it for anything beyond diagnosis.**
+15. **Stand rotation as a `mu` feature [state, near-physical].** Time from
+    take-off to the *next* arrival on the stand; the previous arrival on the
+    stand *matched on aircraft type* (turns `secs_since_prev_arr_block` into a
+    real lower bound); the inbound flight's delay as turnaround pressure.
+    *Differs from the stand-occupancy bound* (section 5): violated on 10% of
+    rows, fatal as a hard constraint, but a tree learns a soft relation. The
+    stand-arrival gap failed in the no-LOBT tail *classifier*, not in `mu`.
+16. **Adversarial validation, 2025 vs 2026.** To *find* shifted features
+    only. Never to reweight: seasonal weighting and drift features fitted on
+    ranking rows both failed.
+17. **Destination arrival ATFM, external [state, daily].** The cached file
+    covers our ten airports only (28,000 rows), so it needs a re-fetch of the
+    full table. Own-airport daily ATFM carried nothing. Only if 6 shows signal.
+18. **At-stake map (label-free, read-only; do first).** For each ranking row,
+    expected squared error under our own mixture from
+    `output/submitting_proxy2.parts.parquet`, ~p(1-p)(v-mu)^2 on mixture rows.
+    Sum over the top 10, 50 and 170 rows: how many live points rest on how
+    few rows, and which rows 19 has to explain. v20 has 170 predictions above
+    6,000s (LIRF 128); each is a potential +/-20-point swing.
+19. **Tail labels against *other rows'* timestamps.** The 91 rows were called
+    unpredictable because the label matches none of their *own* timestamps
+    within 600s. Other rows' timestamps were never tested. Check each on the 91
+    labelled 2025 rows:
+    - **Return to stand / local flight:** the same callsign or `FLIGHT_mvt`
+      moved earlier the same day at the same airport (a DEP or an ARR). A
+      second departure may keep the original off-block time, making the
+      label hours long. Fits the 80 non-scheduled rows (GA, positioning, a
+      C172 at a maintenance stand).
+    - **Day-late:** the same flight number's previous-day instance. Does this
+      row's block equal that instance's take-off minus a taxi? Are there two
+      departures of a daily flight within 24h? ITY332 (block 06-25 01:01,
+      take-off 06-26 01:13) looks like yesterday's off-block pasted on.
+    - **Stand-occupancy recording:** label = take-off minus the *previous
+      arrival's in-block on the same stand*.
+    - **Duplicate `FLIGHT_ID`** across DEP rows, or a movement recorded twice.
+    If one covers a real share at high precision in 2025, it is a general rule
+    from provided data, aimed where the gap is. Caveat: 90% precision on 11
+    rows is not established; a false positive costs ~20 points.
+20. **Three-way LIRF mixture.** Label = `sd` (block recorded as scheduled
+    time), 86,400 + normal taxi (day-late), or normal taxi. `combine()` mixes
+    only `mu` and one timestamp `v`. First check whether our `v` can represent
+    the day-late component at all. Kind-mango's version rests on one 2025 row
+    and a table with 4 rows at p = 1: a warning, not a template. Its effect will
+    concentrate on few rows, so set it on 2025 data and submit once (the
+    guard above).
+21. **Audit our 170 predictions above 6,000s**, by class (unmatched LIRF,
+    matched long-taxi, other) and by confidence of p. In 2025 the mixture beats
+    `mu` on unmatched LIRF by 155e9 of 177e9 available SSE, but 2026 has 29%
+    more unmatched rows (LIRF 1.08 -> 1.42%). This is where 20-point false
+    positives would hide.
+22. **Phoenix's `AOBT_3 - LOBT > 7200` rule** (replace the prediction; 31 rows
+    for them, one row 45.8% of their gain). Probably already covered by the
+    LOBT projection; confirm on the ranking rows.
+23. **The planned taxi hidden in `ARVT_1` [target].** At A-CDM airports the
+    airport sends NM a per-flight estimated taxi-out, which may sit inside the
+    M1 trajectory. Isolate it: `ARVT_1 - EOBT_1` (planned block to arrival)
+    minus the route median of `ARVT_3 - MVT` (actual airborne + taxi-in). If
+    that isolates planned taxi, it is a per-flight taxi estimate from the
+    airport itself, the strongest feature class we have. Kind-mango's cruder
+    version (`MVT - ARVT_1` minus route median, clipped +/-3600s) was -1.22
+    live. Refines lead 8.
+24. **Timestamp seconds-field forensics.** Flag whole-minute `AOBT_3`,
+    `MVT_TIME`, `LOBT`. Times rounded to the minute may come from a different
+    source than second-precise ones, which could separate the block = `AOBT_3`
+    class (20% of rows, AUC 0.70 so far, ~29 RMSE as an oracle). Minutes to
+    check the distribution.
+25. **Saturated-run queue length [state, physical].** Consecutive departures
+    before this one on the same runway, each less than ~120s after the
+    previous. That is the physical queue length. *Differs from* the windowed
+    counts, which failed: a run length measures the queue, a window count
+    measures traffic.
+26. **Runway / stand-area usage shift, 2026 vs 2025**, per airport-month. Works
+    or closures would make the 2025 `te_rwy_hour` / `te_stand_rwy` wrong. If a
+    shift shows, look up the airports' AIP supplements for works periods
+    (public; check the licence).
+27. **Validation scored with 2026 weights.** Reweight *scoring only* on the
+    four splits to 2026 shares (unmatched, upper `mu` bands, snow, airport mix).
+    Cheap via `blend.py`. Might have flagged the band calibration before it
+    shipped.
+28. **Aircraft rotation via `ARVT`.** Within the ten airports, the inbound
+    flight's `ARVT_3` at our airport gives the actual arrival of the aircraft
+    now departing: a second link for lead 15.
+29. **Raw OpenSky state vectors (not OPDI)** as a push-back proxy: when the
+    transponder first appears on the ground before take-off. The teammate's
+    random sample found 0 of 24 usable, so gate on coverage at EHAM/EDDF
+    first. Licence: OpenSky's terms allow non-commercial research use and
+    OpenSky co-hosts the challenge; confirm it counts as open-licensed.
+
+Demoted in the same brainstorm, because each touches section 5: holiday
+flags (state, spanned by traffic counts); recency-weighted target encoding
+(`encode.py` exhausted); tighter per-airport LOBT bounds (small, one 2026
+violation costs a lot); self-training on ranking pseudo-labels (no new
+information).
+
+Also on the external list but not ranked: CatBoost `select_features`, which
+is untested, but our feature count is not large and CatBoost hyperparameters
+are converged (section 5). The other points were already measured or already
+done; section 5 holds their numbers.
+
+---
+
+## 5. Explicitly not worth retrying
+
+Each measured with `src/validate.py` over four splits unless noted. This list is
+the most valuable part of this file. Runs cited here were mostly deleted from
+`output/validate/` on 2026-09-23; the numbers below are the record.
+
+### Features that do not carry
+
+- **`ARVT_1`/`ARVT_3` trajectory features** (2026-09-24, `--arvt`, lead 23):
+  route-residualised flight time, planned block, delay gained after
+  off-block, NM's implied taxi. Linear residual nothing; cross-split stack
+  beat its control in 4/4 directions; lgb screen pooled robust -0.07
+  (CI -0.25..+0.10), normal rows -0.06 / -0.10. Not established. Another team
+  reported -1.22 live for `MVT - ARVT_1` minus route median, but from a
+  285.95 base without our `gap_EOBT`/`gap_AOBT_3`/proxy features, which
+  already carry most of it.
+
+- **Airport-relative and long-window disruption state, and queue over the taxi
+  window** (2026-09-23; residual diagnostic, then a `--mu lgb` screen).
+  **Not established.** Code discarded from `dev` on 2026-09-24 (never
+  committed); the full diff, `traffic_norms.csv` and `test_disrupt.py` are
+  saved in `output/diag/disrupt_attempt/` (git-ignored) and re-apply with
+  `git apply output/diag/disrupt_attempt/disrupt.patch`. Diagnostic
+  against
+  `blend_prox` normal rows on holdout and mar_sep, with norms fitted on the
+  eight months neither split scores. Candidates: departures over 60/180 min
+  relative to the airport's hour-of-week median; departures so far that day;
+  median ARR taxi-in over 3h, 6h and day-so-far, raw and relative to the
+  airport median; median inter-departure gap relative to the norm; departures
+  and arrivals counted over `[MVT_TIME - gap_LOBT, MVT_TIME]`, raw and as rates.
+  Script: `output/diag/diag_disrupt.py` (git-ignored).
+  - **Linear: nothing.** Every row-level |corr(feature, residual)| <= 0.026,
+    within-airport the same. Airport-day correlations **flip sign between
+    splits** (`rel_dep_60m` -0.048 / +0.233, `rel_dep_gap` +0.104 / -0.135).
+    Quintile residual bias spans ~10s, and for `q_taxi_dep` the top quintile's
+    -10s is worth ~0.05.
+  - **Residual-stacked tree: uninformative, not negative.** A LightGBM on the
+    residual (airport + all candidates + `gap_LOBT`), fitted on one split and
+    applied to the other: holdout->mar_sep +0.675 (shrink 0.5: +0.110),
+    mar_sep->holdout +0.594 (+0.117). But the control (airport + `gap_LOBT`
+    only) also loses, +0.478 / +0.396 (shrink 0.5: +0.084 / +0.094). So the
+    test mostly measures the Jan/Jul vs Mar/Sep period shift, and at shrink 0.5
+    the candidates are within ~0.03 of the control. **No power either way.**
+  - **Mechanism: the one 2026 episode they target has no 2025 analogue.** EHAM
+    Jan 5 2026 has day-median `rel_arr_med_day` **3.48** against a 2025
+    maximum of **1.75** at any airport, and `rel_dep_180m` 0.30 against EHAM's
+    2025 minimum of 0.74. A tree cannot extrapolate past the training maximum,
+    and the 2025 days nearest it (EHAM high-taxi-in days in Jan 2025) have
+    residuals of both signs (-49 to +18). Away from that episode, the 2026
+    distribution matches 2025 (`rel_dep_60m` p99 4.0 vs 3.5, `rel_arr_med_6h`
+    1.76 vs 1.67), so there is no broad shift to catch either.
+  - **Screen (the verdict).** `--mu lgb --proxy --disrupt` on holdout +
+    mar_sep (`dis_lgb`), against a fresh control `dis_ctrl`. The control
+    reproduces `prox_lgb` bit-for-bit, so there is no code drift.
+
+    | split | all rows | robust | normal rows |
+    |---|---|---|---|
+    | holdout | -0.07 (CI -0.30..+0.19) | -0.03 | **-0.01** |
+    | mar_sep | -0.21 (CI -0.41..-0.02) | -0.19 | -0.13 |
+    | pooled | -0.13 (CI -0.28..+0.04) | **-0.10 (CI -0.25..+0.06)** | |
+
+    Holdout, the split that mirrors the ranking months, is a wash (normal-row
+    dSSE -2.3M, rows moving both ways). **EHAM gets worse there (+0.32 normal
+    RMSE)**, the airport and month the features were built for. mar_sep's
+    -0.13 is diffuse, not a few rows (trimming 25 each way leaves -20.7M of
+    -18.6M) and broad across airports (EGLL -0.47, LEBL -0.32, LSZH -0.38).
+    But it is in months with no disruption episode, and it is at most ~0.1 in
+    a single LightGBM, before the 81% transfer rate and ensemble dilution. Not
+    worth a 13h full-ensemble run.
+  - The **leave-one-event-out** test (hold out EDDF/EDDM Jan 4-6 2025) falls
+    with it: it only checked whether these features transfer.
+- **Runway configuration as a state feature** (2026-09-20) -- active departure
+  and arrival runway sets over 60 min, plus counts and share. Pre-checks
+  *passed* (unseen-config share 0.0-0.5%; within one airport and runway, mean
+  taxi moves a median 108s across arrival configs). Still a wash: mean +0.035
+  full, -0.023 numerics-only. `hour`, congestion counts and `te_rwy_hour`
+  already span it. `output/cfg/`.
+- **Destination bearing + same-sector counts** (2026-09-20) -- worse on all four
+  splits, mean +0.118, holdout CI +0.11..+0.52, a measured *loss*. Build checks
+  passed (bearings verify geographically; same-sector counts correlate only
+  0.46-0.51 with raw departure counts). `output/feat23/`.
+- **OSM stand-to-runway distance and turning** (2026-09-20) -- built properly
+  (`src/taxidist.py`, removed 2026-09-23, in history at `0dc9cc9`; 22,593
+  routes, 87.2% coverage, implied taxi speed 12 km/h, pair-level correlation
+  +0.51..+0.79). Still loses: holdout +0.32, mean +0.105. The v14 residual has
+  **no structure** in it (corr +0.011), and only 2.08% of rows sit on a pair
+  with under 30 observations, so `te_stand_rwy` already has the distance. Turn
+  *counts* are worthless (corr 0.009) -- they depend on OSM drawing granularity.
+  `output/osm/`.
+- **P10 low-quantile stand-runway encoding** (2026-09-20) -- mean +0.025, CI
+  crosses zero.
+- **Three richer METAR sets** -- derived operational flags; everything parseable
+  from report text; the four sharpest alone. All worse.
+- **Context/sequence features for the tail** -- tail artifacts do not cluster;
+  even true labels of neighbouring flights add nothing. Rules out a sequence
+  model over the movement stream.
+- **Exact-timestamp blending into `mu`** -- 31% of normal rows land within 60s
+  of a timestamp gap and knowing which would be worth ~29 RMSE, but the dominant
+  class (block time = `AOBT_3`, 20% of rows) is not predictable (AUC 0.70).
+- **Stand-arrival gap in the no-LOBT tail classifier** -- pooled +0.50.
+- **`AOBT_3_flt` as a label reconstruction** (2026-09-22) -- on July 2025 DEP
+  rows (190,713):
+
+  | field | present | \|gap-y\| <= 30s | <= 60s | <= 300s | median \|err\| | corr(gap, y) |
+  |---|---|---|---|---|---|---|
+  | `AOBT_3_flt` | 97.9% | **10.0%** | 20.0% | 71.5% | **177s** | 0.514 |
+  | `LOBT_flt` | 97.9% | 5.4% | 9.4% | 36.2% | 461s | 0.536 |
+  | `EOBT_1_flt` | 97.9% | 5.4% | 9.9% | 39.4% | 416s | 0.561 |
+
+  All three are present on the *same* 97.9% of rows (98.5% of ranking DEP):
+  one flight-plan join. The ordinary planned-vs-actual gap, not a leak.
+  **Using `AOBT_3_flt` and `LOBT_flt` is confirmed allowed (2026-09-23),** so
+  `gap_LOBT`, the LOBT bounds, the specialist and the proxy features are not
+  at risk.
+
+### Target encoding is at a local optimum on every axis (2026-09-21/22)
+
+`encode.py` is exhausted. Nothing in it is left to try.
+
+- **`PRIOR_WEIGHT`: 10 is the optimum.** Against `pw10`: pw3 pooled robust
+  **-0.02** CI -0.25..+0.22 (not established), pw5 **+0.09**, pw15 **+0.11**
+  and significantly worse on inner, pw20 **+0.22**, pw200 +0.24, `--no-te`
+  +0.96. Tuned on inner and dec_jun, holdout and mar_sep kept clean.
+- **Per-key shrinkage: the premise is wrong.** Empirical-Bayes optimum k =
+  within/between variance over 2,083,748 normal rows: `te_stand_rwy` 1.3,
+  `te_flight` 1.6, `te_stand` 2.0, `te_airline` 2.3, `te_rwy_hour` 2.4,
+  `te_actype` 2.6. All six within 2x although cardinality spans 40x (1,317 to
+  53,088 levels) and median support 130x (210 to 27,462). k depends on the
+  variance ratio, not level count. (EB sits below the measured 3-10 plateau
+  because it optimises the level-mean estimate, not downstream RMSE.)
+- **Keys, `_n` columns, fold size** (2026-09-22, commit `8562a85`). Each
+  `--mu lgb --proxy` on holdout+mar_sep against `prox_lgb`:
+
+  | arm | pooled robust | normal rows | verdict |
+  |---|---|---|---|
+  | `+ te_stand_rwy_hour` | +0.13 | +0.07 / +0.11 | no win, CI crosses zero |
+  | `+ all three crosses` | +0.23 | +0.35 / +0.29 | worse on holdout |
+  | drop the six `_n` | +0.25 | +0.13 / +0.36 | worse on mar_sep |
+  | 3-month OOF blocks | +0.36 | +0.22 / +0.49 | worse on both |
+  | drop `te_flight` | **+0.47** | +0.43 / +0.44 | worse on both |
+
+  **`te_flight` is the most valuable single key** despite 53,088 levels at
+  median support 210. The three crosses (stand-runway x hour, aircraft type x
+  runway, operator x runway) all lose: `te_stand_rwy` and `te_rwy_hour` already
+  span them. Worth stating in the write-up: the encodings are tuned, and a
+  local optimum in all four directions.
+
+### Weather is fully exploited (2026-09-20)
+
+Residual bias by condition is within +/-10s for fog (+0.7), visibility <1.5km
+(+1.3), gusts >=30kt (-1.9), temp <0C (+6.5), ceiling <500ft (-10.2). That
+explains why three richer METAR rounds all failed.
+
+The apparent +140s snow bias is **one airport-month**: by split holdout -18.6,
+inner +106.7, dec_jun -0.8, mar_sep +2.6, and **LTFM/inner alone carries 64.4%
+of all snow-row squared error** (5,669 rows, February 2025). Removing the bias
+entirely is worth 0.05-0.19.
+
+- **Open-Meteo precipitation / snow depth** -- unlikely to pay. Within snow rows
+  the residual correlates with visibility -0.049, temperature -0.071, wind
+  +0.061; visibility during snow is a reasonable intensity proxy.
+- **De-icing demand** -- snow-condition departures in the trailing 60 min.
+  Correlation with the within-snow residual **-0.068** pooled, -0.036 excluding
+  LTFM/inner, and the *wrong sign*.
+- **Per-airport weather regimes** -- per-airport snow offsets have 0-of-2 sign
+  agreement across splits; across-split sd (58) exceeds per-split bias (47).
+
+### Open data that does not help
+
+- **Daily airport ATFM delay** (2026-09-20) -- real, daily, per airport, with
+  cause codes, 2019-01-01 to 2026-08-31, both scored months complete. Cached at
+  `dataset/atfm/arrival_atfm_daily.parquet`. **No residual structure**: corr
+  -0.0048 overall, -0.0053 weather-cause, -0.0009 capacity-cause; top 1% of ATFM
+  days bias -15.8. `corr(y, atfm) = -0.031`: regulations hold aircraft at the
+  gate and *thin out* the surface. (EHAM Jan 2026 shows 11.78 min per arrival
+  against 0.0-2.0 elsewhere.) Per-flight ATFM (CTOT/ETOT) is **not** open; that
+  is the one that would see the 3000-6000s band.
+- **OPDI ADS-B surface events** -- dead on coverage *and* accuracy.
+  `entry-runway` fires at take-off not line-up (corr -0.056); off-block and
+  take-off co-occur on 0.2% of joinable rows (a cleaning step nulled stationary
+  positions on stands); on those, ADS-B taxi predicts the label at RMSE 474
+  against our ~220. Confirmed by another entrant (OpenAir v23 with OPDI 278.36,
+  v24 without 276.99). Proposed again 2026-09-22 as "own-flight parking exit";
+  same probe. `experiments/public_data/opdi_coverage.json` (removed; in git
+  history at `2918b73`).
+  > OSM has `parking_position` at **all ten** airports (194-768 each), matching
+  > `STAND_mvt` on 57-99% of departures. An earlier claim of two of ten was
+  > inferred wrongly from OPDI event counts.
+- **2026 drift correction from arrival taxi-in times** -- arrivals do not tell
+  you which way the departure level moved (MAE 30.3s against 29.4s for assuming
+  no drift; negative fitted slope).
+
+### Band calibration of `mu` -- measured -0.44 offline, **+0.6 live**. Dead. (2026-09-21)
+
+v20 265.219 -> v21 ~265.8, a **1.0 RMSE swing** against the offline estimate,
+the largest offline/live divergence recorded here. `band_calib.py` and
+`calibrate_submission.py` were removed 2026-09-23 (history: `4423b55`,
+`1cef8ea`, `688588c`). **Leave the correction off.**
+
+What it was: `mu` is calibrated below 2000s (bias -1 to -16s) and under-predicts
+above it (+60s at 2000-2500, +155s at 2500-3000, +273s at 3000-4000). Fitted out
+of fold per band, shrunk by n/(n+2000): -0.31 pooled robust (CI -0.46..-0.19).
+Per airport, shrunk to the band's global value: **-0.44** (CI -0.68..-0.26),
+normal-row deltas tracking all-row on every split, inner's gain diffuse (top 3
+rows 1.8%, top 25 10.8%). Monotone in less shrinkage and in more calibration
+data. Orthogonal to the proxy features. It passed every offline check,
+holdout included.
+
+**Mechanism: exposure amplification.** The gain lives in thin upper bands, and
+2026 holds far more of those rows than 2025:
+
+| mu band | 2025 share | 2026 share | ratio | correction |
+|---|---|---|---|---|
+| 0-1000 | 57.3% | 54.9% | 0.96 | -6 |
+| 1000-1500 | 35.0% | 35.3% | 1.01 | -9 |
+| 1500-2000 | 6.3% | 7.1% | 1.13 | -1 |
+| 2000-2500 | 0.92% | 1.64% | **1.78** | **+52** |
+| 2500-3000 | 0.28% | 0.62% | **2.24** | **+102** |
+| 3000-4000 | 0.125% | 0.372% | **2.99** | **+126** |
+| 4000-6000 | 0.023% | 0.067% | **2.89** | +18 |
+
+Offline, +126s hit 0.125% of rows; live, 0.372%. And the 2026 upper-band rows
+are compositionally different (matched long-taxi 3.25x), so they are not the
+rows the bias was fitted from. Cross-model transfer of the constants was ruled
+out (`blend_base` -0.29/-0.10, `blend_prox` -0.36/-0.10 on holdout/mar_sep).
+
+> A "row-weighted mean absolute bias difference of 1.1s" was used to argue the
+> constants transfer. That statistic is dominated by the dense low bands where
+> the correction is inert; it could not see the upper bands. The test was
+> incapable of falsifying the claim.
+
+**Mandatory before shipping any post-hoc correction:** bucket the ranking rows
+from `<out>.parts.parquet` the way the correction buckets them and compare
+population shares against the fitted population. A ratio far from 1 in the bands
+carrying the correction means the offline estimate does not apply.
+
+### Model and ensemble changes
+
+- **The ensemble is saturated -- for MEMBERS.** Five ideas, five negatives: a
+  neural fifth member (+0.055), `lgb_nocat` (+0.01), residual-anchored (-0.08,
+  CI crosses zero), seed averaging (+0.013), fitted blend weights (+0.27 to
+  +0.67 out of sample). Mechanism: every tree variant lands inside the existing
+  residual cloud; the neural net escapes it (0.89 vs 0.94-0.97) but is too far
+  behind standalone (241.07 vs 222.78).
+  **This does NOT cover shared inputs.** `PRIOR_WEIGHT` survived averaging
+  (-0.20 two-member against -0.23 LightGBM-only), and the proxy features kept
+  **100%** (lgb alone -3.18, lgb+cat -3.20). A new column every family consumes
+  behaves differently from a new member.
+- **Neighbour anchor** (`--mu lgb_anchor_nbr`, commit `cfb0975`, default off) --
+  falls back to nearby departures' AOBT_3 gap where a row's own is absent. As a
+  third member: pooled robust **-0.04**, CI -0.24..+0.14. Swapped for `lgb`:
+  -0.35 CI -0.62..-0.11, **a tail-row artifact**. Normal rows: holdout -0.39
+  (top 3 rows 16.6% of the gain), mar_sep -0.09 with the top 3 carrying
+  **143.4%** and the top 10 **254.7%**. Trimming 25 rows each way leaves
+  holdout at -0.33 and turns mar_sep to **+0.06**. Third time an anchored swap has
+  won the bootstrap on a handful of rows.
+- **XGBoost** -- 258 on inner normal rows against CatBoost's 224.
+- **CatBoost hyperparameters** -- depth, growth policy, border count,
+  subsampling, L2 and learning rate all converge to 223.7-227. Only averaging
+  different variants helped.
+- **Monotone constraints** on congestion/queue counts (2026-09-20) -- worse on
+  all four splits, mean +0.24. **Median taxi is not monotone in traffic at 7 of
+  10 airports**: EGLL rises 1080->1369 then falls to 1316, LEMD is flat, pooled
+  taxi peaks at the 8th traffic decile. Mean hour is 12.6-13.3 across deciles,
+  so not an hour confound. `--monotone` stays off.
+- **Seasonal sample weighting** (2026-09-20) -- worse on all four splits, mean
+  +0.59, and second-worst on holdout, where it should shine. `--season-tau`
+  stays at 0.
+- **Seasonal reweighting of how folds are pooled** -- changes no verdict on any
+  of six saved comparisons.
+- **Per-airport `PA_WEIGHT` fitted out of fold** -- +0.030 global, +0.058 per
+  airport, +0.444 for the joint (clip, weight) grid. The shipped clip 150 /
+  weight 0.5 is the grid minimum on a plateau.
+- **Per-airport tail models** -- a per-airport tail *classifier* is not fittable
+  (930 tail positives over 12 months; 8 of 10 airports under 10, LEBL and LEMD
+  none; LIRF 74%). A per-airport *specialist* is fittable but unvalidatable:
+  every airport is below `MIN_ROWS=20000`, and the apply population is 34% EGLL
+  offline against 8% live, EHAM 9.9% offline against 49.1% live.
+- **Porting v19.** It is our proxy signal at weight 0.25 x 0.8 = 0.20, one
+  CatBoost, -0.468 live (265.525 -> 265.057); ours is weight 1.0, five
+  families, -2.558. 0.468 / 2.558 = 0.183, matching their 0.20. Porting would
+  be a downgrade.
+- **The teammate's residual anchor and Rome expert.** The anchor is
+  `lgb_anchor` (-0.08, above). The Rome/LIRF expert duplicates the per-airport
+  family (v14, -1.01 live).
+
+### LIRF: block time recorded as scheduled time (2026-09-23)
+
+Diagnosis of LIRF's `mu`-only normal-row error, on `blend_prox` holdout +
+mar_sep (LIRF normal-row RMSE 344.2 there; the 351.6 in section 2 is `pa_v9`,
+four splits). Scripts: `output/diag/diag_lirf{,2,3,4,5,6}.py`.
+
+- **What is ruled out.** It is not day-level: day-mean residual is 1.4% of
+  LIRF SSE, the same as elsewhere. It is not the stand: stand-mean residual is
+  0.4%. Runway is flat (25 carries 89% of rows at RMSE 341). Coverage matches
+  other airports: flight plan missing on 0.8%, aircraft type on 0.8%.
+- **The mechanism.** On LIRF's 3000-6000s normal labels, `y - gap_SCHED` has
+  quartiles **-5 / 0 / +5 s**. Block time *is* the scheduled time, and the label
+  is the departure delay. `gap_AOBT_3` there has a median of 1,082s, a normal
+  taxi. No other airport shows this (EGLL, LFPG, EDDF, LTFM quartiles are
+  hundreds of seconds wide). Define the class C as |BLOCK - SCHED| <= 60s, all
+  12 months, y <= 6000:
+
+  | gap_SCHED band | LIRF | others |
+  |---|---|---|
+  | 600-1200 | 0.387 | 0.12-0.23 |
+  | 1200-1800 | 0.221 | 0.01-0.19 |
+  | 1800-3000 | **0.091** | 0.001-0.034 |
+  | 3000-6000 | **0.079** | 0.000-0.004 |
+
+  On-time rows hit C honestly everywhere. Only at LIRF does C survive into
+  delayed departures. It is stable by month (0.16-0.24).
+- **Its size.** C covers 19.8% of LIRF normal rows and **41.9% of LIRF
+  normal SSE**. Oracle (predict `gap_SCHED` where C holds): LIRF 344.2 ->
+  **262.7**, pooled normal-row 208.17 -> **198.78** (-9.4 on *normal rows*,
+  comparable to the false-positive oracle's -9.02 pooled *all-row*). LIRF
+  stays the worst airport even under this oracle. Exact equality to the second is
+  only 2.0% of LIRF rows (oracle 344.2 -> 339.1); the class is "within a few
+  seconds", not a literal copy.
+- **Not separable.** A LightGBM classifier on delayed LIRF rows (gap_SCHED >
+  1800; operator, stand block, hour, all gaps, LOBT/EOBT/AOBT_3 minus SCHED)
+  gets AUC 0.867 / 0.856 cross-split at a base rate of 7.5%. But blending `mu`
+  toward `gap_SCHED` by p makes it worse: w=1.0 318.7->324.3 and
+  368.7->380.5; w=0.5 318.7->317.8 and 368.7->370.3. `mu` already carries the
+  mixture mean (C rows: mean `mu` 2,022 against y 2,872; non-C: 1,343 against
+  1,262).
+- **Operators.** It clusters by operator (one at 53% of all its LIRF rows).
+  The operators at C = 1.0 on late departures are already learned: `mu`
+  within ~160s of the label, 0.2% of LIRF SSE together. The remainder is mixed
+  within operator. The no-operator group (no flight plan) is **49% C** on
+  late departures. Those are the unmatched rows behind the LIRF false
+  positives, so the two LIRF problems share a population. Do not build on it:
+  unmatched-row work is on the "never" list.
+- **Arrivals do not reveal it.** A late arrival never has block ~= scheduled
+  (in-block cannot precede landing: C = 0.000 for every airport at late >
+  900s). So the habit is invisible on the ARR rows available at serve time.
+  Row-level, the same operator's prior-6h arrival C rate separates departures
+  at **AUC 0.551**.
+- **Verdict:** "flaggable and not separable", like the 91 rows and the LIRF
+  false positives. Do not build a C classifier or a `gap_SCHED` blend. What
+  could reopen it: an observable that sees the *recording mode*, such as a
+  data-source flag or per-handler identity. Nothing in the files is one.
+
+### The LIRF false-positive lead is closed (2026-09-21)
+
+Post-hoc on saved `pa_v9` over all four splits, exact. On LIRF *normal* rows
+the mixture is far worse than `mu` alone (holdout 498.2 against 374.9; mar_sep
+370.4 against 319.0), and **LIRF is the entire normal-row cost of the tail
+mixture**: sending LIRF normal rows to `mu` is -9.02 pooled, every airport
+-8.94. But that needs `y <= 6000` known in advance.
+
+The damage is 332 rows, **2.4% with a LOBT** against 99.3% of LIRF normal rows
+-- the unmatched population again. Within unmatched LIRF (1,152 rows, **38.9%
+genuinely tail**) the classifier separates at **AUC 0.912** and the mixture
+beats `mu` by 155.3e9 of 177.6e9 available SSE:
+
+| p band | n | tail | mixture vs `mu` (SSE) |
+|---|---|---|---|
+| [0, 0.05) | 332 | 3 | -0.1e9 |
+| [0.05, 0.1) | 54 | 4 | +0.006e9 |
+| [0.1, 0.2) | 109 | 19 | +0.12e9 |
+| [0.2, 0.3) | 70 | 19 | +0.15e9 |
+| [0.3, 0.5) | 120 | 46 | +0.78e9 |
+| [0.5, 0.8) | 167 | 95 | +5.5e9 |
+| [0.8, 1.01) | 300 | **262** | **+148.7e9** |
+
+Reverting unmatched LIRF rows to `mu` costs at every threshold: p<0.05 -0.00,
+p<0.1 +0.01, p<0.2 +0.17, p<0.3 +0.37. The largest *oracle* on the board, with
+no rule to reach it -- "flaggable and not separable", like the 91 rows.
+
+### Tail-side changes
+
+- **Day-late step by gap_SCHED** (v23, 2026-09-24) -- offline -1.41 pooled
+  (LOSO, inner +1.19), **live +0.623 against v22**. A rule fitted on 9
+  day-late vs 9 scheduled-gap rows moved 4 ranking rows by 6-10k and lost.
+  The fourth day-late variant to fail (with the day-late correction, the
+  callsign signature and `--day-late` below): the 2025 day-late class is too
+  thin to set a rate on. Details in section 4, "Results of the tail leads".
+- **Day-late correction** -- raising unmatched predictions toward `86400 + mu`
+  above a `gap_SCHED` threshold, post-hoc and exact:
+
+  | threshold | flagged | truly day-late | false | pooled RMSE, w=0.25 -> 1.0 |
+  |---|---|---|---|---|
+  | 40,000 | 68 | 9 | 59 | 288.97 -> 542.53 |
+  | 60,000 | 31 | 7 | 24 | 276.98 -> 430.02 |
+  | 80,000 | 16 | 3 | 13 | 272.02 -> 369.10 |
+
+  Every cell worse than 264.39; per split at T=60000, w=1.0: holdout +162.6,
+  dec_jun +226.5, mar_sep +225.7. ~23% precision against an asymmetric cost.
+  The callsign-corruption signature is no better:
+
+  | filter | rows | day-late | precision | recall |
+  |---|---|---|---|---|
+  | unmatched | 22,230 | 14 | 0.1% | 93% |
+  | unmatched + no aircraft type | 1,505 | 12 | 0.8% | 80% |
+  | unmatched + no type + doubled callsign | 86 | 6 | **7.0%** | 40% |
+
+  `--day-late` (a day-late tail component): pooled -0.69 with the interval
+  spanning zero, on ~16 rows.
+- **Lowering the specialist's apply threshold** -- 5000 is worth -0.10, anything
+  lower much worse.
+- **Recalibrating the tail probability on unmatched candidates** -- pooled +0.47
+  global, +0.41 per airport; per-airport factors unstable across folds.
+- **Stand-occupancy upper bound** -- not a bound. Violated on 10.0% of rows at
+  zero margin and **63.6% of tail rows** (median slack -1,648s): the next
+  arrival takes the stand while the long-taxi aircraft is still moving. Costs
+  +73 to +200 per split as a constraint.
+- **Interval bounds from any timestamp other than LOBT** -- LOBT's largest
+  deviation over 2,084,678 labels is 3,606s; IOBT 10,737, EOBT 10,383, AOBT_3
+  20,657, SCHED 269,095. Intersecting AOBT_3 with LOBT tightens 0.0% of rows.
+- **Per-airport caps on extreme predictions** (2026-09-22, reported elsewhere as
+  -2.33 live) -- inapplicable. v20's 15 largest non-LIRF predictions all sit
+  under a larger `gap_LOBT` (LFPG 12,425 / gap 13,620; EHAM 11,473 / 13,414;
+  EHAM 11,281 / 12,629; EGLL 9,957 / 10,502): matched long-taxi rows, which pay
+  2x. 170 ranking rows exceed 6,000s: LIRF 128, EHAM 17, EGLL 11, LFPG 10, LTFM
+  2, EDDF 1, EDDM 1; LEBL and LEMD none.
+- **The EHAM January 2026 gamble** (2026-09-20) -- dead. Traffic fell to
+  0.34-0.80 of baseline. 2025 long-gap departures genuinely *are* long taxi
+  (median label 5,509s, 38.5% exceed 6000). The volume effect is an
+  **airport-composition artifact** -- it reverses at gap>3000 and gap>4000 (36x
+  and 160x more rows), no airport shows it within itself, and EGLL puts 136 of
+  140 rows in one bucket. Envelope -2.5 best case, +4.7 worst.
+  `output/eham/FINDINGS.md`. (Arrival taxi-in was elevated all month, not just
+  Jan 5; that motivated the disruption features, since closed, above in
+  "Features that do not carry", not this.)
+- **2026 disruption events** (2026-09-22) -- DEP counts in `ranking.parquet`:
+
+  | claim | measured | verdict |
+  |---|---|---|
+  | EHAM early Jan, extreme de-icing | DEP 391/336/**208**/293/**194** Jan 3-7 vs a Jan median of 568; median ARR taxi-in Jan 5 **1,497s** vs 651 | **real and large** |
+  | LFPG Jan 7, "about 40% cancelled" | 504 vs a Jan median of 586, **-14%**; mean `gap_SCHED` 7,578s vs ~2,300 baseline | real, overstated 3x |
+  | LIRF Jul 5, Italian strike | 532 DEP, **above** its neighbours (500/516/522/481) | **not visible** |
+  | LFPG Jul 3-4, French ATC strike | 733 / 646 vs a July median of 703 | **not visible** |
+
+- **Bugs we never had** (external lessons, 2026-09-22): a 12-month refit
+  (`data.py` already globs all twelve months) and excluding extreme labels from
+  the base model (`TAIL_THR = 6000` already). Huber/log targets,
+  high-cardinality runway-config categoricals, hard tail swaps, anchored-offset
+  targets, seed counts above ~3 and drift features fitted on ranking rows are
+  all measured negatives here too.
+
+### Do not do this
+
+Submissions are limited to 5 a day, but the leaderboard returns exact RMSE on a fixed set,
+which makes it possible to recover label information by probing with crafted
+submissions. **Do not.** Testing honest model variants is fine, and so is
+adjusting a setting after a live score when the change is spread over many
+rows. Crafting probes is not, and neither is live-tuning a change concentrated
+on a few rows. Full list: `AGENTS.md`, "What is allowed and ethical, and what
+is not".
+
+---
+
+## 6. Method -- additions to AGENTS.md
+
+The validation rule, the tail-row trap, concentration checks, split hygiene and
+plateau preference are in `AGENTS.md`. What it does not say:
+
+- **Trim symmetrically.** Dropping only the most-improved rows makes any change
+  look bad. Reference for a genuine gain: `PRIOR_WEIGHT=10`'s top 3 rows carry
+  0.6-1.1% and top 25 2.9-4.0% of the improvement, over ~170,000 improving rows
+  per split (all-row -0.19, normal-row -0.233).
+- **Run the residual diagnostic before building anything.** Join a saved run's
+  predictions to the candidate signal and check the residual for structure. It
+  resolved weather, OSM and ATFM in minutes each. **Read it narrowly**: it
+  measures what is left *linearly* after the ensemble, not what a tree extracts.
+  On the proxy features the AOBT_3 columns showed +0.003 against the residual
+  (+0.44 raw), the LOBT ones +0.043 to +0.062 -- and the features still won
+  3.2 points. A reason to keep going when positive, not a veto when small.
+- **A passed pre-check is necessary, not sufficient.** Runway configuration had
+  0.0-0.5% unseen levels and a real 108s raw signal, and was still a wash.
+- **Before any post-hoc correction ships, compare ranking population shares
+  against the fitted ones** (section 5, band calibration).
+- **A `--mu lgb` screen rejects, never promotes.** Its baseline is normal-row
+  ~245 against the five-family ~221, so it has ~24 RMSE of headroom the real
+  pipeline lacks.
+- **`encode.py` is NOT hashed by `featcache`**, so encoding screens need no
+  feature rebuild.
+- Saved validation runs cited here (local to the machine that ran them):
+  `pa_v9`, `prox_lgb`, `blend_prox`, **`v20_full`** (four splits, full v20
+  recipe), and the masked set `mask_lgb`, `mask_fix` (v24's encoding,
+  holdout + mar_sep), `mask_fix2` (inner + dec_jun). A comparison needs a
+  control run with the same code; rebuild one rather than assume these exist.
+
+---
+
+## 7. Data notes -- additions to AGENTS.md
+
+- Reading the ATFM workbooks needs `openpyxl`.
+- `.featcache/` also hashes `airline_map.csv`.
+- External data used (all git-ignored under `dataset/`): weather
+  `dataset/weather/` (`src/weather.py download`), daily ATFM delay
+  `dataset/atfm/`, OSM geometry `dataset/geo/`. The OPDI probe files are dead
+  (section 5) and not needed. `dataset/atfm/Taxi-Out_Additional_Time.xlsx` is
+  off limits (`AGENTS.md`).
+
+---
+
+## 8. History worth knowing
+
+- **The teammate's line (v15 -> v19)** was a chain of post-hoc corrections
+  over an immutable parquet. `lobt-refinement` was merged at `dbcb8c2`; its
+  tree was `experiments/` only, zero overlap with `src/`. Its scripts imported
+  frozen v9 source (`git archive 4290754:src`, so `PRIOR_WEIGHT = 30`), and the
+  builders hard-asserted the sha of v15's submission file, which nobody could
+  regenerate. The proxy features were ported as a feature (`eab65c8`), not as
+  their correction. What v17->v19 added is now in `src/`. `experiments/` was
+  removed from the tree (2026-09-25; in git history at `2918b73`), and
+  `AGENTS.md` now forbids the pattern: every submission is generated from
+  `src/`.
+- **Corrected claims** (all fixed in place above): ATFM is not entirely closed
+  (daily data exists, carries nothing); OSM has stand geometry at all ten
+  airports; LIRF's normal-row error is false positives *and* a harder airport;
+  "the ensemble is saturated" applies to members, not shared inputs; the
+  ensemble does beat its best member; normal-row `mu` work did not carry for a
+  band-keyed post-hoc correction.

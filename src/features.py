@@ -251,8 +251,9 @@ def _dep_proxy(g: pd.DataFrame) -> pd.DataFrame:
     thins the 15-minute windows at peak times, identically in training and
     ranking.
 
-    Ported from the teammate's experiments/neighbor_proxy/features.py, which
-    imported _window_mean and _window_counts from a frozen copy of this file.
+    Ported from the teammate's experiments/neighbor_proxy/features.py (removed;
+    in git history at 2918b73), which imported _window_mean and _window_counts
+    from a frozen copy of this file.
     """
     out = pd.DataFrame(index=g.index)
     for col in PROXY_COLS:

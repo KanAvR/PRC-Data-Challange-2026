@@ -75,5 +75,22 @@ class BackoffTest(unittest.TestCase):
         self.assertGreater(X_app["te_flight_n"].iloc[0], 0)
 
 
+class AirportPriorTest(unittest.TestCase):
+    def test_unseen_stand_takes_its_airport_mean(self):
+        fit = pd.concat([frame(4).assign(ADEP_mvt="A"),
+                         frame(4).assign(ADEP_mvt="Z", ADEP_STAND="Z_1", ADEP_STAND_RUNWAY="Z_1_R")],
+                        ignore_index=True)
+        y = np.array([1000.] * 4 + [3000.] * 4)
+        folds = np.array(["m1", "m2"] * 4)
+        flights = np.array(["A_F"] * 4 + ["Z_F"] * 4)
+        app = frame(1).assign(ADEP_mvt="A", ADEP_STAND="A_NEW", ADEP_STAND_RUNWAY="A_NEW_R")
+        off, on = app.copy(), app.copy()
+        add_target_encodings(fit.copy(), y, folds, flights, off, np.array(["A_F"]))
+        add_target_encodings(fit.copy(), y, folds, flights, on, np.array(["A_F"]), airport_prior=True)
+        self.assertAlmostEqual(off["te_stand"].iloc[0], 2000.0)  # global mean
+        apt_a = (4000 + PRIOR_WEIGHT * 2000) / (4 + PRIOR_WEIGHT)  # airport A, shrunk to global
+        self.assertAlmostEqual(on["te_stand"].iloc[0], apt_a)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -150,7 +150,7 @@ def _hashed(keys, frac, salt):
 def add_target_encodings(X_fit, y_fit, folds, flight_fit, X_apply, flight_apply,
                          keys=None, counts=True, fold_size=1,
                          X_apply_masked=None, flight_unseen=None,
-                         flight_backoff=False, flight_dropout=0.0):
+                         flight_backoff=False, flight_dropout=0.0, airport_prior=False):
     """Add te_* columns to both frames in place.
 
     keys: names from KEY_SETS' vocabulary (default: the shipped TE_KEYS).
@@ -166,10 +166,16 @@ def add_target_encodings(X_fit, y_fit, folds, flight_fit, X_apply, flight_apply,
     destination, scheduled 30-min slot), then its route, not the global mean.
     flight_dropout: that fraction of flight keys, by stable hash, is encoded as
     unseen on the fit rows too, so the model learns the fallback regime.
+    airport_prior: every key shrinks toward its airport's mean instead of the
+    global one (EDDM has 4.6% of ranking rows on stands 2025 never saw).
     """
     names = list(TE_KEYS) if keys is None else list(keys)
     ids = _fold_ids(folds, fold_size)
-    back_fit = back_app = None
+    apt_fit = apt_app = None
+    if airport_prior:
+        (apt_fit, _), (apt_app, _), _ = _encode(_key(X_fit, flight_fit, ["ADEP_mvt"]), y_fit, ids,
+                                                _key(X_apply, flight_apply, ["ADEP_mvt"]))
+    back_fit, back_app = apt_fit, apt_app
     if flight_backoff:
         for cols in FLIGHT_BACKOFF:
             (back_fit, _), (back_app, _), _ = _encode(
@@ -182,8 +188,8 @@ def add_target_encodings(X_fit, y_fit, folds, flight_fit, X_apply, flight_apply,
         drop = _hashed(flight_fit, flight_dropout, "dropout|") if (is_flight and flight_dropout > 0) else None
         (fm, fn), (am, an), masked = _encode(_key(X_fit, flight_fit, cols), y_fit, ids,
                                              _key(X_apply, flight_apply, cols), mask,
-                                             prior_fit=back_fit if is_flight else None,
-                                             prior_apply=back_app if is_flight else None,
+                                             prior_fit=back_fit if is_flight else apt_fit,
+                                             prior_apply=back_app if is_flight else apt_app,
                                              drop_fit=drop)
         X_fit[name], X_apply[name] = fm, am
         if counts:

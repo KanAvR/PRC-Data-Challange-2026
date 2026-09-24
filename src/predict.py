@@ -59,7 +59,8 @@ def main():
                              ranking_dep, flight_ids(ranking_raw.loc[dep_mask]),
                              keys=KEY_SETS[args.te_keys],
                              counts=args.te_counts, fold_size=args.te_fold_size,
-                             flight_backoff=args.te_flight_backoff, flight_dropout=args.te_flight_dropout)
+                             flight_backoff=args.te_flight_backoff, flight_dropout=args.te_flight_dropout,
+                             airport_prior=args.te_airport_prior)
 
     mus = []
     for fam in args.mu:

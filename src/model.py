@@ -586,6 +586,9 @@ def add_model_args(ap):
                          "mean, so a renamed callsign gets a real fallback (encode.FLIGHT_BACKOFF). "
                          "With the dropout, v24: -0.506 live; 37%% of July 2026 callsigns are "
                          "absent from 2025")
+    ap.add_argument("--te-airport-prior", action=argparse.BooleanOptionalAction, default=False,
+                    help="shrink every target encoding toward its airport's mean, not the "
+                         "global one, so an unseen stand or key gets a local fallback")
     ap.add_argument("--te-flight-dropout", type=float, default=0.2, metavar="FRAC",
                     help="encode this fraction of flight keys as unseen on the training rows "
                          "too, so the models learn the fallback regime (0 with "

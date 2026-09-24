@@ -11,6 +11,8 @@ row would otherwise define its level's mean. Training rows are encoded
 out-of-fold by month, so a row never sees its own month's labels; rows being
 predicted are encoded from every training row.
 """
+import zlib
+
 import numpy as np
 import pandas as pd
 
@@ -83,6 +85,11 @@ def _key(X, flight, cols):
             parts.append(pd.Series(flight, index=X.index).astype(str))
         elif c == "hour_int":
             parts.append(X["hour"].astype(int).astype(str))
+        elif c == "slot":
+            # scheduled local time of day, in 30-minute slots: a renamed callsign
+            # keeps its route and its slot in the timetable
+            sched_min = (X["hour_local"] * 60 - X["gap_SCHED_TIME_UTC_mvt"] / 60) % 1440
+            parts.append((sched_min // 30).fillna(-1).astype(int).astype(str))
         else:
             parts.append(X[c].astype(str))
     key = parts[0]
@@ -91,9 +98,17 @@ def _key(X, flight, cols):
     return key.values
 
 
-def _encode(k_fit, y, folds, k_apply):
+def _encode(k_fit, y, folds, k_apply, unseen_apply=None, prior_fit=None, prior_apply=None,
+            drop_fit=None):
+    """unseen_apply: apply rows to encode as if their level were never seen,
+    the way a renamed callsign is at serve time (see add_target_encodings).
+    prior_fit / prior_apply: per-row prior to shrink toward (default: the global
+    mean), for a hierarchical backoff. drop_fit: fit rows to encode as unseen,
+    so the model trains on the regime serving will show it."""
     normal = y <= TAIL_THR
-    prior = y[normal].mean()
+    glob = y[normal].mean()
+    prior_fit = np.full(len(k_fit), glob) if prior_fit is None else prior_fit
+    prior_apply = np.full(len(k_apply), glob) if prior_apply is None else prior_apply
     codes, uniq = pd.factorize(np.concatenate([k_fit, k_apply]))
     c_fit, c_apply = codes[:len(k_fit)], codes[len(k_fit):]
     n_lvl = len(uniq)
@@ -105,30 +120,76 @@ def _encode(k_fit, y, folds, k_apply):
     np.add.at(n, (fold_of[normal], c_fit[normal]), 1)
     s_all, n_all = s.sum(axis=0), n.sum(axis=0)
 
-    def smooth(ss, nn):
+    def smooth(ss, nn, prior):
         return (ss + PRIOR_WEIGHT * prior) / (nn + PRIOR_WEIGHT)
 
     s_oof = s_all[c_fit] - s[fold_of, c_fit]
     n_oof = n_all[c_fit] - n[fold_of, c_fit]
-    fit_mean, fit_n = smooth(s_oof, n_oof), n_oof
-    app_mean, app_n = smooth(s_all[c_apply], n_all[c_apply]), n_all[c_apply]
-    return (fit_mean, np.log1p(fit_n)), (app_mean, np.log1p(app_n))
+    fit_mean, fit_n = smooth(s_oof, n_oof, prior_fit), n_oof
+    if drop_fit is not None:
+        fit_mean, fit_n = np.where(drop_fit, prior_fit, fit_mean), np.where(drop_fit, 0.0, fit_n)
+    app_mean, app_n = smooth(s_all[c_apply], n_all[c_apply], prior_apply), n_all[c_apply]
+    masked = None
+    if unseen_apply is not None:
+        masked = (np.where(unseen_apply, prior_apply, app_mean),
+                  np.log1p(np.where(unseen_apply, 0.0, app_n)))
+    return (fit_mean, np.log1p(fit_n)), (app_mean, np.log1p(app_n)), masked
+
+
+# Backoff for te_flight when --te-flight-backoff is on: slot, then route, then
+# the global mean. Each level is shrunk toward the next.
+FLIGHT_BACKOFF = [["ADEP_AIRLINE", "ADES_mvt"], ["ADEP_AIRLINE", "ADES_mvt", "slot"]]
+
+
+def _hashed(keys, frac, salt):
+    """Whole keys selected by a stable hash, so every row of a level goes together."""
+    h = np.array([zlib.crc32((salt + str(k)).encode()) % 10000 for k in keys])
+    return h < frac * 10000
 
 
 def add_target_encodings(X_fit, y_fit, folds, flight_fit, X_apply, flight_apply,
-                         keys=None, counts=True, fold_size=1):
+                         keys=None, counts=True, fold_size=1,
+                         X_apply_masked=None, flight_unseen=None,
+                         flight_backoff=False, flight_dropout=0.0):
     """Add te_* columns to both frames in place.
 
     keys: names from KEY_SETS' vocabulary (default: the shipped TE_KEYS).
     counts: also add the _n log-count column beside each encoding.
     fold_size: months per out-of-fold block (1 = the shipped scheme).
+    X_apply_masked, flight_unseen: evaluation only. X_apply_masked (a copy of
+    X_apply) gets the same columns, except that on rows where flight_unseen is
+    True every flight-keyed encoding is the unseen fallback. Airlines reissue
+    alphanumeric callsigns each IATA season, so 37% of July 2026 flights are
+    absent from 2025 while only ~2% of a 2025 validation month is; this is how
+    validation sees that.
+    flight_backoff: an unseen flight falls back to its slot (airport, airline,
+    destination, scheduled 30-min slot), then its route, not the global mean.
+    flight_dropout: that fraction of flight keys, by stable hash, is encoded as
+    unseen on the fit rows too, so the model learns the fallback regime.
     """
     names = list(TE_KEYS) if keys is None else list(keys)
     ids = _fold_ids(folds, fold_size)
+    back_fit = back_app = None
+    if flight_backoff:
+        for cols in FLIGHT_BACKOFF:
+            (back_fit, _), (back_app, _), _ = _encode(
+                _key(X_fit, flight_fit, cols), y_fit, ids, _key(X_apply, flight_apply, cols),
+                prior_fit=back_fit, prior_apply=back_app)
     for name in names:
         cols = ALL_KEYS[name]
-        (fm, fn), (am, an) = _encode(_key(X_fit, flight_fit, cols), y_fit, ids,
-                                     _key(X_apply, flight_apply, cols))
+        is_flight = "flight" in cols
+        mask = flight_unseen if (X_apply_masked is not None and is_flight) else None
+        drop = _hashed(flight_fit, flight_dropout, "dropout|") if (is_flight and flight_dropout > 0) else None
+        (fm, fn), (am, an), masked = _encode(_key(X_fit, flight_fit, cols), y_fit, ids,
+                                             _key(X_apply, flight_apply, cols), mask,
+                                             prior_fit=back_fit if is_flight else None,
+                                             prior_apply=back_app if is_flight else None,
+                                             drop_fit=drop)
         X_fit[name], X_apply[name] = fm, am
         if counts:
             X_fit[name + "_n"], X_apply[name + "_n"] = fn, an
+        if X_apply_masked is not None:
+            mm, mn = masked if masked is not None else (am, an)
+            X_apply_masked[name] = mm
+            if counts:
+                X_apply_masked[name + "_n"] = mn

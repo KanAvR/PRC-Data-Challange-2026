@@ -24,20 +24,21 @@ split is significantly worse.
 import argparse
 import pathlib
 import sys
+import zlib
 
 import numpy as np
 import pandas as pd
 from sklearn.metrics import roc_auc_score
 
 sys.path.insert(0, "src")
-from data import align_categoricals, load_training
-from features import drop_proxy
+from data import align_categoricals, flight_ids, load_training
+from features import drop_arvt, drop_proxy
 from constraints import check_lobt_support, project_lobt
 from high_lobt import APPLY_GAP_SEC, train_high_lobt
 from encode import KEY_SETS, add_target_encodings
 from model import (MU_FAMILIES, seasonal_weight, TAIL_THR, add_model_args, combine_mu,
-                   analytic_tail_value, combine, day_late_weight,
-                   predict_tail_proba, train_tail_clf)
+                   analytic_tail_value, combine, day_late_step_weight, day_late_weight,
+                   predict_tail_proba, tail_options, train_tail_clf)
 
 NO_JAN_JUL = ["2025-01", "2025-07"]
 SPLITS = {
@@ -76,7 +77,33 @@ def unexplainable(r):
     return (y > TAIL_THR) & ~hit
 
 
-def run_split(name, X, y, meta, args):
+def ranking_unseen_rates():
+    """Per airport, the share of July 2026 departures whose flight key never
+    appears in 2025. Label-free: flight keys only."""
+    raw = pd.read_parquet("dataset/ranking.parquet",
+                          columns=["PHASE_mvt", "ADEP_mvt", "FLIGHT_mvt", "MVT_TIME_UTC_mvt"])
+    raw = raw[(raw["PHASE_mvt"] == "DEP") & (raw["MVT_TIME_UTC_mvt"].dt.month == 7)]
+    seen = set()
+    for f in sorted(pathlib.Path("dataset").glob("training_*.parquet")):
+        t = pd.read_parquet(f, columns=["PHASE_mvt", "ADEP_mvt", "FLIGHT_mvt"])
+        seen |= set(flight_ids(t[t["PHASE_mvt"] == "DEP"]))
+    unseen = ~pd.Series(flight_ids(raw)).isin(seen).values
+    return pd.Series(unseen).groupby(raw["ADEP_mvt"].values).mean().to_dict()
+
+
+def flight_mask(meta_va, summer_month, rates):
+    """Rows whose flight key a renamed callsign would hide: in the split's summer
+    month only (like July 2026; January 2026 is 2.3% unseen), a stable hash of
+    the key selects each airport's July 2026 share of flights."""
+    # str() per key: astype(str) keeps a missing key as a float NaN under pandas 3
+    h = np.array([zlib.crc32(str(k).encode()) % 10000 for k in meta_va["flight"]])
+    rate = meta_va["ADEP_mvt"].map(rates).fillna(0.0).values
+    return (meta_va["month"].values == summer_month) & (h < rate * 10000)
+
+
+def run_split(name, X, y, meta, args, rates=None):
+    """The split's predictions; with rates (--mask-flight), a pair: the same
+    models' predictions with renamed-callsign flights masked, then unmasked."""
     spec = SPLITS[name]
     va = meta["month"].isin(spec["valid"]).values
     tr = ~va & ~meta["month"].isin(spec["drop"]).values
@@ -85,17 +112,25 @@ def run_split(name, X, y, meta, args):
     if args.lobt_bounds:
         check_lobt_support(y_tr, X_tr["gap_LOBT_flt"].values)
     align_categoricals(X_tr, X_va)
+    X_va_m = unseen = None
+    if rates is not None:
+        unseen = flight_mask(meta.loc[va], spec["valid"][1], rates)
+        X_va_m = X_va.copy()
+        print(f"  masking {int(unseen.sum())} rows ({unseen.mean():.1%} of the split) as renamed callsigns",
+              flush=True)
     if args.te:
         add_target_encodings(X_tr, y_tr, meta.loc[tr, "month"].values, meta.loc[tr, "flight"].values,
                              X_va, meta.loc[va, "flight"].values,
                              keys=KEY_SETS[args.te_keys],
-                             counts=args.te_counts, fold_size=args.te_fold_size)
+                             counts=args.te_counts, fold_size=args.te_fold_size,
+                             flight_backoff=args.te_flight_backoff, flight_dropout=args.te_flight_dropout,
+                             X_apply_masked=X_va_m, flight_unseen=unseen)
     print(f"\n[{name}] train={len(X_tr)} valid={len(X_va)} "
           f"tail={int((y_tr > TAIL_THR).sum())}/{int((y_va > TAIL_THR).sum())}", flush=True)
 
     # several families are averaged with equal weight; each is saved on its own
     # so blend.py can re-weight them without retraining
-    mus = {}
+    mus, mus_m = {}, {}
     if args.reuse_mu:
         saved = pd.read_parquet(OUT_DIR / args.reuse_mu / f"{name}.parquet")
         assert np.array_equal(saved["y"].values, y_va), "reuse-mu run has different rows"
@@ -107,7 +142,10 @@ def run_split(name, X, y, meta, args):
             if getattr(args, "season_tau", 0) and fam == "lgb":
                 kw["weight"] = seasonal_weight(meta.loc[tr, "month"].values,
                                                spec["valid"], args.season_tau)
-            mus[f"mu_{fam}"] = np.clip(MU_FAMILIES[fam](X_tr, y_tr, **kw).predict(X_va), 0, None)
+            model = MU_FAMILIES[fam](X_tr, y_tr, **kw)
+            mus[f"mu_{fam}"] = np.clip(model.predict(X_va), 0, None)
+            if X_va_m is not None:
+                mus_m[f"mu_{fam}"] = np.clip(model.predict(X_va_m), 0, None)
             print(f"  {fam}: done", flush=True)
         mu = combine_mu(mus, args.mu, args)
     clf = train_tail_clf(X_tr, y_tr, pooled=args.clf_pooled, no_lobt=args.clf_nolobt,
@@ -116,28 +154,41 @@ def run_split(name, X, y, meta, args):
     v = analytic_tail_value(X_va)
     # always saved, so blend.py can switch the day-late component on or off
     q_day = day_late_weight(clf, X_va)
-    pred = combine(mu, p, v, q_day=q_day if args.day_late else None)
-    pred_unconstrained = pred.copy()
-    if args.lobt_bounds:
-        pred = project_lobt(pred, X_va["gap_LOBT_flt"].values)
-    high_pred = np.full(len(pred), np.nan)
+    q_day_step = day_late_step_weight(clf, X_va)
+    tail_kw = tail_options(args, clf, X_va)
+    high_pred = np.full(len(X_va), np.nan)
+    high = X_va["gap_LOBT_flt"].values > APPLY_GAP_SEC
     if args.high_lobt:
+        # the specialist sees no te_* column, so masking cannot change it
         specialist = train_high_lobt(X_tr, y_tr)
-        high = X_va["gap_LOBT_flt"].values > APPLY_GAP_SEC
         if high.any():
             high_pred[high] = specialist.predict(X_va.loc[high])
-            pred[high] = high_pred[high]
 
-    return pd.DataFrame({
-        "MVT_ID_mvt": meta.loc[va, "MVT_ID_mvt"].values,
-        "date": meta.loc[va, "date"].values, "ADEP_mvt": meta.loc[va, "ADEP_mvt"].values,
-        "has_lobt": ~np.isnan(X_va["gap_LOBT_flt"].values.astype(float)),
-        "y": y_va, "mu": mu, "p": p, "v": v, "pred": pred, "q_day": q_day, "p_calibrated": True, **mus,
-        "pred_unconstrained": pred_unconstrained,
-        "lobt_bounds": args.lobt_bounds,
-        "high_lobt": args.high_lobt, "high_lobt_pred": high_pred,
-        **{c: X_va[c].values.astype(float) for c in GAP_COLS},
-    })
+    def assemble(mu, mus):
+        pred = combine(mu, p, v, **tail_kw)
+        pred_unconstrained = pred.copy()
+        if args.lobt_bounds:
+            pred = project_lobt(pred, X_va["gap_LOBT_flt"].values)
+        if args.high_lobt and high.any():
+            pred[high] = high_pred[high]
+        return pd.DataFrame({
+            "MVT_ID_mvt": meta.loc[va, "MVT_ID_mvt"].values,
+            "date": meta.loc[va, "date"].values, "ADEP_mvt": meta.loc[va, "ADEP_mvt"].values,
+            "has_lobt": ~np.isnan(X_va["gap_LOBT_flt"].values.astype(float)),
+            "y": y_va, "mu": mu, "p": p, "v": v, "pred": pred, "q_day": q_day, "q_day_step": q_day_step,
+            "p_calibrated": True, **mus,
+            "pred_unconstrained": pred_unconstrained,
+            "lobt_bounds": args.lobt_bounds,
+            "high_lobt": args.high_lobt, "high_lobt_pred": high_pred,
+            **{c: X_va[c].values.astype(float) for c in GAP_COLS},
+        })
+
+    out = assemble(mu, mus)
+    if X_va_m is None:
+        return out
+    masked = assemble(combine_mu(mus_m, args.mu, args), mus_m)
+    masked["flight_masked"] = unseen
+    return masked, out
 
 
 def report(name, r):
@@ -247,18 +298,43 @@ def main():
     add_model_args(ap)
     ap.add_argument("--reuse-mu", metavar="TAG", help="take mu from a saved run instead of training it")
     ap.add_argument("--splits", nargs="+", default=list(SPLITS), choices=list(SPLITS))
+    ap.add_argument("--mask-flight", action="store_true",
+                    help="evaluation only: in each split's summer month, encode each airport's "
+                         "July 2026 share of flights as unseen (renamed callsigns). The masked "
+                         "run is saved as TAG, the same models unmasked as TAG_unmasked")
     args = ap.parse_args()
+    if args.mask_flight and args.reuse_mu:
+        ap.error("--mask-flight needs the mu models, not a saved mu")
 
     print("Loading training data and building features...", flush=True)
     X, y, meta = load_training()
     if not args.proxy:
         X = drop_proxy(X)
+    if not args.arvt:
+        X = drop_arvt(X)
 
     out = OUT_DIR / args.tag
     out.mkdir(parents=True, exist_ok=True)
+    rates = None
+    if args.mask_flight:
+        rates = ranking_unseen_rates()
+        print("July 2026 unseen flight share by airport: "
+              + "  ".join(f"{a}:{r:.1%}" for a, r in sorted(rates.items())), flush=True)
+        (OUT_DIR / f"{args.tag}_unmasked").mkdir(parents=True, exist_ok=True)
     results = {}
     for name in args.splits:
-        r = run_split(name, X, y, meta, args)
+        r = run_split(name, X, y, meta, args, rates)
+        if rates is not None:
+            r, r_unmasked = r
+            r_unmasked.to_parquet(OUT_DIR / f"{args.tag}_unmasked" / f"{name}.parquet", index=False)
+            yv, m = r["y"].values, r["flight_masked"].values
+            nm = yv <= TAIL_THR
+            print(f"[{name}] masking cost: all "
+                  f"{rmse(yv, r['pred'].values) - rmse(yv, r_unmasked['pred'].values):+.3f}  normal "
+                  f"{rmse(yv[nm], r['pred'].values[nm]) - rmse(yv[nm], r_unmasked['pred'].values[nm]):+.3f}  "
+                  f"masked normal rows {rmse(yv[m & nm], r['pred'].values[m & nm]):.1f} vs unmasked "
+                  f"{rmse(yv[m & nm], r_unmasked['pred'].values[m & nm]):.1f} (n={int((m & nm).sum())})",
+                  flush=True)
         r.to_parquet(out / f"{name}.parquet", index=False)
         report(name, r)
         results[name] = r

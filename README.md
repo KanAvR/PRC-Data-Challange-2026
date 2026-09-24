@@ -4,8 +4,9 @@ Predict `TAXITIME_SEC_mvt` for departures at ten European airports using 2025
 training data. The ranking set is 344,841 departures from January and July 2026,
 scored by RMSE.
 
-**Current best: 265.219 RMSE (v20).** v20 is the v16 recipe plus neighbour
-taxi-proxy features.
+**Current best: 264.244 RMSE (v24).** v24 is v20 (the v16 recipe plus
+neighbour taxi-proxy features) with the tail hedge capped (`--tail-cap`, v22)
+and a flight-number encoding that survives renamed callsigns (v24).
 
 ## Setup
 
@@ -45,6 +46,13 @@ applies two corrections keyed on the flight plan's LOBT.
   - Airport, stand, runway, aircraft and standardized airline codes.
   - Local time, congestion counts and METAR weather.
   - Out-of-fold target encodings, shrunk with `PRIOR_WEIGHT = 10`.
+  - The flight-number encoding falls back to the same airline's flights on
+    the same route and scheduled 30-minute slot, then the route, when a
+    flight is unseen (`--te-flight-backoff`, on by default). Airlines reissue
+    alphanumeric callsigns each season, so 37% of July 2026 flights never
+    appear in 2025. 20% of flight keys are also hidden in training
+    (`--te-flight-dropout 0.2`), so the models learn that regime.
+    `validate.py --mask-flight` makes validation show it.
 - **Neighbour taxi-proxy features (`--proxy`).** Nearby departures'
   `MVT_TIME`-to-`AOBT_3` and `MVT_TIME`-to-`LOBT` gaps, averaged over the 15,
   30 and 60 minutes before and after each row. They are computed for the whole
@@ -64,6 +72,10 @@ applies two corrections keyed on the flight plan's LOBT.
 - **Long-taxi specialist (`--high-lobt`, on by default).** A small LightGBM
   learns `target - gap_LOBT` on matched gaps above 3,000 s, extreme labels
   included. It replaces the prediction wherever the gap exceeds 6,000 s.
+- **Tail hedge cap (`--tail-cap`, on by default).** Tail values above 40,000 s
+  are scaled by 1.08 to hedge toward a day-late label (86,400 s plus a normal
+  taxi). Above ~81,000 s that pushes the prediction past both candidate labels,
+  so the scaled value is capped at max(v, 86,400 + 960).
 
 ## Leaderboard history
 
@@ -73,8 +85,11 @@ applies two corrections keyed on the flight plan's LOBT.
 | v9 | + LOBT bounds + long-taxi specialist | 269.41 |
 | v14 | + per-airport blend | 268.41 |
 | v16 | + target-encoding shrinkage 30 → 10 | 267.78 |
-| **v20** | **+ neighbour taxi-proxy features** | **265.219** |
-| v21 | v20 + out-of-fold band calibration of `mu` (rejected) | ~265.8 |
+| v20 | + neighbour taxi-proxy features | 265.219 |
+| v21 | v20 + out-of-fold band calibration of `mu` (rejected) | 265.864 |
+| v22 | v20 + cap on the tail hedge (`--tail-cap`) | 264.749 |
+| v23 | v22 + day-late rate stepped by scheduled gap (rejected) | 265.372 |
+| **v24** | **v22 + flight encoding backoff and dropout** | **264.244** |
 
 The v16 → v20 gain was -2.56 live against -3.20 offline, so this `mu` change
 kept about 81% of its offline gain on the leaderboard. Offline gains do not
@@ -124,9 +139,16 @@ against the full ensemble.
 ## Run
 
 ```bash
-# Reproduce v20: train on all twelve months and score the ranking set (~3h on 16 cores).
+# Reproduce v24: train on all twelve months and score the ranking set (~3h on 16 cores).
+# --tail-cap and the flight backoff/dropout are on by default. For v22 add
+# --no-te-flight-backoff --te-flight-dropout 0; for v20 also --no-tail-cap.
 .venv/bin/python src/predict.py --mu lgb cat cat_note cat_ctr1 pa --proxy \
-    --out output/submitting_v20.parquet
+    --out output/submitting_v24.parquet
+
+# Tail options can also be applied to a finished submission, exactly, from its
+# .parts.parquet, without retraining (this is how v22 was built from v20).
+.venv/bin/python src/tail_submission.py --input output/submitting_v20.parquet \
+    --tail-cap --out output/submitting_v22.parquet
 
 .venv/bin/python -m unittest discover -s tests -v
 ```

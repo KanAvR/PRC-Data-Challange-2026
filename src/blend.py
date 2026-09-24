@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, "src")
-from model import CLF_BOOST, TAIL_THR, combine
+from model import CLF_BOOST, DAY, DAY_LATE_BASE, TAIL_THR, combine
 from constraints import project_lobt
 from validate import OUT_DIR, SPLITS, compare, report, rmse, verdict
 
@@ -50,6 +50,9 @@ def main():
     ap.add_argument("--p-boost", type=float,
                     help="extra multiplier on p (default: none, or 1.35 for old raw-p runs)")
     ap.add_argument("--day-late", action="store_true", help="use the saved q_day component")
+    ap.add_argument("--day-late-step", action="store_true",
+                    help="use the saved q_day_step component, value DAY + DAY_LATE_BASE")
+    ap.add_argument("--tail-cap", action="store_true", help="cap the V_HI_RATIO hedge (model.combine)")
     ap.add_argument("--lobt-bounds", action=argparse.BooleanOptionalAction, default=True)
     ap.add_argument("--high-lobt", action="store_true",
                     help="apply specialist predictions saved in the --clf run")
@@ -78,8 +81,14 @@ def main():
         boost = args.p_boost or (1.0 if "p_calibrated" in r.columns else CLF_BOOST["lgb"])
         r["p"] = np.clip(r["p"].values * boost, 0.0, 1.0)
         r["p_calibrated"] = True
-        q = r["q_day"].values if args.day_late else None
-        r["pred"] = combine(r["mu"].values, r["p"].values, r["v"].values, q_day=q)
+        tail_kw = {"cap": args.tail_cap}
+        if args.day_late_step:
+            if "q_day_step" not in r:
+                raise ValueError("--clf run predates q_day_step; rerun it or drop --day-late-step")
+            tail_kw.update(q_day=r["q_day_step"].values, day_value=DAY + DAY_LATE_BASE)
+        elif args.day_late:
+            tail_kw["q_day"] = r["q_day"].values
+        r["pred"] = combine(r["mu"].values, r["p"].values, r["v"].values, **tail_kw)
         r["pred_unconstrained"] = r["pred"]
         r["lobt_bounds"] = args.lobt_bounds
         if args.lobt_bounds:

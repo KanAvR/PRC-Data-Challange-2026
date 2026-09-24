@@ -291,6 +291,46 @@ def drop_proxy(frame: pd.DataFrame) -> pd.DataFrame:
     return frame.drop(columns=[c for c in PROXY_COLS if c in frame.columns])
 
 
+ARVT_COLS = ["arvt_air", "arvt_blk1", "arvt_plan_res", "arvt_plan_block",
+             "arvt_air_dev", "arvt_dly_diff", "arvt_m3_taxi"]
+
+
+def _arvt_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Arrival times of the filed (M1) and flown (M3) trajectories, DEP rows only.
+
+    At A-CDM airports the airport sends NM a per-flight taxi-out estimate, which
+    may sit inside the M1 trajectory: ARVT_1 - EOBT_1 is planned block-to-arrival,
+    and subtracting the route's typical ARVT_3 - MVT (airborne + taxi-in) leaves
+    the planned taxi-out plus noise. Route medians are taken over the DEP rows of
+    the file being built, with no labels, so training (one file per month) and
+    ranking (one file) are built the same way.
+    """
+    out = pd.DataFrame(index=df.index, columns=ARVT_COLS, dtype=float)
+    dep = df["PHASE_mvt"].values == "DEP"
+    if not dep.any():
+        return out
+    d = df.loc[dep]
+    s = lambda a, b: (d[a] - d[b]).dt.total_seconds()
+    route = d["ADEP_mvt"].astype(str) + "-" + d["ADES_mvt"].astype(str)
+    air = s("ARVT_3_flt", "MVT_TIME_UTC_mvt")
+    blk1 = s("ARVT_1_flt", "EOBT_1_flt")
+    mvt_arvt1 = s("MVT_TIME_UTC_mvt", "ARVT_1_flt")
+    air_med = air.groupby(route).transform("median")
+    out.loc[dep, "arvt_air"] = air.values
+    out.loc[dep, "arvt_blk1"] = blk1.values
+    out.loc[dep, "arvt_plan_res"] = (mvt_arvt1 - mvt_arvt1.groupby(route).transform("median")).clip(-3600, 3600).values
+    out.loc[dep, "arvt_plan_block"] = (blk1 - air_med).values
+    out.loc[dep, "arvt_air_dev"] = (air - air_med).values
+    out.loc[dep, "arvt_dly_diff"] = (s("ARVT_3_flt", "ARVT_1_flt") - s("AOBT_3_flt", "EOBT_1_flt")).values
+    out.loc[dep, "arvt_m3_taxi"] = (s("ARVT_3_flt", "AOBT_3_flt") - air_med).values
+    return out
+
+
+def drop_arvt(frame: pd.DataFrame) -> pd.DataFrame:
+    """The --no-arvt arm: same cache build, without the ARVT columns."""
+    return frame.drop(columns=[c for c in ARVT_COLS if c in frame.columns])
+
+
 def _secs_since_prev_arr_block(df: pd.DataFrame) -> pd.Series:
     """Seconds from the last arrival that parked on this stand to this takeoff.
     Bounds how long the aircraft could have been off-block."""
@@ -395,5 +435,7 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     wx = weather_features(df["apt"].values, df["MVT_TIME_UTC_mvt"].values, df["RUNWAY_mvt"].values)
     wx.index = df.index
 
-    feats = pd.concat([feats, counts, arr_ctx, queue, dyn, proxy, wx], axis=1)
+    arvt = _arvt_features(df)
+
+    feats = pd.concat([feats, counts, arr_ctx, queue, dyn, proxy, wx, arvt], axis=1)
     return feats

@@ -90,6 +90,50 @@ def day_late_weight(models, X):
     return np.where(day_late_candidates(X), models["q_day"], 0.0)
 
 
+# Day-late labels sit at DAY + 770..1,990s in 2025 (median ~960) whatever mu
+# says for the row, so a fixed base beats DAY + mu (mu is 1.4-3k on these rows).
+DAY_LATE_BASE = 960.0
+# P(day-late | tail candidate) rises steeply with gap_SCHED. Unmatched 2025 rows
+# with a corrupted callsign (ITYTY680 for ITY680): 0 of 35 below 50k, 6 of 10 at
+# 50-66k, 3 of 3 at 66-100k; the rest have label = gap_SCHED. One constant rate
+# over the whole window is too high low down and too low high up.
+DAY_STEP_EDGES = (DAY_WINDOW[0], 66000.0, DAY_WINDOW[1])
+
+
+def fit_day_late_steps(X, y):
+    """P(day-late | tail, candidate) per gap_SCHED step, Laplace-smoothed."""
+    gs = X["gap_SCHED_TIME_UTC_mvt"].values.astype(float)
+    cand_tail = day_late_candidates(X) & (y > TAIL_THR)
+    is_day = (y >= DAY) & (y < DAY + TAIL_THR)
+    rates = []
+    for lo, hi in zip(DAY_STEP_EDGES[:-1], DAY_STEP_EDGES[1:]):
+        sel = cand_tail & (gs >= lo) & (gs < hi)
+        rates.append((int((sel & is_day).sum()) + 1) / (int(sel.sum()) + 2))
+    return tuple(rates)
+
+
+def day_late_step_weight(models, X):
+    gs = X["gap_SCHED_TIME_UTC_mvt"].values.astype(float)
+    cand = day_late_candidates(X)
+    q = np.zeros(len(X))
+    for (lo, hi), rate in zip(zip(DAY_STEP_EDGES[:-1], DAY_STEP_EDGES[1:]), models["q_day_steps"]):
+        q[cand & (gs >= lo) & (gs < hi)] = rate
+    return q
+
+
+def tail_options(args, models, X):
+    """combine() keyword arguments for the day-late and cap options.
+
+    Shared by validate.py and predict.py, so a validated configuration is the one
+    that ships."""
+    cap = bool(getattr(args, "tail_cap", False))
+    if getattr(args, "day_late_step", False):
+        return {"q_day": day_late_step_weight(models, X), "day_value": DAY + DAY_LATE_BASE, "cap": cap}
+    if getattr(args, "day_late", False):
+        return {"q_day": day_late_weight(models, X), "cap": cap}
+    return {"cap": cap}
+
+
 # More departures ahead of you cannot make your taxi shorter. Constraining the
 # congestion and queue counts to be monotone increasing is free regularisation:
 # it removes a family of fits the physics forbids, which may generalise better to
@@ -490,6 +534,7 @@ def train_tail_clf(X, y, pooled="lgb", no_lobt="lgb", stakes=0.0, fit_pooled=Tru
         "no_lobt": (CLF_FAMILIES[no_lobt](X[sel_absent], label[sel_absent], absent_cols,
                                           weight(sel_absent)), absent_cols, no_lobt),
         "q_day": fit_day_late_rate(X, y),
+        "q_day_steps": fit_day_late_steps(X, y),
     }
 
 
@@ -524,6 +569,10 @@ def add_model_args(ap):
                          "and per runway. Built unconditionally, so both arms of a "
                          "comparison share one feature cache; this flag only chooses "
                          "whether the models see them")
+    ap.add_argument("--arvt", action=argparse.BooleanOptionalAction, default=False,
+                    help="use the ARVT_1/ARVT_3 trajectory features (features.ARVT_COLS). "
+                         "Built unconditionally like --proxy; this flag only chooses "
+                         "whether the models see them")
     ap.add_argument("--te", action=argparse.BooleanOptionalAction, default=True,
                     help="add out-of-fold target encodings")
     ap.add_argument("--te-keys", default="base",
@@ -532,6 +581,15 @@ def add_model_args(ap):
                     help="add the _n log-count column beside each encoding")
     ap.add_argument("--te-fold-size", type=int, default=1, metavar="MONTHS",
                     help="months per out-of-fold encoding block (1 = shipped)")
+    ap.add_argument("--te-flight-backoff", action=argparse.BooleanOptionalAction, default=True,
+                    help="te_flight shrinks toward its slot, then route, instead of the global "
+                         "mean, so a renamed callsign gets a real fallback (encode.FLIGHT_BACKOFF). "
+                         "With the dropout, v24: -0.506 live; 37%% of July 2026 callsigns are "
+                         "absent from 2025")
+    ap.add_argument("--te-flight-dropout", type=float, default=0.2, metavar="FRAC",
+                    help="encode this fraction of flight keys as unseen on the training rows "
+                         "too, so the models learn the fallback regime (0 with "
+                         "--no-te-flight-backoff reproduces v22)")
     ap.add_argument("--lobt-bounds", action=argparse.BooleanOptionalAction, default=True,
                     help="project predictions onto the observed LOBT matching interval")
     ap.add_argument("--high-lobt", action=argparse.BooleanOptionalAction, default=True,
@@ -540,6 +598,13 @@ def add_model_args(ap):
     ap.add_argument("--clf-nolobt", default="cat", choices=list(CLF_FAMILIES))
     ap.add_argument("--day-late", action=argparse.BooleanOptionalAction, default=False,
                     help="mix a normal-taxi-plus-one-day value into the tail of candidate rows")
+    ap.add_argument("--day-late-step", action=argparse.BooleanOptionalAction, default=False,
+                    help="day-late component with its rate stepped by gap_SCHED "
+                         "(DAY_STEP_EDGES) and value DAY + DAY_LATE_BASE; overrides --day-late")
+    ap.add_argument("--tail-cap", action=argparse.BooleanOptionalAction, default=True,
+                    help="cap the V_HI_RATIO hedge at max(v, DAY + DAY_LATE_BASE), so it never "
+                         "lifts a prediction above both candidate labels (v22: -0.47 live; "
+                         "--no-tail-cap reproduces v20)")
     ap.add_argument("--stakes", type=float, default=0.0, metavar="CLIP",
                     help="train the tail classifiers on candidate rows (v > TAIL_THR) only, "
                          "weighted by RMSE stakes clipped to [1, CLIP]; 1 = candidates "
@@ -616,15 +681,23 @@ V_HI_THR = 40000.0
 V_HI_RATIO = 1.08
 
 
-def combine(mu_pred, p, v, p_boost=1.0, q_day=None):
+def combine(mu_pred, p, v, p_boost=1.0, q_day=None, day_value=None, cap=False):
     """Gate v so a confident row never gets a tail value smaller than mu itself.
 
     p comes from predict_tail_proba and is already calibrated; p_boost is an extra
-    multiplier for sweeps. q_day (from day_late_weight) splits the tail of
-    candidate rows between v and a day-late value, DAY + mu."""
+    multiplier for sweeps. q_day (from day_late_weight or day_late_step_weight)
+    splits the tail of candidate rows between v and a day-late value, day_value
+    (default DAY + mu).
+
+    On unmatched rows the label is v itself (block recorded as the schedule) or
+    a day-late DAY + ~960, so above ~81k the 1.08 hedge lifts the tail above
+    both. cap=True limits it to max(v, DAY + DAY_LATE_BASE)."""
     p = np.clip(p * p_boost, 0.0, 1.0)
     q = np.zeros(len(mu_pred)) if q_day is None else np.asarray(q_day, float)
-    v = np.where((v >= V_HI_THR) & (q == 0), v * V_HI_RATIO, v)
-    v_gated = np.where(v > TAIL_THR, v, mu_pred)
-    tail = (1.0 - q) * v_gated + q * (DAY + mu_pred)
+    v_hedged = np.where((v >= V_HI_THR) & (q == 0), v * V_HI_RATIO, v)
+    if cap:
+        v_hedged = np.where(q == 0, np.minimum(v_hedged, np.maximum(v, DAY + DAY_LATE_BASE)), v_hedged)
+    v_gated = np.where(v_hedged > TAIL_THR, v_hedged, mu_pred)
+    day = DAY + mu_pred if day_value is None else day_value
+    tail = (1.0 - q) * v_gated + q * day
     return np.clip((1.0 - p) * mu_pred + p * tail, 0, None)

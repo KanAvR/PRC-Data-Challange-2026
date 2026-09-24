@@ -17,10 +17,10 @@ from constraints import check_lobt_support, project_lobt
 from high_lobt import APPLY_GAP_SEC, train_high_lobt
 from encode import KEY_SETS, add_target_encodings
 from featcache import build_features_cached
-from features import drop_proxy
+from features import drop_arvt, drop_proxy
 from model import (MU_FAMILIES, add_model_args, analytic_tail_value, combine,
                    combine_mu,
-                   day_late_weight, predict_tail_proba, train_tail_clf)
+                   predict_tail_proba, tail_options, train_tail_clf)
 
 RANKING_FILE = "dataset/ranking.parquet"
 SUBMITTING_TEMPLATE = "dataset/submitting.parquet"
@@ -36,6 +36,8 @@ def main():
     train_data, y_train, meta = load_training()
     if not args.proxy:
         train_data = drop_proxy(train_data)
+    if not args.arvt:
+        train_data = drop_arvt(train_data)
     if args.lobt_bounds:
         check_lobt_support(y_train, train_data["gap_LOBT_flt"].values)
     print("Training rows:", len(train_data))
@@ -47,6 +49,8 @@ def main():
     ranking_dep = ranking_feats.loc[dep_mask].copy()
     if not args.proxy:
         ranking_dep = drop_proxy(ranking_dep)
+    if not args.arvt:
+        ranking_dep = drop_arvt(ranking_dep)
     ranking_ids = ranking_raw.loc[dep_mask, "MVT_ID_mvt"].values
 
     align_categoricals(train_data, ranking_dep)
@@ -54,7 +58,8 @@ def main():
         add_target_encodings(train_data, y_train, meta["month"].values, meta["flight"].values,
                              ranking_dep, flight_ids(ranking_raw.loc[dep_mask]),
                              keys=KEY_SETS[args.te_keys],
-                             counts=args.te_counts, fold_size=args.te_fold_size)
+                             counts=args.te_counts, fold_size=args.te_fold_size,
+                             flight_backoff=args.te_flight_backoff, flight_dropout=args.te_flight_dropout)
 
     mus = []
     for fam in args.mu:
@@ -68,10 +73,11 @@ def main():
 
     print("Predicting on ranking DEP rows...")
     p = predict_tail_proba(clf, ranking_dep)
-    q_day = day_late_weight(clf, ranking_dep) if args.day_late else None
+    tail_kw = tail_options(args, clf, ranking_dep)
+    q_day = tail_kw.get("q_day")
     v = analytic_tail_value(ranking_dep)
     gap_lobt = ranking_dep["gap_LOBT_flt"].values.astype(float)
-    preds = combine(mu_pred, p, v, q_day=q_day)
+    preds = combine(mu_pred, p, v, **tail_kw)
     if args.lobt_bounds:
         preds = project_lobt(preds, gap_lobt)
     high_pred = np.full(len(preds), np.nan)
@@ -103,7 +109,8 @@ def main():
     parts = pd.DataFrame({
         "MVT_ID_mvt": ranking_ids, "mu": mu_pred, "p": p, "v": v,
         "q_day": np.zeros(len(preds)) if q_day is None else q_day,
-        "day_late": bool(args.day_late), "gap_LOBT_flt": gap_lobt,
+        "day_late": bool(args.day_late), "day_late_step": bool(args.day_late_step),
+        "tail_cap": bool(args.tail_cap), "gap_LOBT_flt": gap_lobt,
         "lobt_bounds": bool(args.lobt_bounds), "high_lobt": bool(args.high_lobt),
         "high_lobt_pred": high_pred, "pred": preds,
     })

@@ -32,7 +32,7 @@ from sklearn.metrics import roc_auc_score
 
 sys.path.insert(0, "src")
 from data import align_categoricals, flight_ids, load_training
-from features import drop_arvt, drop_episode, drop_proxy
+from features import drop_arvt, drop_episode, drop_mixed, drop_proxy
 from constraints import check_lobt_support, project_lobt
 from high_lobt import APPLY_GAP_SEC, train_high_lobt
 from encode import KEY_SETS, add_target_encodings
@@ -318,13 +318,15 @@ def main():
         ap.error("--mask-flight needs the mu models, not a saved mu")
 
     print("Loading training data and building features...", flush=True)
-    X, y, meta = load_training()
+    X, y, meta = load_training(adsb=args.adsb)
     if not args.proxy:
         X = drop_proxy(X)
     if not args.arvt:
         X = drop_arvt(X)
     if not args.episode:
         X = drop_episode(X)
+    if not args.mixed_mode:
+        X = drop_mixed(X)
 
     out = OUT_DIR / args.tag
     out.mkdir(parents=True, exist_ok=True)

@@ -18,7 +18,7 @@ from constraints import check_lobt_support, project_lobt
 from high_lobt import APPLY_GAP_SEC, train_high_lobt
 from encode import KEY_SETS, add_target_encodings
 from featcache import build_features_cached
-from features import drop_arvt, drop_episode, drop_proxy
+from features import drop_arvt, drop_episode, drop_mixed, drop_proxy
 from model import (MU_FAMILIES, apply_model_args, add_model_args, analytic_tail_value, combine,
                    combine_mu,
                    predict_tail_proba, tail_options, train_tail_clf)
@@ -35,13 +35,15 @@ def main():
     apply_model_args(args)
 
     print("Loading training data and building features...")
-    train_data, y_train, meta = load_training()
+    train_data, y_train, meta = load_training(adsb=args.adsb)
     if not args.proxy:
         train_data = drop_proxy(train_data)
     if not args.arvt:
         train_data = drop_arvt(train_data)
     if not args.episode:
         train_data = drop_episode(train_data)
+    if not args.mixed_mode:
+        train_data = drop_mixed(train_data)
     if args.lobt_bounds:
         check_lobt_support(y_train, train_data["gap_LOBT_flt"].values)
     print("Training rows:", len(train_data))
@@ -50,6 +52,9 @@ def main():
     ranking_raw = pd.read_parquet(RANKING_FILE)
     ranking_feats = build_features_cached(RANKING_FILE, ranking_raw)
     dep_mask = (ranking_raw["PHASE_mvt"] == "DEP").values
+    if args.adsb:
+        import adsb
+        ranking_feats = ranking_feats.join(adsb.dep_features(ranking_raw, "ranking"))
     ranking_dep = ranking_feats.loc[dep_mask].copy()
     if not args.proxy:
         ranking_dep = drop_proxy(ranking_dep)
@@ -57,6 +62,8 @@ def main():
         ranking_dep = drop_arvt(ranking_dep)
     if not args.episode:
         ranking_dep = drop_episode(ranking_dep)
+    if not args.mixed_mode:
+        ranking_dep = drop_mixed(ranking_dep)
     ranking_ids = ranking_raw.loc[dep_mask, "MVT_ID_mvt"].values
 
     align_categoricals(train_data, ranking_dep)

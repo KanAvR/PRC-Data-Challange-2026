@@ -146,6 +146,17 @@ touches.
   re-implementing them ourselves.
 - Diagnostics on ranking rows that use no labels (expected-error maps,
   population shares, unseen-level counts).
+- **Independent, openly licensed observations of the flights themselves**,
+  including each scored flight's own ADS-B trace (adsb.lol `globe_history`,
+  ODbL) and airport geometry (X-Plane Scenery Gateway `apt.dat`). The
+  challenge's stated purpose is post-operations analysis ("identify
+  constrained operations intervals and measure excess fuel burnt"), where the
+  surveillance record of the day is available, and `ranking.parquet` already
+  gives post-operations columns (take-off, `AOBT_3`, `ARVT_3`, later rows).
+  A trace is a separate sensor seeing the same event, so combining it is
+  modelling. Use it as features the model learns to trust, applied the same
+  way to every row, never as a hand-copied answer. (Team decision
+  2026-09-26; the organisers have not been asked yet.)
 
 **Not allowed or not ethical:**
 - **Probing:** any submission built to recover labels rather than to test a
@@ -161,12 +172,15 @@ touches.
   order, or anything else that encodes the blanked `BLOCK_TIME` by accident.
 - **Reusing another team's code**, or using external data that is not openly
   licensed and documented.
-- **External data that summarises the scored period's outcomes**, even when
-  public: it sees into the future (on 1 July nobody knows July's average
-  taxi-out). PRU's `Taxi-Out_Additional_Time.xlsx` holds per-airport monthly
+- **External data derived from the labels**, or from the reference data the
+  labels come from, even when public: it reads the answers back rather than
+  observing the flights. PRU's `Taxi-Out_Additional_Time.xlsx` holds per-airport monthly
   taxi-out totals for Jan and Jul 2026 and is off limits, for correcting *and*
   for checking predictions. External data about other quantities is fine (the
-  daily ATFM delay data). This does not cover the provided `ranking.parquet`:
+  daily ATFM delay data), and so are independent observations of the scored
+  flights (ADS-B, above). The test: is the source a summary of the ground
+  truth we are scored on (off limits), or a separate measurement of the
+  operation (allowed)? This does not cover the provided `ranking.parquet`:
   using its later rows (neighbours' take-offs, arrivals' taxi-in) is part of
   the challenge as set.
 

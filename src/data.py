@@ -1,5 +1,6 @@
 """Loading shared by validate.py and predict.py, so the two cannot drift apart."""
 import glob
+import pathlib
 import re
 
 import pandas as pd
@@ -28,8 +29,10 @@ def month_of(path):
     return re.search(r"training_(\d{4}-\d{2})", path).group(1)
 
 
-def load_training():
+def load_training(adsb=False):
     """Features, target and per-row metadata for every training DEP row.
+
+    adsb=True appends each departure's own-trace columns (adsb.ADSB_COLS).
 
     Metadata (month, date) is returned separately so it can never end up as a
     model input: train_mu() trains on every column of X.
@@ -38,7 +41,11 @@ def load_training():
     for f in TRAIN_FILES:
         df = pd.read_parquet(f)
         dep = df["PHASE_mvt"].values == "DEP"
-        xs.append(build_features_cached(f, df).loc[dep])
+        feats = build_features_cached(f, df)
+        if adsb:
+            import adsb as _adsb
+            feats = feats.join(_adsb.dep_features(df, pathlib.Path(f).stem))
+        xs.append(feats.loc[dep])
         ys.append(df.loc[dep, "TAXITIME_SEC_mvt"].astype(float))
         metas.append(pd.DataFrame({
             "MVT_ID_mvt": df.loc[dep, "MVT_ID_mvt"],

@@ -28,6 +28,24 @@ Put the twelve monthly `training_*.parquet` files, `ranking.parquet`, and the
 .venv/bin/python src/weather.py download
 ```
 
+For `--adsb`, also fetch the airport geometry and each day's ADS-B traces:
+
+```bash
+.venv/bin/python src/aptdat.py download     # one apt.dat per airport, seconds
+.venv/bin/python src/adsb.py download --start 2024-12-31 --end 2025-12-31 --streams 8
+.venv/bin/python src/adsb.py download --start 2025-12-31 --end 2026-01-31 --streams 8
+.venv/bin/python src/adsb.py download --start 2026-06-30 --end 2026-07-31 --streams 8
+```
+
+The ADS-B source is adsb.lol's `globe_history` archive (GitHub releases of
+`adsblol/globe_history_2025` and `_2026`, ODbL). Each day is ~3.5 GB; it is
+streamed and only points under 1,500 ft within 8 km of the ten airports are
+kept (~13 MB/day in `dataset/adsb/`). The whole period takes several hours and
+is limited by bandwidth; parallel streams scale. Stand coordinates come from
+each airport's recommended scenery pack on the X-Plane Scenery Gateway
+(`gateway.x-plane.com` API); its licence is still to be confirmed before the
+final write-up.
+
 On Windows, use `.venv\Scripts\python.exe`. Data, credentials, feature caches,
 models, and generated submissions stay local and are ignored by Git.
 
@@ -52,6 +70,11 @@ applies two corrections keyed on the flight plan's LOBT.
   - Off-block time gaps (`MVT_TIME` minus `AOBT_3`, `LOBT` and `EOBT`).
   - Airport, stand, runway, aircraft and standardized airline codes.
   - Local time, congestion counts and METAR weather.
+  - With `--adsb` (off by default until it is scored live): each departure's
+    own ADS-B trace, matched to its take-off, gives the time it left its stand
+    (apt.dat coordinates), started moving and was first seen on the ground,
+    with coverage and quality columns (`src/adsb.py`). Four-split screen:
+    pooled robust -6.84, every split better (`NEXT_STEPS.md`, lead A2).
   - Out-of-fold target encodings, shrunk with `PRIOR_WEIGHT = 10`.
   - The flight-number encoding falls back to the same airline's flights on
     the same route and scheduled 30-minute slot, then the route, when a
@@ -213,7 +236,8 @@ submissions a day; the best one counts.
 ## Layout
 
 - `src/`: the pipeline. `data.py`, `features.py`, `airline.py`, `weather.py`
-  and `featcache.py` build features; `encode.py` adds target encodings and
+  and `featcache.py` build features; `adsb.py` and `aptdat.py` fetch and
+  match the ADS-B traces and stand geometry; `encode.py` adds target encodings and
   `resproxy.py` the features computed after them; `model.py`, `per_airport.py`
   and `neural.py` hold the models; `constraints.py` and `high_lobt.py` apply
   the LOBT corrections; `tail_submission.py`, `refine_submission.py` and

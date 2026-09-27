@@ -121,6 +121,9 @@ matches *no* available timestamp within 600s.
       best conceivable score otherwise         229.63
 
 **The real target is 229.63, not 0.** Plan headroom against that number.
+*Qualified 2026-09-26: this floor holds for the provided columns only.* An
+independent observation of each flight (own ADS-B trace, section 4 "Own-flight
+ADS-B") can see off-block directly and is not bound by it.
 
 - **Airport.** LTFM 41, LIRF 31, EGLL 9, LFPG 6, EDDM 2, EHAM 1, LSZH 1. Count is
   not cost: LTFM's 41 carry **0.7%** of all squared error (labels just over
@@ -260,6 +263,169 @@ harder than anything else.
 ---
 
 ## 4. Open leads
+
+### Own-flight ADS-B and airport geometry (2026-09-26): the new main line
+
+**What changed.** The team ranked third, about 30 points ahead of v25
+(~234), states that it uses adsb.lol, weather, and the X-Plane Scenery
+Gateway `apt.dat` for the ten airports (stand list and coordinates). Thirty
+points is more than v8 -> v25 gained in total and more than any provided
+column could reach (section 2's 229.63 floor). The only mechanism of that
+size is **per-flight timing from a raw ADS-B trace**: first movement off the
+stand is roughly the off-block the label is measured from. It sees exactly
+what we recorded as "not open": the 3000-6000s band (pushed back, then held
+for a slot; 16.6 points if perfect) and the no-flight-plan tail, including
+the 91 "unpredictable" rows. OPDI failed because its cleaning nulled
+stationary positions on stands (section 5); adsb.lol publishes raw readsb
+traces without that step.
+
+**Ruled in scope (team decision 2026-09-26).** The challenge's stated
+purpose is post-operations analysis, where the day's surveillance record
+exists; a trace is an independent observation, not a summary of the labels.
+`AGENTS.md` now draws the line at "derived from the labels" (PRU xlsx: still
+off limits) rather than "about the scored period". The organisers have not
+been asked; a one-line confirmation would protect prize eligibility.
+
+**Leads, ranked by expected gain per hour:**
+
+| # | lead | hands-on | machine | plausible live gain | gate |
+|---|---|---|---|---|---|
+| A1 | adsb.lol coverage + accuracy probe on 2025 days, per airport | ~3h | download | decides A2 | share of DEP with on-stand points before take-off; RMSE of first-move vs label (OPDI: 474) |
+| A2 | Trace features into `mu` and the tail (first movement, stationary time, first-move -> runway entry, coverage flag), behind a flag | ~1.5 days | full-year download + screens | **5-30** | A1 coverage >= ~30% at several airports |
+| G1 | apt.dat stand coordinates + taxi graph parsed; stand match rate vs `STAND_mvt` | ~2h | -- | enabler | match rate per airport |
+| G2 | Shared-taxilane conflicts: pushbacks / arrivals on stands feeding the same taxilane within +/-10 min [state, physical] | ~3h | 1 screen | 0-0.5 | residual diagnostic first |
+| G3 | Route crosses an active arrival runway x that runway's arrival rate [state x geometry] | ~3h | 1 screen | 0-0.4 | residual diagnostic first |
+| G4 | Unseen-stand spatial backoff (kNN of known stands; EDDM 4.6%, EDDF 0.8% unseen in 2026) | ~2h | masked-stand screen | 0.05-0.2 | unseen EDDM stands present in apt.dat |
+| G5 | Stand-area clusters for proxy neighbour sets and arrival taxi-in (leads 10, 12) | with G2 | with G2 | 0.1-0.5 | -- |
+
+**A1 result (2026-09-26): passes.** adsb.lol `globe_history` prod releases
+cover every day of 2025 and 2026, ~3.5 GB/day; streamed and filtered to
+points under 1,500 ft within 8 km of the ten airports (~13 MB/day parquet,
+~4 min/day per stream, parallel streams scale). Probe on 2025-01-15,
+2025-07-16/17/18 and (label-free) 2026-01-14, 2026-07-15:
+
+- **Trace take-off matched to a DEP row** (same airport, |dt| < 180s,
+  callsign agrees on 95-97%): 25-27% of DEP rows in 2025, **28-37% in 2026**.
+  Coverage moves with the feeder network: 2025-07 EHAM 70%, LEBL 80-92%,
+  LIRF 55-59%, LSZH 32-57%, EDDF 24%, EDDM/EGLL ~0-8%; 2026-07 EDDM 76%,
+  EGLL 83%, LIRF 0%. **LEMD, LFPG, LTFM: no ground points on any day.**
+- **Timing is sharp where the aircraft is seen on its apt.dat stand:**
+  "last point within 60 m of the stand" is within 60s of the label on 82-88%
+  of EHAM and 84-88% of LSZH rows (median error -6s / -40s). The failures
+  are tows, traces that start mid-taxi, and pushbacks that stay within 60 m;
+  no single estimator dominates, so the model gets several.
+- **Gain estimate:** leave-one-day-out LightGBM on `y - pred` (v20_full OOF)
+  with trace features only, rows without a trace unchanged: **243.90 ->
+  237.16 (-6.7)**, every day better (-11.3, -5.8, -7.2, -3.2); on rows with a
+  trace 258.1 -> 233.2 (EHAM 151 -> 110, EDDM 341 -> 228, LSZH 142 -> 101,
+  EDDF 163 -> 123). Top 3 / 10 / 25 rows carry 7.5% / 14.8% / 24.2% of the
+  gain: broad, though more concentrated than `PRIOR_WEIGHT`'s. Trained on
+  ~6k rows over three days, so a floor, not a ceiling.
+- Scripts: `output/diag/adsb_extract.py`, `adsb_probe.py`, `adsb_gain.py`,
+  `adsb_days.sh`. Stand coordinates: `src/aptdat.py` (96% of DEP stands
+  matched; EDDM 99.9%).
+
+**Scored-period coverage (all of Jan + Jul 2026, `ranking.parquet`, no
+labels):** 29.5% of DEP rows matched, 15.4% with a stand exit (Jan 24.2% /
+11.2%, Jul 33.7% / 18.8%), above the 2025 probe days (~25% / ~10%).
+Stand exit Jan / Jul: EHAM 48% / 53%, EDDM 23% / 46%, **EGLL 12% / 55%**,
+LEBL 21% / 27%, LSZH 11% / 9%, LIRF 5% / 0%, EDDF 1% / 1%, LEMD, LFPG,
+LTFM 0. EGLL is the transfer risk: near-zero in 2025, so its 2026 rows rely
+on trust learned at other airports. Check per-airport consistency in the
+screen.
+
+**A2 screen (2026-09-27): `--adsb` wins decisively, the largest gain on
+record.** `validate.py --mu lgb --proxy --adsb --tag adsb_lgb --compare
+adsb_ctrl` (control = the same run without `--adsb`, same code), full 2025
+download (every day 2024-12-31 .. 2025-12-31; 2025-06-11 archive is 5 hours,
+handled as unknown):
+
+| split | all rows | robust | normal rows |
+|---|---|---|---|
+| holdout | -5.20 (CI -6.56..-4.09) | -6.43 | **-6.96** |
+| inner | -5.73 (CI -7.45..-3.85) | -6.23 | **-6.53** |
+| dec_jun | -8.14 (CI -10.43..-6.23) | -8.20 | **-10.13** |
+| mar_sep | -6.41 (CI -7.06..-5.82) | -6.42 | **-6.84** |
+| pooled | -6.28 (CI -7.11..-5.47) | **-6.84 (CI -7.57..-6.11)** | |
+
+- Normal-row gain *exceeds* the all-row gain on every split: not the tail
+  artifact. ~190k rows improve per split; top 3 / 10 / 25 / 100 rows carry
+  1.0-1.4% / 2.4-3.4% / 4.4-6.1% / 10.5-14.4% of the net gain (genuine
+  reference `PRIOR_WEIGHT`: top 25 at 3-4%).
+- Per airport it follows coverage: normal-row RMSE EHAM -30..-39, EDDM
+  -22..-41, LEBL -16..-28, LSZH -17..-24, EDDF -6..-12 on all four splits;
+  EGLL, LEMD, LFPG, LIRF ~0 (no 2025 coverage); LTFM +4.7 on inner only (no
+  traces there; restructuring around the snow split), flat elsewhere.
+- Live projection: normal-row `mu` work has carried at 0.8-1x, and the
+  scored period has *more* coverage than 2025 (15.4% stand exit vs ~10%),
+  but EGLL's 2026 coverage has no 2025 counterpart. This is an lgb-only
+  screen (which "rejects, never promotes"); the gain is new information
+  rather than headroom, so it should survive the ensemble largely intact.
+  Guess: -4 to -7 live.
+- Features: `src/adsb.py` (`ADSB_COLS`), stand geometry `src/aptdat.py`;
+  tests `tests/test_adsb.py`.
+
+**Next:** `predict.py` with `--adsb` (five families), then a full four-split
+validation of the ensemble for the record.
+
+**G2-G4 residual diagnostics (2026-09-26), against `v20_full` OOF `mu`,
+1,375,542 normal rows. All three closed; apt.dat's remaining value is the
+stand coordinates A2 uses.**
+
+- **G2 apron conflicts: negative.** DEPs pushing (AOBT_3, else LOBT) and ARRs
+  blocking in at stands within 80/150/300 m, +/-10 min: residual correlation
+  -0.010..+0.000, the same sign on all four splits, bin means within ~10s
+  on the populated bins. Congestion counts and the proxy already span it.
+  `output/diag/apron_conflict.py`.
+- **G3 runway crossing: negative, without building the router.** If a route
+  crossed an arrival runway, that stand-runway pair's residual would rise
+  with arrivals on the *other* runways (+/-10 min). Over 1,289 pairs with
+  >=150 rows in both halves (holdout+inner vs dec_jun+mar_sep), the per-pair
+  slopes correlate **0.071** between halves, and applying half A's slopes to
+  half B makes it worse (196.50 -> 196.87). Nothing for geometry to find.
+  Side note: arrivals on the *same* runway (mixed mode) correlate +0.021
+  with the residual pooled: +0.015..+0.026 on every split, bin means rising
+  monotonically from -6s (none) to ~+21s (7+ in +/-10 min), LTFM +0.18,
+  LFPG +0.06, LIRF +0.05, EDDM +0.04. Screened below.
+- **G3b `--mixed-mode` (same-runway landings, `features.MIXED_COLS`),
+  `--mu lgb --proxy` four splits against `adsb_ctrl` (2026-09-26): formally
+  wins, not promoted.** Pooled all -0.16 (CI -0.35..+0.07), robust **-0.21
+  (CI -0.38..-0.01)**; normal rows holdout -0.31, inner **+0.31**, dec_jun
+  -0.57, mar_sep -0.36. Inner's loss is **LTFM February 2025 alone (+0.51
+  of RMSE)**, the snow episode that also sank the residualised proxy and the
+  episode features; every other inner airport-month is flat or better.
+  LFPG, EGLL, EDDM better on all four splits, LTFM on three; LIRF +0.06..+0.09
+  worse on three. **Concentrated:** the top 25 rows carry 36-74% of each
+  split's net change (`PRIOR_WEIGHT`: 3-4%). A physical mechanism with an
+  episode misfire and concentrated gains: hold as a candidate for a full
+  ensemble run, not a default. `output/validate/mixed_lgb`.
+- **ADS-B and the extreme tail (Jan 2025): no.** 1 of 43 DEP rows with
+  y > 6000 has a matched trace take-off (they sit at LIRF/LTFM and on
+  no-flight-plan rows, where ground coverage is nil); that one (EHAM, 11,032s)
+  was first seen 154s before take-off. The trace gain is normal-row timing.
+- **Jul 2025: the trace shows LIRF's long labels are recording artefacts.**
+  182 DEP rows with y > 6000, 89 matched, 85 of them at LIRF (139 tail rows).
+  Their labels run 6,000-87,000s, but the traces show ordinary taxis: first
+  seen 50-2,700s before take-off, stand exits 189-1,145s where seen. The
+  aircraft did not wait; the recorded block time is wrong, so no observation
+  of the flight can recover those labels (and the trace pulls away from them;
+  harmless for `--adsb`, which only feeds `mu`, trained on normal rows).
+  Outside LIRF the trace finds genuine long waits exactly: EDDM `BAW951L`
+  y 6,487 vs push 6,469; EHAM `AC901` y 6,711 vs first seen 6,713, but
+  only 4 non-LIRF tail rows matched all month.
+- **G4 unseen stands: real, too small to build.** 1,593 ranking DEP rows
+  (0.46%) have a stand unseen in 2025: EDDM 1,182 (stands 103-108; apt.dat
+  locates all of them via the 103A/103B variants), EDDF 300 (J5, J10, V333;
+  not in apt.dat), LSZH 58. Leave-one-out, the 3 nearest known stands predict
+  a stand's mean taxi at 53s RMSE against 101s for the airport mean (EDDM;
+  2-5x better at every airport). Removing that whole bias on 1,182 rows is
+  ~0.05 RMSE at most.
+
+Static geometry alone is not a lead: OSM stand-to-runway distance lost
+(section 5) because `te_stand_rwy` absorbs it. apt.dat earns its place only
+through time-varying interactions (G2, G3), unseen stands (G4), and as the
+stand geometry A2 needs to decide "on the stand". Licences: adsb.lol data is
+ODbL; confirm the Scenery Gateway licence and record both in the README.
 
 ### The leaderboard gap points at a handful of extreme rows (2026-09-24)
 
@@ -617,7 +783,8 @@ Scripts and logs in `output/diag/` (git-ignored): `stake_map.py`,
 - **Honest ceiling.** Nothing found reaches 30 points. The biggest validated
   component, unmatched non-LIRF misses (18 points at p ~ 0), has no signal in
   the rows' own timestamps or in other rows'. The legitimate levers found
-  total a few points.
+  total a few points. *(2026-09-26: true of the provided columns; own-flight
+  ADS-B is the candidate 30-point lever, section 4 top.)*
 
 ### All leads
 
@@ -687,7 +854,7 @@ final submission regardless.
 | 26 | ~~Runway / stand-area usage shift 2026 vs 2025~~ | done 2026-09-24 | -- | wind-direction flips, covered; no action | closed |
 | 27 | Validation scored with 2026 weights | ~2h | -- | enabler | -- |
 | 28 | Aircraft rotation via the inbound flight's `ARVT_3` | ~2h | 1 screen | 0-0.4 | low |
-| 29 | Raw OpenSky state vectors: push-back proxy (gate: coverage) | ~2h | -- | unknown | low |
+| 29 | Raw OpenSky state vectors: push-back proxy (gate: coverage) | ~2h | -- | unknown | superseded by A1/A2 (adsb.lol) |
 | N1 | ~~January 2026 level: artifact?~~ | done 2026-09-24 | -- | plausibly real (delays + snow) | closed |
 | N2 | Scale TE `_n` counts to the fit rows' out-of-fold basis | ~1h | 1 screen | 0-0.2 | low-medium |
 | N3 | ~~Tree counts for the 12-month fit~~ | done 2026-09-24 | -- | **v25: -0.371 live**; LightGBM right, CatBoost under-trained | shipped |
@@ -1081,7 +1248,8 @@ entirely is worth 0.05-0.19.
   positions on stands); on those, ADS-B taxi predicts the label at RMSE 474
   against our ~220. Confirmed by another entrant (OpenAir v23 with OPDI 278.36,
   v24 without 276.99). Proposed again 2026-09-22 as "own-flight parking exit";
-  same probe. `experiments/public_data/opdi_coverage.json` (removed; in git
+  same probe. *This closes OPDI, not ADS-B:* the failure is OPDI's cleaning
+  of on-stand positions. Raw adsb.lol traces are lead A1/A2 (section 4). `experiments/public_data/opdi_coverage.json` (removed; in git
   history at `2918b73`).
   > OSM has `parking_position` at **all ten** airports (194-768 each), matching
   > `STAND_mvt` on 57-99% of departures. An earlier claim of two of ten was

@@ -588,6 +588,14 @@ def add_model_args(ap):
     ap.add_argument("--episode", action=argparse.BooleanOptionalAction, default=False,
                     help="use the long-taxi episode features (features.EPISODE_COLS): matched "
                          "neighbours' uncapped LOBT gaps. Built unconditionally like --proxy")
+    ap.add_argument("--mixed-mode", action=argparse.BooleanOptionalAction, default=False,
+                    help="use landings on the departure's own runway (features.MIXED_COLS): "
+                         "counts 10 min either side of take-off and the gaps to the nearest "
+                         "landing. Built unconditionally like --proxy")
+    ap.add_argument("--adsb", action=argparse.BooleanOptionalAction, default=False,
+                    help="add each departure's own ADS-B trace timings (adsb.ADSB_COLS, adsb.lol "
+                         "globe_history + apt.dat stands) to mu. Needs the days fetched with "
+                         "`python src/adsb.py download`; days not fetched are NaN")
     ap.add_argument("--res-proxy", action=argparse.BooleanOptionalAction, default=False,
                     help="add the residualised neighbour proxy (resproxy.RES_PROXY_COLS): "
                          "neighbours' gaps minus their own te_stand_rwy, averaged. Needs --te")

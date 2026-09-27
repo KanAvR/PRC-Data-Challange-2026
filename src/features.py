@@ -366,6 +366,45 @@ def _episode(g: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+MIXED_COLS = ["arr_rwy_10m", "arr_rwy_next_10m", "secs_since_arr_rwy", "secs_to_next_arr_rwy"]
+
+
+def _arr_same_runway(g: pd.DataFrame) -> pd.DataFrame:
+    """Landings on this departure's own runway around its take-off (one airport).
+
+    On a mixed-mode runway a departure waits for a gap between arrivals, which
+    the airport-wide arrival counts cannot see. Landing times are ARR rows'
+    MVT_TIME, present in ranking.parquet. Residual check on v20_full: +0.015 to
+    +0.026 on all four splits, LTFM +0.18 (NEXT_STEPS.md, G3 side note).
+    """
+    out = pd.DataFrame(np.nan, index=g.index, columns=MIXED_COLS)
+    t = g["MVT_TIME_UTC_mvt"].values.astype("datetime64[s]")
+    is_dep = (g["PHASE_mvt"] == "DEP").values
+    rwy = g["RUNWAY_mvt"].fillna("missing").astype(str).values
+    for r in pd.unique(rwy[is_dep]):
+        d = is_dep & (rwy == r)
+        a = np.sort(t[~is_dep & (rwy == r)])
+        if len(a) == 0:
+            continue
+        td = t[d]
+        out.loc[d, "arr_rwy_10m"] = _window_counts(a, td, [10])[10]
+        out.loc[d, "arr_rwy_next_10m"] = _window_counts(a, td, [10], after=True)[10]
+        pi = np.searchsorted(a, td, side="left") - 1
+        ni = np.searchsorted(a, td, side="right")
+        out.loc[d, "secs_since_arr_rwy"] = np.where(
+            pi >= 0, (td - a[np.clip(pi, 0, None)]) / np.timedelta64(1, "s"), np.nan)
+        out.loc[d, "secs_to_next_arr_rwy"] = np.where(
+            ni < len(a), (a[np.clip(ni, None, max(len(a) - 1, 0))] - td) / np.timedelta64(1, "s"), np.nan)
+    # a runway with no landings in the file is not mixed mode: count 0, no gap
+    out.loc[is_dep, ["arr_rwy_10m", "arr_rwy_next_10m"]] = out.loc[is_dep, ["arr_rwy_10m", "arr_rwy_next_10m"]].fillna(0)
+    return out
+
+
+def drop_mixed(frame: pd.DataFrame) -> pd.DataFrame:
+    """The --no-mixed-mode arm: same cache build, without the same-runway arrival columns."""
+    return frame.drop(columns=[c for c in MIXED_COLS if c in frame.columns])
+
+
 def drop_episode(frame: pd.DataFrame) -> pd.DataFrame:
     """The --no-episode arm: same cache build, without the episode columns."""
     return frame.drop(columns=[c for c in EPISODE_COLS if c in frame.columns])
@@ -485,5 +524,7 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     ep_parts = [_episode(g) for _, g in dep_only.groupby("apt", observed=True)]
     episode = pd.concat(ep_parts).reindex(df.index)
 
-    feats = pd.concat([feats, counts, arr_ctx, queue, dyn, proxy, wx, arvt, episode], axis=1)
+    mixed = pd.concat([_arr_same_runway(g) for _, g in df.groupby("apt", observed=True)]).reindex(df.index)
+
+    feats = pd.concat([feats, counts, arr_ctx, queue, dyn, proxy, wx, arvt, episode, mixed], axis=1)
     return feats

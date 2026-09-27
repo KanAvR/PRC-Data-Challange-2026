@@ -45,7 +45,13 @@ APT = {
     "LSZH": (47.4647, 8.5492), "LTFM": (41.2753, 28.7519),
 }
 RADIUS_KM = 8.0
-MAX_ALT_FT = 1500
+MAX_ALT_FT = 1500      # airborne points kept up to this far above the field
+# field elevation (ft): barometric altitude is above sea level, and a fixed
+# 1,500 ft MSL cut dropped every airborne point at LEMD (~2,000 ft) and most
+# at EDDM/LSZH, so their take-offs were never seen (NEXT_STEPS.md, A2c)
+ELEV_FT = {"EDDF": 364, "EDDM": 1487, "EGLL": 83, "EHAM": -11, "LEBL": 12,
+           "LEMD": 1998, "LFPG": 392, "LIRF": 15, "LSZH": 1416, "LTFM": 325}
+_ALT_CEIL = max(ELEV_FT.values()) + MAX_ALT_FT
 _BOX = {a: (la - 0.08, la + 0.08, lo - 0.12, lo + 0.12) for a, (la, lo) in APT.items()}
 POINT_COLS = ["icao", "reg", "type", "callsign", "airport", "ts", "lat", "lon",
               "alt", "gs", "track", "flags", "src"]
@@ -94,10 +100,10 @@ def _parse_trace(b):
         if lat is None or lon is None:
             continue
         ground = alt == "ground"
-        if not ground and (alt is None or alt > MAX_ALT_FT):
+        if not ground and (alt is None or alt > _ALT_CEIL):
             continue
         a = _near(lat, lon)
-        if a is None:
+        if a is None or (not ground and alt > ELEV_FT[a] + MAX_ALT_FT):
             continue
         out.append((icao, reg, typ, cs, a, t0 + p[0], lat, lon,
                     -1 if ground else alt, p[4], p[5], p[6],
@@ -178,9 +184,10 @@ class _Parts:
         return buf
 
 
-def extract_day(day, workers=6):
-    """Stream one UTC day and write dataset/adsb/<day>.parquet."""
-    out = ADSB_DIR / f"{day}.parquet"
+def extract_day(day, workers=6, out_dir=None):
+    """Stream one UTC day and write <out_dir or dataset/adsb>/<day>.parquet."""
+    out_dir = pathlib.Path(out_dir) if out_dir else ADSB_DIR
+    out = out_dir / f"{day}.parquet"
     if out.exists():
         return f"{day}: exists"
     t = time.time()
@@ -208,26 +215,27 @@ def extract_day(day, workers=6):
         df[c] = pd.to_numeric(df[c], errors="coerce").astype("float32")
     df["alt"] = pd.to_numeric(df["alt"], errors="coerce").astype("float32")
     df["src"] = df["src"].astype(str)
-    ADSB_DIR.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
     tmp = out.with_suffix(f".{os.getpid()}.tmp")  # two streams may meet on one day
     df.to_parquet(tmp, index=False)
     tmp.replace(out)
     return f"{day}: traces {n} points {len(df)} {time.time() - t:.0f}s"
 
 
-def download(start, end, streams=4, reverse=False):
+def download(start, end, streams=4, reverse=False, out_dir=None):
+    out_dir = pathlib.Path(out_dir) if out_dir else ADSB_DIR
     days = [d.strftime("%Y-%m-%d") for d in pd.date_range(start, end)]
     days = days[::-1] if reverse else days
-    days = [d for d in days if not (ADSB_DIR / f"{d}.parquet").exists()]
-    print(f"{len(days)} days to fetch with {streams} streams", flush=True)
+    days = [d for d in days if not (out_dir / f"{d}.parquet").exists()]
+    print(f"{len(days)} days to fetch with {streams} streams into {out_dir}", flush=True)
     with ThreadPoolExecutor(max_workers=streams) as ex:
-        for msg in ex.map(_safe_extract, days):
+        for msg in ex.map(lambda d: _safe_extract(d, out_dir), days):
             print(msg, flush=True)
 
 
-def _safe_extract(day):
+def _safe_extract(day, out_dir=None):
     try:
-        return extract_day(day, workers=max(2, 12 // 2))
+        return extract_day(day, workers=max(2, 12 // 2), out_dir=out_dir)
     except Exception as e:
         return f"{day}: FAILED {e}"
 
@@ -456,9 +464,10 @@ def main():
     d.add_argument("--end", required=True)
     d.add_argument("--streams", type=int, default=4)
     d.add_argument("--reverse", action="store_true", help="newest day first, to meet a forward stream")
+    d.add_argument("--out-dir", help="write here instead of dataset/adsb (e.g. to test an extractor change)")
     a = ap.parse_args()
     if a.cmd == "download":
-        download(a.start, a.end, a.streams, a.reverse)
+        download(a.start, a.end, a.streams, a.reverse, a.out_dir)
 
 
 if __name__ == "__main__":

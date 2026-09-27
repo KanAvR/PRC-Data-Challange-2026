@@ -129,6 +129,22 @@ class CoverageTest(unittest.TestCase):
         self.assertAlmostEqual(f.adsb_cov_apt_day[0], 0.5)
 
 
+class AltitudeCutTest(unittest.TestCase):
+    def test_cut_is_relative_to_field_elevation(self):
+        import orjson
+        from adsb import APT, _parse_trace
+
+        def one(apt, alt):
+            la, lo = APT[apt]
+            b = orjson.dumps({"icao": "abc", "timestamp": 0, "trace": [[0, la, lo, alt, 150, 0, 0]]})
+            return len(_parse_trace(b))
+        self.assertEqual(one("LEMD", 3000), 1)     # 1,000 ft above a ~2,000 ft field
+        self.assertEqual(one("LEMD", 3600), 0)
+        self.assertEqual(one("EHAM", 1400), 1)
+        self.assertEqual(one("EHAM", 2500), 0)     # above 1,500 ft at a sea-level field
+        self.assertEqual(one("LEMD", "ground"), 1)
+
+
 class StandNameTest(unittest.TestCase):
     def test_normalise(self):
         self.assertEqual(norm_stand("Gate A02"), "A2")

@@ -408,10 +408,37 @@ LEMD -4/-6 (holdout, inner) but -52/-40 (dec_jun, mar_sep): its 2025
 feeder coverage is seasonal; LFPG, LTFM ~0, LIRF -3..+0.4. Against the
 no-ADS-B control the two steps total about -17.7 offline.
 
-**Next:** v26 = `predict.py ... --proxy --adsb` at `0c8e5f4` (the take-off
-match only; running), then v27 with the fallback; then a full four-split
-ensemble validation for the record. Unfixed: the 1,500 ft MSL cut (make it
-relative to field elevation on the next re-download).
+**A2c diagnostics (2026-09-27), both closed without a code change to the
+features:**
+
+- **LEMD stand exits are offset, not wrong.** Jul 2025, stand exit minus
+  label: LEMD median **-124s, IQR -174..-94** (76% within 180s, 5% within
+  60s); EDDM -62 (IQR -82..-43), LSZH -43 (-57..-33), EHAM -8 (-22..+1).
+  A tight per-airport offset: each airport's recorded block time sits
+  differently against first measurable movement (at LEMD ~2 min before).
+  The model sees the airport and `adsb_via_cs` and has 5,134 LEMD matches in
+  July 2025 alone, so it learns the offset; "within 60s" understated it. The
+  real LEMD limits are coverage: half the traces start >112 m from the stand
+  (after pushback), so only 35% of matches have a stand exit, and traces end
+  3-16 min before take-off (runway area not seen).
+- **The 1,500 ft MSL altitude cut was a bug, but not the binding limit.**
+  Fixed in `src/adsb.py` (airborne points kept to field elevation +
+  1,500 ft, `ELEV_FT`; test `AltitudeCutTest`; `download --out-dir` for test
+  extracts). Re-extracting 2025-07-15/16 into `output/diag/adsb_elev`:
+  LEMD gains 41,391 airborne points (0 before), but its ground-to-air gap is a
+  **median 834s** (5 of 232 transitions within 60s): receivers do not see
+  LEMD's runway area, so no cut reveals its take-offs. On labelled 2025-07-16
+  departures, take-off matches LEMD 0 -> 0.2%, EDDM 1.9 -> 2.5%, LSZH
+  32.2 -> 32.4%; stand-exit coverage and error unchanged at every airport.
+  The callsign fallback already supplies the identity the take-off was for.
+  **No re-download**: the fix applies to future downloads only, and the
+  current `dataset/adsb/` stays as extracted (feature caches key on file
+  sizes, so a re-extracted day invalidates itself).
+
+**Next:** v27 (`05b9532`, 237.8662) is the team best. Open ADS-B leads:
+neighbour surface state from the traces (aircraft taxiing / holding around
+each flight's time, the physical version of the proxy; ~3h); `--mixed-mode`
+on top of v27; a full four-split ensemble validation for the record.
 
 **G2-G4 residual diagnostics (2026-09-26), against `v20_full` OOF `mu`,
 1,375,542 normal rows. All three closed; apt.dat's remaining value is the

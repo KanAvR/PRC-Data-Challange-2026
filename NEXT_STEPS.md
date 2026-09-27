@@ -425,7 +425,8 @@ Static geometry alone is not a lead: OSM stand-to-runway distance lost
 (section 5) because `te_stand_rwy` absorbs it. apt.dat earns its place only
 through time-varying interactions (G2, G3), unseen stands (G4), and as the
 stand geometry A2 needs to decide "on the stand". Licences: adsb.lol data is
-ODbL; confirm the Scenery Gateway licence and record both in the README.
+ODbL; Scenery Gateway airport data is GPL v2 (user, 2026-09-27); both are
+recorded in the README, fetched at run time and not redistributed.
 
 ### The leaderboard gap points at a handful of extreme rows (2026-09-24)
 

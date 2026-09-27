@@ -43,8 +43,8 @@ streamed and only points under 1,500 ft within 8 km of the ten airports are
 kept (~13 MB/day in `dataset/adsb/`). The whole period takes several hours and
 is limited by bandwidth; parallel streams scale. Stand coordinates come from
 each airport's recommended scenery pack on the X-Plane Scenery Gateway
-(`gateway.x-plane.com` API); its licence is still to be confirmed before the
-final write-up.
+(`gateway.x-plane.com` API), released under GPL v2. Both are fetched at run
+time into the git-ignored `dataset/` and not redistributed with this code.
 
 On Windows, use `.venv\Scripts\python.exe`. Data, credentials, feature caches,
 models, and generated submissions stay local and are ignored by Git.

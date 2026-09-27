@@ -327,6 +327,9 @@ def main():
         X = drop_episode(X)
     if not args.mixed_mode:
         X = drop_mixed(X)
+    if args.adsb and not args.adsb_nbr:
+        import adsb
+        X = adsb.drop_adsb_nbr(X)
 
     out = OUT_DIR / args.tag
     out.mkdir(parents=True, exist_ok=True)

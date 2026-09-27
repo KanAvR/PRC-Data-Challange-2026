@@ -69,6 +69,23 @@ ADSB_COLS = ["adsb_match", "adsb_cs_ok", "adsb_to_dt", "adsb_first_seen", "adsb_
              "adsb_cov_apt_day", "adsb_via_cs"]
 CS_AFTER_S = 120       # callsign fallback: ground points may end this long after MVT_TIME
 
+# --adsb-nbr: the traces' view of everybody else. Neighbours' trace-measured
+# taxi (stand exit, pushback, first seen) is the neighbour proxy measured
+# directly; surface counts are the aircraft actually taxiing or holding
+NBR_WINDOWS_MIN = [15, 30]
+NBR_CLIP_S = 3600
+NBR_COLS = ([f"adsb_nbr_exit_apt_prev{w}" for w in NBR_WINDOWS_MIN]
+            + ["adsb_nbr_exit_apt_next30", "adsb_nbr_exit_n_apt_prev30",
+               "adsb_nbr_push_apt_prev30", "adsb_nbr_first_apt_prev30",
+               "adsb_nbr_exit_rwy_prev30", "adsb_nbr_exit_rwy_next30"])
+SURF_WINDOWS_MIN = [10, 20]
+TAXI_GS = (3.0, 50.0)  # kt: moving on the ground but not on a take-off roll
+HOLD_GS = 1.0          # kt: stopped ...
+HOLD_OFF_STAND_M = 80  # ... this far from any apt.dat stand: queueing, not parked
+SURF_COLS = ([f"adsb_surf_taxi_{w}" for w in SURF_WINDOWS_MIN]
+             + [f"adsb_surf_hold_{w}" for w in SURF_WINDOWS_MIN] + ["adsb_surf_taxi_rel_20"])
+ADSB_NBR_COLS = NBR_COLS + SURF_COLS
+
 
 # ---------------------------------------------------------------- extraction
 
@@ -403,9 +420,119 @@ def _day_features(dep, day, prev_pts, pts):
             tf = _trace_features(s, r.to_ts, r.mvt_ts, r.ADEP_mvt, r.stand_lat, r.stand_lon)
             if tf:
                 f.update(tf)
+        f["_icao"] = r.icao
         rows.append(f)
-    out = pd.DataFrame(rows, columns=["index"] + ADSB_COLS).set_index("index")
+    out = pd.DataFrame(rows, columns=["index"] + ADSB_COLS + ["_icao"]).set_index("index")
     return out
+
+
+def _stand_xy(apt):
+    import aptdat
+    st = aptdat.stands(apt)
+    if st.empty:
+        return None
+    lat0 = APT[apt][0]
+    return np.c_[st["lat"].to_numpy() * 111200.0,
+                 st["lon"].to_numpy() * 111200.0 * np.cos(np.radians(lat0))]
+
+
+def _surface(both, today, icao):
+    """SURF_COLS for one day's DEP rows: distinct other aircraft taxiing or
+    holding at the airport per minute, averaged over the minutes before take-off."""
+    from scipy.spatial import cKDTree
+    out = pd.DataFrame(np.nan, index=today.index, columns=SURF_COLS)
+    g = both.loc[both["alt"].values == -1, ["icao", "airport", "ts", "lat", "lon", "gs"]]
+    if g.empty or today.empty:
+        return out
+    gs = np.nan_to_num(g["gs"].to_numpy(float))
+    taxi = (gs >= TAXI_GS[0]) & (gs <= TAXI_GS[1])
+    hold = np.zeros(len(g), bool)
+    for apt in g["airport"].unique():
+        sel = (g["airport"] == apt).to_numpy() & (gs < HOLD_GS)
+        xy = _stand_xy(apt)
+        if xy is None or not sel.any():
+            continue
+        lat0 = APT[apt][0]
+        q = np.c_[g["lat"].to_numpy()[sel] * 111200.0,
+                  g["lon"].to_numpy()[sel] * 111200.0 * np.cos(np.radians(lat0))]
+        d, _ = cKDTree(xy).query(q)
+        hold[np.where(sel)[0]] = d > HOLD_OFF_STAND_M
+    minute = (g["ts"].to_numpy() // 60).astype(np.int64)
+    pres = pd.DataFrame({"icao": g["icao"].to_numpy(), "airport": g["airport"].to_numpy(),
+                         "minute": minute, "taxi": taxi, "hold": hold})
+    day0 = int(today["mvt_ts"].min() // 60) - max(SURF_WINDOWS_MIN) - 1
+    for state in ["taxi", "hold"]:
+        p = pres[pres[state]].drop_duplicates(["airport", "minute", "icao"])
+        own = {k: np.sort(v["minute"].to_numpy()) for k, v in p.groupby(["airport", "icao"])}
+        for apt, rows in today.groupby("ADEP_mvt"):
+            pa = p[p["airport"] == apt]
+            m1 = int(rows["mvt_ts"].max() // 60) + 1
+            dense = np.zeros(max(m1 - day0, 1) + 1)
+            mm = pa["minute"].to_numpy() - day0
+            ok = (mm >= 0) & (mm < len(dense))
+            np.add.at(dense, mm[ok], 1)
+            cs = np.concatenate([[0.0], np.cumsum(dense)])
+            m0 = (rows["mvt_ts"].to_numpy() // 60).astype(np.int64) - day0
+            me = icao.reindex(rows.index).to_numpy()
+            for w in SURF_WINDOWS_MIN:
+                hi = np.clip(m0, 0, len(dense))
+                lo = np.clip(m0 - w, 0, len(dense))
+                tot = cs[hi] - cs[lo]
+                selfn = np.array([
+                    0 if not isinstance(ic, str) or (apt, ic) not in own else
+                    np.searchsorted(own[(apt, ic)], m + day0, "left")
+                    - np.searchsorted(own[(apt, ic)], m + day0 - w, "left")
+                    for ic, m in zip(me, m0)], dtype=float)
+                out.loc[rows.index, f"adsb_surf_{state}_{w}"] = (tot - selfn) / w
+            if state == "taxi":
+                level = dense[dense > 0].mean() if (dense > 0).any() else np.nan
+                out.loc[rows.index, "adsb_surf_taxi_rel_20"] = (
+                    out.loc[rows.index, "adsb_surf_taxi_20"] / level)
+    return out
+
+
+def _neighbours(dep, feats):
+    """NBR_COLS: other departures' trace-measured taxi around this take-off,
+    airport- and runway-wide, self excluded (ties at the same second excluded)."""
+    out = pd.DataFrame(np.nan, index=dep.index, columns=NBR_COLS)
+    val = {k: feats[c].clip(0, NBR_CLIP_S).reindex(dep.index).to_numpy(float)
+           for k, c in [("exit", "adsb_leave_stand"), ("push", "adsb_push"),
+                        ("first", "adsb_first_seen")]}
+    want = [("apt", "exit", "prev", w) for w in NBR_WINDOWS_MIN] + [
+        ("apt", "exit", "next", 30), ("apt", "push", "prev", 30), ("apt", "first", "prev", 30),
+        ("rwy", "exit", "prev", 30), ("rwy", "exit", "next", 30)]
+    for scope, keys in [("apt", ["ADEP_mvt"]), ("rwy", ["ADEP_mvt", "RUNWAY_mvt"])]:
+        for _, g in dep.groupby(keys, dropna=False):
+            pos = dep.index.get_indexer(g.index)
+            t = g["mvt_ts"].to_numpy()
+            order = np.argsort(t, kind="stable")
+            ts = t[order]
+            for sc, k, side, w in want:
+                if sc != scope:
+                    continue
+                v = val[k][pos][order]
+                ok = ~np.isnan(v)
+                cv = np.concatenate([[0.0], np.cumsum(np.where(ok, v, 0.0))])
+                cn = np.concatenate([[0], np.cumsum(ok)])
+                if side == "prev":
+                    lo, hi = np.searchsorted(ts, ts - w * 60, "left"), np.searchsorted(ts, ts, "left")
+                else:
+                    lo, hi = np.searchsorted(ts, ts, "right"), np.searchsorted(ts, ts + w * 60, "right")
+                n = cn[hi] - cn[lo]
+                mean = np.where(n > 0, (cv[hi] - cv[lo]) / np.maximum(n, 1), np.nan)
+                res = np.empty(len(ts))
+                res[order] = mean
+                out.iloc[pos, out.columns.get_loc(f"adsb_nbr_{k}_{scope}_{side}{w}")] = res
+                if (scope, k, side, w) == ("apt", "exit", "prev", 30):
+                    cnt = np.empty(len(ts))
+                    cnt[order] = n
+                    out.iloc[pos, out.columns.get_loc("adsb_nbr_exit_n_apt_prev30")] = cnt
+    return out
+
+
+def drop_adsb_nbr(frame):
+    """The --no-adsb-nbr arm: same cache, without the neighbour and surface columns."""
+    return frame.drop(columns=[c for c in ADSB_NBR_COLS if c in frame.columns])
 
 
 def _cache_key(days_needed):
@@ -418,12 +545,12 @@ def _cache_key(days_needed):
 
 
 def dep_features(raw, tag):
-    """ADSB_COLS for every row of `raw` (a training month or ranking.parquet);
+    """ADSB_COLS + ADSB_NBR_COLS for every row of `raw` (a training month or ranking.parquet);
     NaN on ARR rows, on DEP rows without a matched trace, and on days whose
     archive has not been fetched (adsb_match = 0 only where the day exists)."""
     import aptdat
     dep = raw[raw["PHASE_mvt"] == "DEP"][["ADEP_mvt", "STAND_mvt", "MVT_TIME_UTC_mvt",
-                                          "CALLSIGN_flt", "FLIGHT_mvt"]].copy()
+                                          "CALLSIGN_flt", "FLIGHT_mvt", "RUNWAY_mvt"]].copy()
     t = pd.to_datetime(dep["MVT_TIME_UTC_mvt"], utc=True)
     dep["mvt_ts"] = (t - pd.Timestamp("1970-01-01", tz="UTC")).dt.total_seconds()
     dep["day"] = t.dt.strftime("%Y-%m-%d")
@@ -440,7 +567,11 @@ def dep_features(raw, tag):
         if pts is None:
             continue
         today = dep[dep["day"] == d]
-        f = _day_features(today, d, _load_points(prev[d]), pts).reindex(today.index)
+        pp = _load_points(prev[d])
+        f = _day_features(today, d, pp, pts).reindex(today.index)
+        both = pd.concat([x for x in (pp, pts) if x is not None], ignore_index=True)
+        surf = _surface(both, today, f["_icao"])
+        f = pd.concat([f.drop(columns="_icao"), surf], axis=1)
         # a take-off hour the archive does not cover at all is unknown, not unseen
         # (2025-06-11 holds 5 hours); elsewhere no match means not seen
         covered = set(((pts["ts"] // 3600) % 24).astype(int).unique())
@@ -448,9 +579,13 @@ def dep_features(raw, tag):
         f["adsb_match"] = f["adsb_match"].fillna(0).where(hour.isin(covered))
         # how often a departure is seen here today: what a missing trace means
         f["adsb_cov_apt_day"] = f["adsb_match"].groupby(today["ADEP_mvt"]).transform("mean")
+        # an hour the archive does not cover has no surface to count
+        f.loc[f["adsb_match"].isna(), SURF_COLS] = np.nan
         parts.append(f)
-    feats = (pd.concat(parts) if parts else pd.DataFrame(columns=ADSB_COLS)).reindex(raw.index)
-    feats = feats[ADSB_COLS].astype("float32")
+    cols = ADSB_COLS + ADSB_NBR_COLS
+    feats = (pd.concat(parts) if parts else pd.DataFrame(columns=cols)).reindex(dep.index)
+    feats[NBR_COLS] = _neighbours(dep, feats)
+    feats = feats[cols].reindex(raw.index).astype("float32")
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     feats.to_parquet(cache)
     return feats

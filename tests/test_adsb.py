@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from adsb import ADSB_COLS, _day_features, _trace_features
+from adsb import ADSB_COLS, NBR_COLS, SURF_COLS, _day_features, _neighbours, _surface, _trace_features
 from aptdat import _base, norm_stand
 
 STAND = (52.3100, 4.7600)
@@ -65,7 +65,8 @@ class MatchTest(unittest.TestCase):
 
     def test_match_and_columns(self):
         out = _day_features(self.dep(MVT, "KLM1"), "2025-06-15", None, trace())
-        self.assertEqual(list(out.columns), ADSB_COLS)
+        self.assertEqual([c for c in out.columns if c != "_icao"], ADSB_COLS)
+        self.assertEqual(out.loc[7, "_icao"], "abc123")
         self.assertEqual(out.loc[7, "adsb_match"], 1)
         self.assertEqual(out.loc[7, "adsb_cs_ok"], 1)
         self.assertAlmostEqual(out.loc[7, "adsb_to_dt"], TO - MVT)
@@ -117,7 +118,7 @@ class CoverageTest(unittest.TestCase):
                 raw = pd.DataFrame({
                     "PHASE_mvt": ["DEP", "DEP", "DEP"], "ADEP_mvt": ["EHAM"] * 3,
                     "STAND_mvt": ["X", "Y", "Z"], "CALLSIGN_flt": ["KLM1", "KLM2", "KLM3"],
-                    "FLIGHT_mvt": [None] * 3,
+                    "FLIGHT_mvt": [None] * 3, "RUNWAY_mvt": ["24"] * 3,
                     # matched; same hour but unseen; an hour with no archive data
                     "MVT_TIME_UTC_mvt": [t_seen, t_seen + pd.Timedelta(minutes=5),
                                          t_seen + pd.Timedelta(hours=6)]})
@@ -143,6 +144,42 @@ class AltitudeCutTest(unittest.TestCase):
         self.assertEqual(one("EHAM", 1400), 1)
         self.assertEqual(one("EHAM", 2500), 0)     # above 1,500 ft at a sea-level field
         self.assertEqual(one("LEMD", "ground"), 1)
+
+
+class NeighbourSurfaceTest(unittest.TestCase):
+    def test_neighbours_exclude_self_and_split_sides(self):
+        t0 = 1_750_000_000.0
+        dep = pd.DataFrame({"ADEP_mvt": ["EHAM"] * 4, "RUNWAY_mvt": ["24", "24", "18", "24"],
+                            "mvt_ts": [t0, t0 + 300, t0 + 600, t0 + 3600]}, index=[10, 11, 12, 13])
+        feats = pd.DataFrame({"adsb_leave_stand": [600.0, 900.0, np.nan, 700.0],
+                              "adsb_push": np.nan, "adsb_first_seen": np.nan}, index=dep.index)
+        out = _neighbours(dep, feats)
+        self.assertEqual(list(out.columns), NBR_COLS)
+        # row 12 (t0+600): previous 30 min on the airport = rows 10, 11 (not itself)
+        self.assertAlmostEqual(out.loc[12, "adsb_nbr_exit_apt_prev30"], 750.0)
+        self.assertEqual(out.loc[12, "adsb_nbr_exit_n_apt_prev30"], 2)
+        # row 10: nothing before it; next 30 min = row 11 only (row 12 has no estimate)
+        self.assertTrue(np.isnan(out.loc[10, "adsb_nbr_exit_apt_prev30"]))
+        self.assertAlmostEqual(out.loc[10, "adsb_nbr_exit_apt_next30"], 900.0)
+        # runway scope: row 11 on 24 sees row 10, not row 12 on 18
+        self.assertAlmostEqual(out.loc[11, "adsb_nbr_exit_rwy_prev30"], 600.0)
+        self.assertTrue(np.isnan(out.loc[12, "adsb_nbr_exit_rwy_prev30"]))
+
+    def test_surface_counts_others_taxiing(self):
+        from adsb import APT
+        la, lo = APT["EHAM"]
+        la += 0.02                                   # well away from any stand
+        mvt = 1_750_000_000.0 - (1_750_000_000.0 % 60) + 1200
+        rows = []
+        for ic, gs in [("me", 15.0), ("other1", 15.0), ("other2", 0.0)]:
+            for k in range(20):                      # one point a minute for 20 minutes
+                rows.append((ic, "EHAM", mvt - 1200 + 60 * k, la, lo, -1, gs))
+        both = pd.DataFrame(rows, columns=["icao", "airport", "ts", "lat", "lon", "alt", "gs"])
+        today = pd.DataFrame({"ADEP_mvt": ["EHAM"], "mvt_ts": [mvt]}, index=[5])
+        out = _surface(both, today, pd.Series({5: "me"}))
+        self.assertEqual(list(out.columns), SURF_COLS)
+        self.assertAlmostEqual(out.loc[5, "adsb_surf_taxi_10"], 1.0)   # other1, self excluded
+        self.assertAlmostEqual(out.loc[5, "adsb_surf_hold_20"], 1.0)   # other2 stopped off-stand
 
 
 class StandNameTest(unittest.TestCase):

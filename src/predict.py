@@ -44,6 +44,9 @@ def main():
         train_data = drop_episode(train_data)
     if not args.mixed_mode:
         train_data = drop_mixed(train_data)
+    if args.adsb and not args.adsb_nbr:
+        import adsb
+        train_data = adsb.drop_adsb_nbr(train_data)
     if args.lobt_bounds:
         check_lobt_support(y_train, train_data["gap_LOBT_flt"].values)
     print("Training rows:", len(train_data))
@@ -64,6 +67,8 @@ def main():
         ranking_dep = drop_episode(ranking_dep)
     if not args.mixed_mode:
         ranking_dep = drop_mixed(ranking_dep)
+    if args.adsb and not args.adsb_nbr:
+        ranking_dep = adsb.drop_adsb_nbr(ranking_dep)
     ranking_ids = ranking_raw.loc[dep_mask, "MVT_ID_mvt"].values
 
     align_categoricals(train_data, ranking_dep)

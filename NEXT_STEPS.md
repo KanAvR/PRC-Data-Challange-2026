@@ -435,10 +435,27 @@ features:**
   current `dataset/adsb/` stays as extracted (feature caches key on file
   sizes, so a re-extracted day invalidates itself).
 
-**Next:** v27 (`05b9532`, 237.8662) is the team best. Open ADS-B leads:
-neighbour surface state from the traces (aircraft taxiing / holding around
-each flight's time, the physical version of the proxy; ~3h); `--mixed-mode`
-on top of v27; a full four-split ensemble validation for the record.
+**A3 `--adsb-nbr` (2026-09-27): formally wins, small.** The traces' view
+of everybody else (`adsb.ADSB_NBR_COLS`): neighbours' trace-measured taxi
+(stand exit, pushback, first seen) over 15/30 min before and 30 min after,
+airport and runway scope, self excluded; and distinct other aircraft taxiing
+(3-50 kt) or holding (<1 kt, >80 m from any apt.dat stand) per minute,
+averaged over the 10/20 min before take-off, self excluded, plus the taxi
+count relative to the airport's level that day. Residual check (Jan 2025,
+against `adsb2_lgb`): within-airport +0.021..+0.027 (neighbours), +0.017
+(holding), about half the proxy's +0.04..+0.06.
+`validate.py --mu lgb --proxy --adsb --adsb-nbr --tag adsbnbr_lgb --compare
+adsb2_lgb`: robust holdout -0.37 (CI -0.58..-0.15), inner -0.28, dec_jun
+-0.21, mar_sep -0.06 (last three cross zero); **pooled robust -0.24 (CI
+-0.40..-0.09)**; normal rows -0.45 / -0.28 / -0.15 / -0.06. Better on all
+four splits at EHAM, LSZH, EDDF, LEBL. Net gain is small against gross
+movement: on dec_jun and mar_sep the top 10 rows carry 82% / 141% of the
+net change, so those splits are no evidence alone. Built as v28 on the
+user's go-ahead; expect -0.2..-0.5 live.
+
+**Next:** v27 (`05b9532`, 237.8662) is the team best; v28 = v27 +
+`--adsb-nbr`. Then `--mixed-mode` on top; a full four-split ensemble
+validation for the record.
 
 **G2-G4 residual diagnostics (2026-09-26), against `v20_full` OOF `mu`,
 1,375,542 normal rows. All three closed; apt.dat's remaining value is the

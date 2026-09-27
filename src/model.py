@@ -597,6 +597,12 @@ def add_model_args(ap):
                          "globe_history + apt.dat stands) to mu. Needs the days fetched with "
                          "`python src/adsb.py download`; days not fetched are NaN. v26: -12.89 "
                          "live. --no-adsb reproduces v25")
+    ap.add_argument("--adsb-nbr", action=argparse.BooleanOptionalAction, default=False,
+                    help="with --adsb, also use the traces' view of other aircraft "
+                         "(adsb.ADSB_NBR_COLS): neighbours' trace-measured taxi within 15/30 min, "
+                         "airport and runway scope, and aircraft taxiing / holding in the 10-20 "
+                         "min before take-off. Built with --adsb; this flag only chooses whether "
+                         "the models see them")
     ap.add_argument("--res-proxy", action=argparse.BooleanOptionalAction, default=False,
                     help="add the residualised neighbour proxy (resproxy.RES_PROXY_COLS): "
                          "neighbours' gaps minus their own te_stand_rwy, averaged. Needs --te")

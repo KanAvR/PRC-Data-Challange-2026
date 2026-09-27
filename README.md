@@ -70,7 +70,7 @@ applies two corrections keyed on the flight plan's LOBT.
   - Off-block time gaps (`MVT_TIME` minus `AOBT_3`, `LOBT` and `EOBT`).
   - Airport, stand, runway, aircraft and standardized airline codes.
   - Local time, congestion counts and METAR weather.
-  - With `--adsb` (off by default until it is scored live): each departure's
+  - `--adsb` (default since v26, -12.89 live): each departure's
     own ADS-B trace, matched to its take-off, gives the time it left its stand
     (apt.dat coordinates), started moving and was first seen on the ground,
     with coverage and quality columns (`src/adsb.py`). Four-split screen:
@@ -124,7 +124,8 @@ Flags that stay off by default are kept as the record of measured negatives:
 | v22 | v20 + cap on the tail hedge | 264.749 |
 | v23 | v22 + day-late rate stepped by scheduled gap (rejected) | 265.372 |
 | v24 | v22 + flight encoding backoff and dropout | 264.244 |
-| **v25** | **v24 + CatBoost 6,000 iterations for the 12-month fit** | **263.873** |
+| v25 | v24 + CatBoost 6,000 iterations for the 12-month fit | 263.873 |
+| **v26** | **v25 + each departure's own ADS-B trace (adsb.lol, apt.dat stands)** | **250.981** |
 
 Offline gains do not always carry over:
 
@@ -178,12 +179,14 @@ predictions as `<tag>_unmasked`. Judge encoding and key changes on both.
 ## Run
 
 ```bash
-# Reproduce v25: train on all twelve months and score the ranking set (several
-# hours). The tail cap, the flight backoff/dropout and 6,000 CatBoost iterations
-# are defaults. Earlier versions: v24 adds --cat-iterations 3000; v22 also
-# --no-te-flight-backoff --te-flight-dropout 0; v20 also --no-tail-cap.
+# Reproduce v26: train on all twelve months and score the ranking set (several
+# hours; fetch the ADS-B days first, see Setup). The ADS-B trace features, the
+# tail cap, the flight backoff/dropout and 6,000 CatBoost iterations are
+# defaults. v26 itself was built at 0c8e5f4, before the callsign fallback
+# match. Earlier versions: v25 adds --no-adsb; v24 also --cat-iterations 3000;
+# v22 also --no-te-flight-backoff --te-flight-dropout 0; v20 also --no-tail-cap.
 .venv/bin/python src/predict.py --mu lgb cat cat_note cat_ctr1 pa --proxy \
-    --out output/submitting_v25.parquet
+    --out output/submitting_v26.parquet
 
 # Tail options can also be applied to a finished submission, exactly, from its
 # .parts.parquet, without retraining (this is how v22 was built from v20).

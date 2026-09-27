@@ -36,9 +36,14 @@ record. Anything that ships lives in `src/`.
 | v22 | ours: v20 + `--tail-cap` (6 rows, 2 material) | 264.7491 |
 | v23 | v22 + `--day-late-step` -- **lost 0.62 against v22** | 265.3724 |
 | v24 | ours: v22 + `te_flight` backoff + dropout 0.2 (renamed callsigns) | 264.2436 |
-| **v25** | **ours: v24 + CatBoost `cat`/`cat_note` at 6000 iterations (12-month fit)** | **263.8731** |
+| v25 | ours: v24 + CatBoost `cat`/`cat_note` at 6000 iterations (12-month fit) | 263.8731 |
+| **v26** | **ours: v25 + `--adsb` (own-flight ADS-B trace, take-off match)** | **250.9809** |
 
-**Team best is v25 (263.8731, 2026-09-25).** Reproduce with `predict.py --mu
+**Team best is v26 (250.9809, 2026-09-27)**: `predict.py --mu lgb cat cat_note
+cat_ctr1 pa --proxy --adsb` at `0c8e5f4` (branch `adsb-traces`), after
+`src/adsb.py download` for 2024-12-31..2025-12-31 and the scored months.
+
+Previous best v25 (263.8731, 2026-09-25). Reproduce with `predict.py --mu
 lgb cat cat_note cat_ctr1 pa --proxy`; the tail cap, the flight backoff and
 dropout, and `--cat-iterations 6000` are all defaults. Built from commit
 `64a7b85` with `--cat-iterations 6000` passed explicitly (it became the
@@ -50,6 +55,13 @@ default afterwards); sha256 prefix `978eef415fb508ce`. Upload log:
 | v23 | `313743b` (code), built post-hoc | `tail_submission.py --input <v20> --tail-cap --day-late-step` | `102498394821de6d` | 265.3724 | +0.623 vs v22 |
 | v24 | `313743b` | `--te-flight-backoff --te-flight-dropout 0.2` (tail cap default) | `b3d92829a4ccb558` | 264.2436 | -0.506 vs v22 |
 | v25 | `64a7b85` | `--cat-iterations 6000` | `978eef415fb508ce` | 263.8731 | -0.371 vs v24 |
+| v26 | `0c8e5f4` | `--adsb --out output/submitting_adsb.parquet` | `3f69031c018605ac` | 250.9809 | **-12.892 vs v25** |
+
+**v26: -12.89 live against -6.84 offline** (four-split `--mu lgb` pooled robust),
+1.9x. The scored months have more trace coverage than 2025 (stand exit 15.4%
+vs ~10%; EGLL 55% in July 2026 against ~0 in 2025, flat offline), so a
+transfer above 1x is the expected direction. Largest live gain on record
+(previous: the proxy, -2.56).
 
 v20 -> v25 is -1.35 live. Transfer: the flight fix -0.506 live against -0.53
 all-row in the masked lgb screen (~1:1); the CatBoost iterations -0.37 live

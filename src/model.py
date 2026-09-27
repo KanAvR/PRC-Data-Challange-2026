@@ -592,10 +592,11 @@ def add_model_args(ap):
                     help="use landings on the departure's own runway (features.MIXED_COLS): "
                          "counts 10 min either side of take-off and the gaps to the nearest "
                          "landing. Built unconditionally like --proxy")
-    ap.add_argument("--adsb", action=argparse.BooleanOptionalAction, default=False,
+    ap.add_argument("--adsb", action=argparse.BooleanOptionalAction, default=True,
                     help="add each departure's own ADS-B trace timings (adsb.ADSB_COLS, adsb.lol "
                          "globe_history + apt.dat stands) to mu. Needs the days fetched with "
-                         "`python src/adsb.py download`; days not fetched are NaN")
+                         "`python src/adsb.py download`; days not fetched are NaN. v26: -12.89 "
+                         "live. --no-adsb reproduces v25")
     ap.add_argument("--res-proxy", action=argparse.BooleanOptionalAction, default=False,
                     help="add the residualised neighbour proxy (resproxy.RES_PROXY_COLS): "
                          "neighbours' gaps minus their own te_stand_rwy, averaged. Needs --te")

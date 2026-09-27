@@ -37,11 +37,13 @@ record. Anything that ships lives in `src/`.
 | v23 | v22 + `--day-late-step` -- **lost 0.62 against v22** | 265.3724 |
 | v24 | ours: v22 + `te_flight` backoff + dropout 0.2 (renamed callsigns) | 264.2436 |
 | v25 | ours: v24 + CatBoost `cat`/`cat_note` at 6000 iterations (12-month fit) | 263.8731 |
-| **v26** | **ours: v25 + `--adsb` (own-flight ADS-B trace, take-off match)** | **250.9809** |
+| v26 | ours: v25 + `--adsb` (own-flight ADS-B trace, take-off match) | 250.9809 |
+| **v27** | **ours: v26 + callsign fallback match (ADS-B coverage 29.5% -> 58.6%)** | **237.8662** |
 
-**Team best is v26 (250.9809, 2026-09-27)**: `predict.py --mu lgb cat cat_note
-cat_ctr1 pa --proxy --adsb` at `0c8e5f4` (branch `adsb-traces`), after
-`src/adsb.py download` for 2024-12-31..2025-12-31 and the scored months.
+**Team best is v27 (237.8662, 2026-09-27)**: `predict.py --mu lgb cat cat_note
+cat_ctr1 pa --proxy --adsb` at `05b9532` (branch `adsb-traces`; `--adsb` is the
+default from `c37e00f`), after `src/adsb.py download` for
+2024-12-31..2025-12-31 and the scored months.
 
 Previous best v25 (263.8731, 2026-09-25). Reproduce with `predict.py --mu
 lgb cat cat_note cat_ctr1 pa --proxy`; the tail cap, the flight backoff and
@@ -56,6 +58,10 @@ default afterwards); sha256 prefix `978eef415fb508ce`. Upload log:
 | v24 | `313743b` | `--te-flight-backoff --te-flight-dropout 0.2` (tail cap default) | `b3d92829a4ccb558` | 264.2436 | -0.506 vs v22 |
 | v25 | `64a7b85` | `--cat-iterations 6000` | `978eef415fb508ce` | 263.8731 | -0.371 vs v24 |
 | v26 | `0c8e5f4` | `--adsb --out output/submitting_adsb.parquet` | `3f69031c018605ac` | 250.9809 | **-12.892 vs v25** |
+| v27 | `05b9532` | `--adsb --out output/submitting_adsb2.parquet` | `93ddadc7486a2e7b` | 237.8662 | **-13.115 vs v26** |
+
+**v27: -13.12 live against -10.85 offline** (1.2x; the callsign fallback,
+coverage 29.5% -> 58.6% of scored DEP rows). v25 -> v27 is -26.01 live.
 
 **v26: -12.89 live against -6.84 offline** (four-split `--mu lgb` pooled robust),
 1.9x. The scored months have more trace coverage than 2025 (stand exit 15.4%

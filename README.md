@@ -125,7 +125,8 @@ Flags that stay off by default are kept as the record of measured negatives:
 | v23 | v22 + day-late rate stepped by scheduled gap (rejected) | 265.372 |
 | v24 | v22 + flight encoding backoff and dropout | 264.244 |
 | v25 | v24 + CatBoost 6,000 iterations for the 12-month fit | 263.873 |
-| **v26** | **v25 + each departure's own ADS-B trace (adsb.lol, apt.dat stands)** | **250.981** |
+| v26 | v25 + each departure's own ADS-B trace (adsb.lol, apt.dat stands) | 250.981 |
+| **v27** | **v26 + callsign match where the take-off roll is not seen** | **237.866** |
 
 Offline gains do not always carry over:
 
@@ -179,14 +180,14 @@ predictions as `<tag>_unmasked`. Judge encoding and key changes on both.
 ## Run
 
 ```bash
-# Reproduce v26: train on all twelve months and score the ranking set (several
+# Reproduce v27: train on all twelve months and score the ranking set (several
 # hours; fetch the ADS-B days first, see Setup). The ADS-B trace features, the
 # tail cap, the flight backoff/dropout and 6,000 CatBoost iterations are
-# defaults. v26 itself was built at 0c8e5f4, before the callsign fallback
-# match. Earlier versions: v25 adds --no-adsb; v24 also --cat-iterations 3000;
+# defaults. v27 was built at 05b9532; v26 is the same command at 0c8e5f4,
+# before the callsign fallback match. Earlier versions: v25 adds --no-adsb; v24 also --cat-iterations 3000;
 # v22 also --no-te-flight-backoff --te-flight-dropout 0; v20 also --no-tail-cap.
 .venv/bin/python src/predict.py --mu lgb cat cat_note cat_ctr1 pa --proxy \
-    --out output/submitting_v26.parquet
+    --out output/submitting_v27.parquet
 
 # Tail options can also be applied to a finished submission, exactly, from its
 # .parts.parquet, without retraining (this is how v22 was built from v20).

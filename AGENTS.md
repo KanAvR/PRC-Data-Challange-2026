@@ -97,6 +97,7 @@ unmasked (January-like). That harness predicted v24's live gain almost exactly.
 | bounded residual regression (the long-taxi specialist) | carried, ~2x |
 | fixing a mechanical error in the tail mixture (v22 hedge cap) | carried, ~1.6x |
 | independent observation of each flight (v26 own ADS-B trace) | **carried, 1.9x: -12.9** |
+| more coverage of that observation (v27 callsign fallback) | **carried, 1.2x: -13.1** |
 | post-hoc correction of `mu` by band | **reversed: -0.44 offline, +0.6 live** |
 | a rate fitted on a handful of tail rows (v23 day-late step) | **lost 0.62** |
 | classifier *feature* expansion | **lost 25 points** |

@@ -83,6 +83,16 @@ class MatchTest(unittest.TestCase):
         out = _day_features(self.dep(MVT + 600, "KLM1"), "2025-06-15", None, trace())
         self.assertEqual(len(out), 0)
 
+    def test_callsign_fallback_without_takeoff_roll(self):
+        pts = trace()
+        pts = pts[(pts.alt == -1) & (pts.gs < 100)]     # taxiways seen, runway end not
+        out = _day_features(self.dep(MVT, "KLM1"), "2025-06-15", None, pts)
+        self.assertEqual(out.loc[7, "adsb_via_cs"], 1)
+        self.assertAlmostEqual(out.loc[7, "adsb_first_seen"], MVT - T0)
+        self.assertLess(out.loc[7, "adsb_to_dt"], 0)
+        # a different callsign finds nothing
+        self.assertEqual(len(_day_features(self.dep(MVT, "OTHER9"), "2025-06-15", None, pts)), 0)
+
     def test_callsign_preferred(self):
         pts = pd.concat([trace("aaa111", "OTHER"), trace("bbb222", "KLM1")])
         pts.loc[pts.icao == "aaa111", "ts"] += 5    # closer in time, wrong callsign

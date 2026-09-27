@@ -365,8 +365,35 @@ handled as unknown):
 - Features: `src/adsb.py` (`ADSB_COLS`), stand geometry `src/aptdat.py`;
   tests `tests/test_adsb.py`.
 
-**Next:** `predict.py` with `--adsb` (five families), then a full four-split
-validation of the ensemble for the record.
+**A2b callsign fallback (2026-09-27): a further -10.85, larger than A2
+itself.** Receivers at LEMD, EDDF and LFPG see aprons and taxiways but rarely
+the runway end, and `src/adsb.py`'s extractor keeps airborne points only below
+1,500 ft *MSL* (LEMD is ~2,000 ft, EDDM/LSZH ~1,450 ft), so the take-off
+match never fired there although the ground points exist (2026-07-15: LEMD
+23,272 ground points over 375 aircraft, 13 visible take-off rolls; EDDF 440 /
+48). Fallback: rows with no trace take-off match on callsign (`CALLSIGN_flt`
+or `FLIGHT_mvt`) and airport, ground points ending within 4h before to 120s
+after MVT_TIME; an aircraft whose take-off *is* seen at another time is
+excluded; flagged `adsb_via_cs`. Ranking coverage: matched 29.5% -> **58.6%**,
+stand exit 15.4% -> **24.5%** (LEMD 0 -> 76% matched; EHAM, EDDM, LEBL, LSZH
+93-97%; LFPG 6%, LTFM 0: genuinely no ground data). Callsign matches are less
+exact (Jul 2025 stand exit within 60s 44% vs 69%, within 180s 80% vs 86%,
+median -67s), and LEMD's stand exits rarely land within 60s.
+
+`validate.py --mu lgb --proxy --adsb --tag adsb2_lgb --compare adsb_lgb`:
+holdout -9.89, inner -8.98, dec_jun -11.68, mar_sep -13.05 robust; **pooled
+robust -10.85 (CI -11.89..-9.77)**; normal rows -9.2..-14.9 on every split.
+Top 3 / 10 / 25 / 100 rows carry 0.8-1.2% / 2.0-2.8% / 3.9-5.4% /
+9.4-12.6%. Per airport, normal-row RMSE on all four splits: EDDF -34..-43,
+LSZH -31..-38, EDDM -27..-35, EHAM -18..-29, LEBL -13..-24, EGLL -11..-15;
+LEMD -4/-6 (holdout, inner) but -52/-40 (dec_jun, mar_sep): its 2025
+feeder coverage is seasonal; LFPG, LTFM ~0, LIRF -3..+0.4. Against the
+no-ADS-B control the two steps total about -17.7 offline.
+
+**Next:** v26 = `predict.py ... --proxy --adsb` at `0c8e5f4` (the take-off
+match only; running), then v27 with the fallback; then a full four-split
+ensemble validation for the record. Unfixed: the 1,500 ft MSL cut (make it
+relative to field elevation on the next re-download).
 
 **G2-G4 residual diagnostics (2026-09-26), against `v20_full` OOF `mu`,
 1,375,542 normal rows. All three closed; apt.dat's remaining value is the

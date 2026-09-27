@@ -60,7 +60,8 @@ MOVE_M = 15            # displacement from the parked position that counts as mo
 ADSB_COLS = ["adsb_match", "adsb_cs_ok", "adsb_to_dt", "adsb_first_seen", "adsb_leave0",
              "adsb_leave_stand", "adsb_push", "adsb_last_stop", "adsb_d_first_stand",
              "adsb_gs_first", "adsb_n_ground", "adsb_cadence", "adsb_max_gap", "adsb_since_land",
-             "adsb_cov_apt_day"]
+             "adsb_cov_apt_day", "adsb_via_cs"]
+CS_AFTER_S = 120       # callsign fallback: ground points may end this long after MVT_TIME
 
 
 # ---------------------------------------------------------------- extraction
@@ -313,6 +314,49 @@ def _trace_features(series, to_ts, ref, apt, stand_lat, stand_lon):
     return f
 
 
+def _callsign_matches(dep, both, to):
+    """Fallback for rows whose take-off the trace does not show.
+
+    Receivers often see an airport's aprons and taxiways but not the runway end
+    (LEMD, EDDF, LFPG: hundreds of aircraft with ground points a day, few
+    visible take-off rolls). Match on the callsign instead: the same airport's
+    ground points carrying this row's CALLSIGN_flt or FLIGHT_mvt, ending between
+    LOOKBACK_S before and CS_AFTER_S after MVT_TIME; the latest such aircraft
+    wins. Its last ground point stands in for the take-off (`to_ts`). An
+    aircraft whose take-off the trace does show, at another time, is not this
+    flight and is left out.
+    """
+    cols = ["index", "icao", "callsign", "airport", "to_ts", "dt", "cs_ok", "adt", "via_cs"]
+    g = both.loc[(both["alt"].values == -1) & both["callsign"].notna(), ["icao", "callsign", "airport", "ts"]]
+    if dep.empty or g.empty:
+        return pd.DataFrame(columns=cols)
+    g = g.assign(cs=g["callsign"].str.upper().str.strip())
+    d = dep.reset_index()
+    parts = []
+    for key in ["CALLSIGN_flt", "FLIGHT_mvt"]:
+        k = d[["index", "ADEP_mvt", "mvt_ts", key]].dropna(subset=[key])
+        k = k.assign(cs=k[key].astype(str).str.upper().str.strip())
+        parts.append(k.merge(g, left_on=["ADEP_mvt", "cs"], right_on=["airport", "cs"]))
+    m = pd.concat(parts, ignore_index=True)
+    m = m[(m["ts"] >= m["mvt_ts"] - LOOKBACK_S) & (m["ts"] <= m["mvt_ts"] + CS_AFTER_S)]
+    seen = m[["index", "icao", "mvt_ts", "airport"]].drop_duplicates().merge(
+        to[["icao", "airport", "ts"]], on=["icao", "airport"])
+    seen = seen[(seen["ts"] >= seen["mvt_ts"] - LOOKBACK_S) & (seen["ts"] <= seen["mvt_ts"] + LOOKBACK_S)]
+    m = m[~m.set_index(["index", "icao"]).index.isin(seen.set_index(["index", "icao"]).index)]
+    if m.empty:
+        return pd.DataFrame(columns=cols)
+    m = m.groupby(["index", "icao"], as_index=False).agg(
+        to_ts=("ts", "max"), mvt_ts=("mvt_ts", "first"), callsign=("callsign", "first"),
+        airport=("airport", "first"))
+    m = m.sort_values("to_ts", ascending=False).drop_duplicates("index")
+    m = m.drop_duplicates(["icao", "to_ts"])
+    m["dt"] = m["to_ts"] - m["mvt_ts"]
+    m["adt"], m["cs_ok"], m["via_cs"] = m["dt"].abs(), 1, 1
+    out = dep.loc[m["index"]].reset_index().drop(columns=["mvt_ts"], errors="ignore")
+    return out.merge(m[["index", "icao", "callsign", "to_ts", "dt", "cs_ok", "adt", "via_cs", "mvt_ts"]],
+                     on="index")
+
+
 def _day_features(dep, day, prev_pts, pts):
     """ADS-B columns for the DEP rows taking off on `day`."""
     both = pd.concat([p for p in (prev_pts, pts) if p is not None], ignore_index=True)
@@ -330,12 +374,16 @@ def _day_features(dep, day, prev_pts, pts):
     cand = cand.sort_values(["cs_ok", "adt"], ascending=[False, True])
     # one trace per row and one row per trace take-off
     cand = cand.drop_duplicates("index").drop_duplicates(["icao", "to_ts"])
+    cand["via_cs"] = 0
+    cand = pd.concat([cand, _callsign_matches(dep[~dep.index.isin(cand["index"])], both, to)],
+                     ignore_index=True)
     series = _ground_series(both)
     lands = {k: (g["ts"].to_numpy(float), g["airport"].to_numpy())
              for k, g in _landings(both).groupby("icao", sort=False)}
     rows = []
     for r in cand.itertuples():
-        f = {"index": r.index, "adsb_match": 1, "adsb_cs_ok": r.cs_ok, "adsb_to_dt": r.dt}
+        f = {"index": r.index, "adsb_match": 1, "adsb_cs_ok": r.cs_ok, "adsb_to_dt": r.dt,
+             "adsb_via_cs": r.via_cs}
         ld = lands.get(r.icao)
         if ld is not None:
             # the same airframe's last touchdown here, over this day and the one before

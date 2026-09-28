@@ -472,7 +472,8 @@ default.
 | Q1 | same-runway landings on top of the traces | G3b, held | `--mixed-mode` | **closed: pooled robust -0.05 (CI -0.25..+0.23)** |
 | Q2 | trace-anchored `mu`: every family fits y - own stand exit where one exists, anchor added back | fresh (this session) | `--adsb-anchor` | **closed: pooled robust +0.06, dec_jun significantly worse** |
 | Q3 | destination-scoped proxy, network-wide | lead 6 | `--dest-proxy` | **closed: pooled robust +0.06, worse on 3 of 4** |
-| Q4 | out-of-fold encoding of the trace offset (y - own stand exit) by airport, stand, operator, plus the corrected estimate | fresh | `--adsb-offset-te` | queued |
+| Q4 | out-of-fold encoding of the trace offset (y - own stand exit) by airport, stand, operator, plus the corrected estimate | fresh | `--adsb-offset-te` | **passes (weak): pooled robust -0.16; built as v29 candidate** |
+| Q5 | A5 tree-count sweeps on the v28 matrix (`output/diag/rounds_adsb.py lgb`, `cat`) | A5 | -- | queued after the build |
 
 Q1 result (`mixed2_lgb`): robust holdout -0.09, inner +0.25 (normal +0.25;
 LTFM +2.03 on the snow split), dec_jun -0.06, mar_sep -0.30 (only one
@@ -495,6 +496,16 @@ mar_sep -0.15, pooled +0.06 (CI -0.08..+0.22); normal rows +0.09 / +0.18 /
 both ways. On inner and dec_jun the 3000-6000s band it targets carries
 237% / 253% of the net loss. Lead 6 closed: the destination's gaps add
 nothing once the traces and the airport proxy are in.
+
+Q4 result (`offte_lgb`): robust holdout +0.02 (normal +0.08), inner -0.27
+(CI -0.50..-0.02), dec_jun -0.17, mar_sep -0.22 (CI -0.44..-0.01); **pooled
+robust -0.16 (CI -0.27..-0.05)**, first pass of the queue. Weak: ~170k rows
+improve and ~170k worsen per split, top 25 rows carry 93-139% of the net on
+the improving splits; EDDM better on all four (-0.2..-0.7), EHAM worse on
+all four (+0.23..+0.49). Comparable to `--adsb-nbr` offline (-0.24), which
+won -0.82 live. Built per the queue rule: `predict.py --mu lgb cat cat_note
+cat_ctr1 pa --proxy --adsb --adsb-nbr --adsb-offset-te --out
+output/submitting_adsb4.parquet` at `9234f11`, started 07:37.
 
 Q2 rationale: where the trace shows the stand exit, the label is that time
 plus a small steady per-airport offset (EHAM IQR 23s, LEMD 80s), and trees

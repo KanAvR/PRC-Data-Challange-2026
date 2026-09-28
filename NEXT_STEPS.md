@@ -470,7 +470,7 @@ default.
 | # | idea | origin | flag | status |
 |---|---|---|---|---|
 | Q1 | same-runway landings on top of the traces | G3b, held | `--mixed-mode` | **closed: pooled robust -0.05 (CI -0.25..+0.23)** |
-| Q2 | **trace-anchored `mu`**: every family fits y - own stand exit where one exists, anchor added back | fresh (this session) | `--adsb-anchor` | queued |
+| Q2 | trace-anchored `mu`: every family fits y - own stand exit where one exists, anchor added back | fresh (this session) | `--adsb-anchor` | **closed: pooled robust +0.06, dec_jun significantly worse** |
 | Q3 | destination-scoped proxy, network-wide | lead 6 | `--dest-proxy` | queued |
 
 Q1 result (`mixed2_lgb`): robust holdout -0.09, inner +0.25 (normal +0.25;
@@ -478,6 +478,15 @@ LTFM +2.03 on the snow split), dec_jun -0.06, mar_sep -0.30 (only one
 significant); LTFM -1.1..-1.8 elsewhere; top 25 rows carry 54-204% of each
 split's net change. The trace features absorbed what G3b found against the
 pre-ADS-B base. Not worth retrying.
+
+Q2 result (`anchor_lgb`): robust holdout -0.08, inner +0.03, **dec_jun +0.52
+(CI +0.08..+1.10)**, mar_sep -0.27; normal rows +0.04 / +0.04 / +0.59 / -0.22.
+LIRF +6.55 on dec_jun (its traces are unreliable: anchoring on a wrong stand
+exit costs far more than using it as a feature), EDDM better on all four
+(-0.8..-3.9). Row changes nearly cancel (175k up, 169k down per split). The
+trees already use the stand exit well as a feature. A restricted variant
+(anchor only on take-off matches, or only where the airport's trace is
+reliable) would be tuned on these splits; logged, not pursued.
 
 Q2 rationale: where the trace shows the stand exit, the label is that time
 plus a small steady per-airport offset (EHAM IQR 23s, LEMD 80s), and trees

@@ -287,6 +287,47 @@ def _dep_proxy(g: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+DEST_SOURCES = ["AOBT_3_flt", "EOBT_1_flt"]
+DEST_WINDOWS = [60, 120]
+DEST_COLS = [f"dest_{src}_{d}_{w}" for src in DEST_SOURCES for d in ("before", "after")
+             for w in DEST_WINDOWS] + [f"dest_count_{d}_120" for d in ("before", "after")]
+
+
+def _dest_proxy(dep: pd.DataFrame) -> pd.DataFrame:
+    """Lead 6: departures to the same destination from all ten airports.
+
+    ATFM regulations are keyed to the destination and the airspace on the way,
+    so flights under the same regulation should show it in their MVT - AOBT_3
+    and MVT - EOBT_1 gaps ("pushed back, then held for a slot"). Gaps outside
+    [0, PROXY_MAX_SEC] drop out; self is excluded by _bounds. Counts of
+    departures to the destination are the traffic side. DEP rows only.
+    """
+    out = pd.DataFrame(np.nan, index=dep.index, columns=DEST_COLS)
+    t_all = dep["MVT_TIME_UTC_mvt"].values.astype("datetime64[s]")
+    ades = dep["ADES_mvt"].fillna("missing").astype(str).values
+    gaps = {}
+    for src in DEST_SOURCES:
+        gap = (dep["MVT_TIME_UTC_mvt"] - dep[src]).dt.total_seconds().values
+        gaps[src] = np.where((gap >= 0) & (gap <= PROXY_MAX_SEC), gap, np.nan)
+    for x in pd.unique(ades):
+        sel = ades == x
+        if sel.sum() < 2:
+            continue
+        ts = t_all[sel]
+        for after in (False, True):
+            d = "after" if after else "before"
+            for src in DEST_SOURCES:
+                for w, v in _window_mean(ts, gaps[src][sel], ts, DEST_WINDOWS, after=after).items():
+                    out.loc[sel, f"dest_{src}_{d}_{w}"] = v
+            out.loc[sel, f"dest_count_{d}_120"] = _window_counts(ts, ts, [120], after=after)[120]
+    return out
+
+
+def drop_dest(frame: pd.DataFrame) -> pd.DataFrame:
+    """The --no-dest-proxy arm: same cache build, without the destination columns."""
+    return frame.drop(columns=[c for c in DEST_COLS if c in frame.columns])
+
+
 def drop_proxy(frame: pd.DataFrame) -> pd.DataFrame:
     """The --no-proxy arm: same cache build, without the neighbour-proxy columns."""
     return frame.drop(columns=[c for c in PROXY_COLS if c in frame.columns])
@@ -526,5 +567,7 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
 
     mixed = pd.concat([_arr_same_runway(g) for _, g in df.groupby("apt", observed=True)]).reindex(df.index)
 
-    feats = pd.concat([feats, counts, arr_ctx, queue, dyn, proxy, wx, arvt, episode, mixed], axis=1)
+    dest = _dest_proxy(dep_only).reindex(df.index)
+
+    feats = pd.concat([feats, counts, arr_ctx, queue, dyn, proxy, wx, arvt, episode, mixed, dest], axis=1)
     return feats

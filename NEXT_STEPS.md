@@ -461,8 +461,41 @@ net change, so those splits are no evidence alone. Built as v28 on the
 user's go-ahead. **Live: v28 237.0484, -0.82 against v27 (3.4x).**
 
 **Next:** v28 (`42a2086`, 237.0484) is the team best; `--adsb-nbr` is now a
-default. Then `--mixed-mode` on top; a full four-split ensemble validation
-for the record.
+default.
+
+**Screen queue, 2026-09-28** (each `--mu lgb --proxy` four splits against
+`adsbnbr_lgb` = v28's features; the first to pass cleanly gets a full
+`predict.py` run; `output/diag/queue.sh` runs them back to back):
+
+| # | idea | origin | flag | status |
+|---|---|---|---|---|
+| Q1 | same-runway landings on top of the traces | G3b, held | `--mixed-mode` | screening |
+| Q2 | **trace-anchored `mu`**: every family fits y - own stand exit where one exists, anchor added back | fresh (this session) | `--adsb-anchor` | queued |
+| Q3 | destination-scoped proxy, network-wide | lead 6 | `--dest-proxy` | queued |
+
+Q2 rationale: where the trace shows the stand exit, the label is that time
+plus a small steady per-airport offset (EHAM IQR 23s, LEMD 80s), and trees
+fit "y ~ x" as a staircase, losing precision exactly where we know the most.
+A residual target lets each family learn only the offset. Same pattern as
+`train_mu_anchor`; the normal-row mask stays on the raw label
+(`model.trace_anchored`, test `tests/test_trace_anchor.py`). The earlier
+residual-anchored swap was a tail-row trap (`AGENTS.md`): judge Q2 on normal
+rows. Q3 needs the population-share check (band calibration, section 5)
+before shipping: it targets the 3000-6000s band that 2026 over-weights ~3x.
+
+Fresh ideas logged, not yet screened:
+- **A5 re-sweep tree counts with the trace features.** The trace columns are
+  far stronger than anything the counts were tuned on (N3); the best
+  iteration counts for `lgb`, `cat` and `pa` may have moved. Lead N3b
+  (`cat_ctr1`, `pa`) folds in.
+- **A6 OpenSky probe for LFPG / LTFM / LIRF**, the airports adsb.lol cannot
+  see on the ground (ranking stand exit 0-6%). Gated on someone having
+  OpenSky Trino access and on it counting as open data under the rules.
+- **A7 trace features for the matched long-taxi specialist.** Outside LIRF
+  the trace found genuine long waits to the second (EDDM `BAW951L`, EHAM
+  `AC901`); the specialist's matched rows might use `adsb_push` /
+  `adsb_leave_stand` directly. Small population; check its size first.
+- A full four-split ensemble validation for the record (~14h) remains open.
 
 **G2-G4 residual diagnostics (2026-09-26), against `v20_full` OOF `mu`,
 1,375,542 normal rows. All three closed; apt.dat's remaining value is the

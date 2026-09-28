@@ -431,6 +431,41 @@ def train_mu_neural(X, y):
     return _t(X, y)
 
 
+# --adsb-anchor: where the departure's own trace shows it leaving the stand,
+# the label is that time plus a small, steady per-airport offset (EHAM IQR
+# 23s). Trees fit "y ~ x" as a staircase, so every family is trained on
+# y - anchor instead and the anchor is added back. Rows without a stand exit
+# keep the plain target (a = 0), as train_mu_anchor does.
+TRACE_ANCHOR = "adsb_leave_stand"
+TRACE_ANCHOR_CLIP = 3600.0
+
+
+def trace_anchor(X):
+    if TRACE_ANCHOR not in X.columns:
+        return np.zeros(len(X))
+    a = X[TRACE_ANCHOR].to_numpy(dtype=float)
+    return np.where(np.isfinite(a), np.clip(a, 0, TRACE_ANCHOR_CLIP), 0.0)
+
+
+class _TraceAnchored:
+    def __init__(self, model):
+        self.model = model
+
+    def predict(self, X):
+        return self.model.predict(X) + trace_anchor(X)
+
+
+def trace_anchored(train_fn):
+    """Wrap a MU_FAMILIES trainer so it learns the residual on the trace anchor.
+    The normal-row mask stays on the raw label: tail rows keep y (> TAIL_THR),
+    so each family drops exactly the rows it dropped before."""
+    def fit(X, y, **kw):
+        a = trace_anchor(X)
+        y_fit = np.where(y <= TAIL_THR, y - a, y)
+        return _TraceAnchored(train_fn(X, y_fit, **kw))
+    return fit
+
+
 MU_FAMILIES = {"lgb": train_mu, "cat": train_mu_cat, "xgb": train_mu_xgb,
                "cat_note": train_mu_cat_note, "cat_ctr1": train_mu_cat_ctr1,
                "lgb_nocat": train_mu_nocat, "lgb_anchor": train_mu_anchor,
@@ -603,6 +638,13 @@ def add_model_args(ap):
                          "airport and runway scope, and aircraft taxiing / holding in the 10-20 "
                          "min before take-off. Built with --adsb; this flag only chooses whether "
                          "the models see them. v28: -0.82 live. --no-adsb-nbr reproduces v27")
+    ap.add_argument("--dest-proxy", action=argparse.BooleanOptionalAction, default=False,
+                    help="use departures to the same destination from all ten airports "
+                         "(features.DEST_COLS): their MVT-AOBT_3 / MVT-EOBT_1 gaps and counts "
+                         "within 60/120 min. Lead 6. Built unconditionally like --proxy")
+    ap.add_argument("--adsb-anchor", action=argparse.BooleanOptionalAction, default=False,
+                    help="train every mu family on y minus the departure's own trace stand exit "
+                         "(model.TRACE_ANCHOR) where one exists, and add it back")
     ap.add_argument("--res-proxy", action=argparse.BooleanOptionalAction, default=False,
                     help="add the residualised neighbour proxy (resproxy.RES_PROXY_COLS): "
                          "neighbours' gaps minus their own te_stand_rwy, averaged. Needs --te")

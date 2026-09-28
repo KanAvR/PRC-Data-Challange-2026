@@ -32,12 +32,12 @@ from sklearn.metrics import roc_auc_score
 
 sys.path.insert(0, "src")
 from data import align_categoricals, flight_ids, load_training
-from features import drop_arvt, drop_episode, drop_mixed, drop_proxy
+from features import drop_arvt, drop_dest, drop_episode, drop_mixed, drop_proxy
 from constraints import check_lobt_support, project_lobt
 from high_lobt import APPLY_GAP_SEC, train_high_lobt
 from encode import KEY_SETS, add_target_encodings
 from resproxy import RES_PROXY_COLS, add_residual_proxy
-from model import (MU_FAMILIES, apply_model_args, seasonal_weight, TAIL_THR, add_model_args, combine_mu,
+from model import (MU_FAMILIES, trace_anchored, apply_model_args, seasonal_weight, TAIL_THR, add_model_args, combine_mu,
                    analytic_tail_value, combine, day_late_step_weight, day_late_weight,
                    predict_tail_proba, tail_options, train_tail_clf)
 
@@ -152,7 +152,8 @@ def run_split(name, X, y, meta, args, rates=None):
             if getattr(args, "season_tau", 0) and fam == "lgb":
                 kw["weight"] = seasonal_weight(meta.loc[tr, "month"].values,
                                                spec["valid"], args.season_tau)
-            model = MU_FAMILIES[fam](X_tr, y_tr, **kw)
+            fit = trace_anchored(MU_FAMILIES[fam]) if args.adsb_anchor else MU_FAMILIES[fam]
+            model = fit(X_tr, y_tr, **kw)
             mus[f"mu_{fam}"] = np.clip(model.predict(X_va), 0, None)
             if X_va_m is not None:
                 mus_m[f"mu_{fam}"] = np.clip(model.predict(X_va_m), 0, None)
@@ -327,6 +328,8 @@ def main():
         X = drop_episode(X)
     if not args.mixed_mode:
         X = drop_mixed(X)
+    if not args.dest_proxy:
+        X = drop_dest(X)
     if args.adsb and not args.adsb_nbr:
         import adsb
         X = adsb.drop_adsb_nbr(X)

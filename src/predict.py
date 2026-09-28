@@ -18,8 +18,8 @@ from constraints import check_lobt_support, project_lobt
 from high_lobt import APPLY_GAP_SEC, train_high_lobt
 from encode import KEY_SETS, add_target_encodings
 from featcache import build_features_cached
-from features import drop_arvt, drop_episode, drop_mixed, drop_proxy
-from model import (MU_FAMILIES, apply_model_args, add_model_args, analytic_tail_value, combine,
+from features import drop_arvt, drop_dest, drop_episode, drop_mixed, drop_proxy
+from model import (MU_FAMILIES, trace_anchored, apply_model_args, add_model_args, analytic_tail_value, combine,
                    combine_mu,
                    predict_tail_proba, tail_options, train_tail_clf)
 
@@ -44,6 +44,8 @@ def main():
         train_data = drop_episode(train_data)
     if not args.mixed_mode:
         train_data = drop_mixed(train_data)
+    if not args.dest_proxy:
+        train_data = drop_dest(train_data)
     if args.adsb and not args.adsb_nbr:
         import adsb
         train_data = adsb.drop_adsb_nbr(train_data)
@@ -67,6 +69,8 @@ def main():
         ranking_dep = drop_episode(ranking_dep)
     if not args.mixed_mode:
         ranking_dep = drop_mixed(ranking_dep)
+    if not args.dest_proxy:
+        ranking_dep = drop_dest(ranking_dep)
     if args.adsb and not args.adsb_nbr:
         ranking_dep = adsb.drop_adsb_nbr(ranking_dep)
     ranking_ids = ranking_raw.loc[dep_mask, "MVT_ID_mvt"].values
@@ -88,7 +92,8 @@ def main():
     mus = []
     for fam in args.mu:
         print(f"Training normal-regime regressor ({fam}) on all data...", flush=True)
-        mus.append(np.clip(MU_FAMILIES[fam](train_data, y_train).predict(ranking_dep), 0, None))
+        fit = trace_anchored(MU_FAMILIES[fam]) if args.adsb_anchor else MU_FAMILIES[fam]
+        mus.append(np.clip(fit(train_data, y_train).predict(ranking_dep), 0, None))
     mu_pred = combine_mu({f"mu_{f}": m for f, m in zip(args.mu, mus)}, args.mu, args)
 
     print("Training tail classifier on all data...", flush=True)

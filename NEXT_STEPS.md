@@ -469,9 +469,15 @@ default.
 
 | # | idea | origin | flag | status |
 |---|---|---|---|---|
-| Q1 | same-runway landings on top of the traces | G3b, held | `--mixed-mode` | screening |
+| Q1 | same-runway landings on top of the traces | G3b, held | `--mixed-mode` | **closed: pooled robust -0.05 (CI -0.25..+0.23)** |
 | Q2 | **trace-anchored `mu`**: every family fits y - own stand exit where one exists, anchor added back | fresh (this session) | `--adsb-anchor` | queued |
 | Q3 | destination-scoped proxy, network-wide | lead 6 | `--dest-proxy` | queued |
+
+Q1 result (`mixed2_lgb`): robust holdout -0.09, inner +0.25 (normal +0.25;
+LTFM +2.03 on the snow split), dec_jun -0.06, mar_sep -0.30 (only one
+significant); LTFM -1.1..-1.8 elsewhere; top 25 rows carry 54-204% of each
+split's net change. The trace features absorbed what G3b found against the
+pre-ADS-B base. Not worth retrying.
 
 Q2 rationale: where the trace shows the stand exit, the label is that time
 plus a small steady per-airport offset (EHAM IQR 23s, LEMD 80s), and trees

@@ -16,7 +16,7 @@ from data import align_categoricals, flight_ids, load_training, mvt_seconds
 from resproxy import add_residual_proxy
 from constraints import check_lobt_support, project_lobt
 from high_lobt import APPLY_GAP_SEC, train_high_lobt
-from encode import KEY_SETS, add_target_encodings
+from encode import KEY_SETS, add_offset_encodings, add_target_encodings
 from featcache import build_features_cached
 from features import drop_arvt, drop_dest, drop_episode, drop_mixed, drop_proxy
 from model import (MU_FAMILIES, trace_anchored, apply_model_args, add_model_args, analytic_tail_value, combine,
@@ -83,6 +83,8 @@ def main():
                              counts=args.te_counts, fold_size=args.te_fold_size,
                              flight_backoff=args.te_flight_backoff, flight_dropout=args.te_flight_dropout,
                              airport_prior=args.te_airport_prior)
+    if args.adsb and args.adsb_offset_te:
+        add_offset_encodings(train_data, y_train, meta["month"].values, ranking_dep)
     if args.res_proxy:
         if not args.te:
             raise SystemExit("--res-proxy needs --te (it subtracts te_stand_rwy)")

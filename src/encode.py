@@ -136,6 +136,40 @@ def _encode(k_fit, y, folds, k_apply, unseen_apply=None, prior_fit=None, prior_a
     return (fit_mean, np.log1p(fit_n)), (app_mean, np.log1p(app_n)), masked
 
 
+# --adsb-offset-te: the label minus the departure's own trace stand exit is a
+# steady offset per airport (LEMD median -124s, EHAM -8s) that plausibly also
+# varies by stand (contact gate vs remote) and operator (who records the block
+# time, and when). Encode it out of fold, the stand and operator levels shrunk
+# toward the airport's, and hand the model the corrected estimate directly.
+OFFSET_ANCHOR = "adsb_leave_stand"
+OFFSET_KEYS = {"te_off_stand": ["ADEP_STAND"], "te_off_airline": ["ADEP_AIRLINE"]}
+OFFSET_COLS = ["te_off_apt", *OFFSET_KEYS, "adsb_exit_off_stand"]
+OFFSET_ANCHOR_CLIP = 3600.0
+OFFSET_CLIP = 900.0  # a tow or a wrong match must not drag a stand's mean
+
+
+def add_offset_encodings(X_fit, y_fit, folds, X_apply, X_apply_masked=None):
+    """Add OFFSET_COLS to both frames in place (needs --adsb columns)."""
+    def anchor(frame):
+        return np.clip(frame[OFFSET_ANCHOR].to_numpy(dtype=float), 0, OFFSET_ANCHOR_CLIP)
+    a_fit = anchor(X_fit)
+    ok = np.isfinite(a_fit) & (y_fit <= TAIL_THR)
+    # rows without a stand exit leave the fit by carrying a "tail" target
+    o = np.where(ok, np.clip(y_fit - np.nan_to_num(a_fit), -OFFSET_CLIP, OFFSET_CLIP), TAIL_THR + 1.0)
+    ids = np.asarray(folds)
+    (apt_f, _), (apt_a, _), _ = _encode(_key(X_fit, None, ["ADEP_mvt"]), o, ids,
+                                        _key(X_apply, None, ["ADEP_mvt"]))
+    cols = {"te_off_apt": (apt_f, apt_a)}
+    for name, keycols in OFFSET_KEYS.items():
+        (fm, _), (am, _), _ = _encode(_key(X_fit, None, keycols), o, ids, _key(X_apply, None, keycols),
+                                      prior_fit=apt_f, prior_apply=apt_a)
+        cols[name] = (fm, am)
+    for frame, i in [(X_fit, 0)] + [(f, 1) for f in (X_apply, X_apply_masked) if f is not None]:
+        for name, pair in cols.items():
+            frame[name] = pair[i]
+        frame["adsb_exit_off_stand"] = anchor(frame) + frame["te_off_stand"]
+
+
 # Backoff for te_flight when --te-flight-backoff is on: slot, then route, then
 # the global mean. Each level is shrunk toward the next.
 FLIGHT_BACKOFF = [["ADEP_AIRLINE", "ADES_mvt"], ["ADEP_AIRLINE", "ADES_mvt", "slot"]]

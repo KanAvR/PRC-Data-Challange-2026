@@ -471,7 +471,8 @@ default.
 |---|---|---|---|---|
 | Q1 | same-runway landings on top of the traces | G3b, held | `--mixed-mode` | **closed: pooled robust -0.05 (CI -0.25..+0.23)** |
 | Q2 | trace-anchored `mu`: every family fits y - own stand exit where one exists, anchor added back | fresh (this session) | `--adsb-anchor` | **closed: pooled robust +0.06, dec_jun significantly worse** |
-| Q3 | destination-scoped proxy, network-wide | lead 6 | `--dest-proxy` | queued |
+| Q3 | destination-scoped proxy, network-wide | lead 6 | `--dest-proxy` | screening |
+| Q4 | out-of-fold encoding of the trace offset (y - own stand exit) by airport, stand, operator, plus the corrected estimate | fresh | `--adsb-offset-te` | queued |
 
 Q1 result (`mixed2_lgb`): robust holdout -0.09, inner +0.25 (normal +0.25;
 LTFM +2.03 on the snow split), dec_jun -0.06, mar_sep -0.30 (only one
@@ -506,7 +507,9 @@ Fresh ideas logged, not yet screened:
 - **A6 OpenSky probe for LFPG / LTFM / LIRF**, the airports adsb.lol cannot
   see on the ground (ranking stand exit 0-6%). Gated on someone having
   OpenSky Trino access and on it counting as open data under the rules.
-- **A7 trace features for the matched long-taxi specialist.** Outside LIRF
+- ~~A7~~ moot: the specialist (`high_lobt.py`) already reads every column
+  except `met_*` / `te_*`, so it has had the trace features since v26.
+- **A7 (as first logged) trace features for the matched long-taxi specialist.** Outside LIRF
   the trace found genuine long waits to the second (EDDM `BAW951L`, EHAM
   `AC901`); the specialist's matched rows might use `adsb_push` /
   `adsb_leave_stand` directly. Small population; check its size first.

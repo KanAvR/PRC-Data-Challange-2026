@@ -642,6 +642,10 @@ def add_model_args(ap):
                     help="use departures to the same destination from all ten airports "
                          "(features.DEST_COLS): their MVT-AOBT_3 / MVT-EOBT_1 gaps and counts "
                          "within 60/120 min. Lead 6. Built unconditionally like --proxy")
+    ap.add_argument("--adsb-offset-te", action=argparse.BooleanOptionalAction, default=False,
+                    help="with --adsb, out-of-fold encodings of y minus the own trace stand exit "
+                         "by airport, stand and operator, plus the corrected estimate "
+                         "(encode.OFFSET_COLS)")
     ap.add_argument("--adsb-anchor", action=argparse.BooleanOptionalAction, default=False,
                     help="train every mu family on y minus the departure's own trace stand exit "
                          "(model.TRACE_ANCHOR) where one exists, and add it back")

@@ -35,7 +35,7 @@ from data import align_categoricals, flight_ids, load_training
 from features import drop_arvt, drop_dest, drop_episode, drop_mixed, drop_proxy
 from constraints import check_lobt_support, project_lobt
 from high_lobt import APPLY_GAP_SEC, train_high_lobt
-from encode import KEY_SETS, add_target_encodings
+from encode import KEY_SETS, add_offset_encodings, add_target_encodings
 from resproxy import RES_PROXY_COLS, add_residual_proxy
 from model import (MU_FAMILIES, trace_anchored, apply_model_args, seasonal_weight, TAIL_THR, add_model_args, combine_mu,
                    analytic_tail_value, combine, day_late_step_weight, day_late_weight,
@@ -127,6 +127,8 @@ def run_split(name, X, y, meta, args, rates=None):
                              flight_backoff=args.te_flight_backoff, flight_dropout=args.te_flight_dropout,
                              airport_prior=args.te_airport_prior,
                              X_apply_masked=X_va_m, flight_unseen=unseen)
+    if args.adsb and args.adsb_offset_te:
+        add_offset_encodings(X_tr, y_tr, meta.loc[tr, "month"].values, X_va, X_va_m)
     if args.res_proxy:
         if not args.te:
             raise SystemExit("--res-proxy needs --te (it subtracts te_stand_rwy)")

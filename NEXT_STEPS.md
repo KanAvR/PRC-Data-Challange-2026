@@ -43,7 +43,7 @@ record. Anything that ships lives in `src/`.
 | v29 | ours: v28 + `--adsb-offset-te` (trace-offset encodings) | 237.0468 (-0.0016: noise) |
 
 **Team best is v28 (237.0484, 2026-09-28)**: `predict.py --mu lgb cat cat_note
-cat_ctr1 pa --proxy --adsb --adsb-nbr` at `42a2086` (branch `adsb-traces`;
+cat_ctr1 pa --proxy --adsb --adsb-nbr` at `152a650` (branch `adsb-traces`;
 `--adsb` and `--adsb-nbr` are defaults from the commit recording v28), after
 `src/adsb.py download` for 2024-12-31..2025-12-31 and the scored months.
 
@@ -59,10 +59,10 @@ default afterwards); sha256 prefix `978eef415fb508ce`. Upload log:
 | v23 | `313743b` (code), built post-hoc | `tail_submission.py --input <v20> --tail-cap --day-late-step` | `102498394821de6d` | 265.3724 | +0.623 vs v22 |
 | v24 | `313743b` | `--te-flight-backoff --te-flight-dropout 0.2` (tail cap default) | `b3d92829a4ccb558` | 264.2436 | -0.506 vs v22 |
 | v25 | `64a7b85` | `--cat-iterations 6000` | `978eef415fb508ce` | 263.8731 | -0.371 vs v24 |
-| v26 | `0c8e5f4` | `--adsb --out output/submitting_adsb.parquet` | `3f69031c018605ac` | 250.9809 | **-12.892 vs v25** |
-| v27 | `05b9532` | `--adsb --out output/submitting_adsb2.parquet` | `93ddadc7486a2e7b` | 237.8662 | **-13.115 vs v26** |
-| v28 | `42a2086` | `--adsb --adsb-nbr --out output/submitting_adsb3.parquet` | `bc03327eae7cfae8` | 237.0484 | -0.818 vs v27 |
-| v29 | `9234f11` | `--adsb --adsb-nbr --adsb-offset-te --out output/submitting_adsb4.parquet` | `f5fb76e5adbecc06` | 237.0468 | -0.0016 vs v28 |
+| v26 | `571e9ad` | `--adsb --out output/submitting_adsb.parquet` | `3f69031c018605ac` | 250.9809 | **-12.892 vs v25** |
+| v27 | `ce25390` | `--adsb --out output/submitting_adsb2.parquet` | `93ddadc7486a2e7b` | 237.8662 | **-13.115 vs v26** |
+| v28 | `152a650` | `--adsb --adsb-nbr --out output/submitting_adsb3.parquet` | `bc03327eae7cfae8` | 237.0484 | -0.818 vs v27 |
+| v29 | `494fc53` | `--adsb --adsb-nbr --adsb-offset-te --out output/submitting_adsb4.parquet` | `f5fb76e5adbecc06` | 237.0468 | -0.0016 vs v28 |
 
 **v29: -0.0016 live against -0.16 offline**: a weak screen pass (row changes
 nearly cancelling) that did not carry. Nominally the best score, but the
@@ -469,7 +469,7 @@ movement: on dec_jun and mar_sep the top 10 rows carry 82% / 141% of the
 net change, so those splits are no evidence alone. Built as v28 on the
 user's go-ahead. **Live: v28 237.0484, -0.82 against v27 (3.4x).**
 
-**Next:** v28 (`42a2086`, 237.0484) is the team best; `--adsb-nbr` is now a
+**Next:** v28 (`152a650`, 237.0484) is the team best; `--adsb-nbr` is now a
 default.
 
 **Screen queue, 2026-09-28** (each `--mu lgb --proxy` four splits against
@@ -514,7 +514,7 @@ the improving splits; EDDM better on all four (-0.2..-0.7), EHAM worse on
 all four (+0.23..+0.49). Comparable to `--adsb-nbr` offline (-0.24), which
 won -0.82 live. Built per the queue rule: `predict.py --mu lgb cat cat_note
 cat_ctr1 pa --proxy --adsb --adsb-nbr --adsb-offset-te --out
-output/submitting_adsb4.parquet` at `9234f11`, started 07:37.
+output/submitting_adsb4.parquet` at `494fc53`, started 07:37.
 
 Q5 result (A5, 2026-09-28; normal-row `mu` RMSE, one model scored at several
 counts, v28 matrix):

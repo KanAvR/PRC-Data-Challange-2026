@@ -185,8 +185,8 @@ predictions as `<tag>_unmasked`. Judge encoding and key changes on both.
 # Reproduce v28: train on all twelve months and score the ranking set (several
 # hours; fetch the ADS-B days first, see Setup). The ADS-B trace features and
 # their neighbour/surface columns, the tail cap, the flight backoff/dropout and
-# 6,000 CatBoost iterations are defaults. v28 was built at 42a2086. v27 adds
-# --no-adsb-nbr (built at 05b9532); v26 is that at 0c8e5f4, before the callsign
+# 6,000 CatBoost iterations are defaults. v28 was built at 152a650. v27 adds
+# --no-adsb-nbr (built at ce25390); v26 is that at 571e9ad, before the callsign
 # fallback match. Earlier versions: v25 adds --no-adsb; v24 also --cat-iterations 3000;
 # v22 also --no-te-flight-backoff --te-flight-dropout 0; v20 also --no-tail-cap.
 .venv/bin/python src/predict.py --mu lgb cat cat_note cat_ctr1 pa --proxy \

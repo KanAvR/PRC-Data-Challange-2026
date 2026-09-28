@@ -471,7 +471,7 @@ default.
 |---|---|---|---|---|
 | Q1 | same-runway landings on top of the traces | G3b, held | `--mixed-mode` | **closed: pooled robust -0.05 (CI -0.25..+0.23)** |
 | Q2 | trace-anchored `mu`: every family fits y - own stand exit where one exists, anchor added back | fresh (this session) | `--adsb-anchor` | **closed: pooled robust +0.06, dec_jun significantly worse** |
-| Q3 | destination-scoped proxy, network-wide | lead 6 | `--dest-proxy` | screening |
+| Q3 | destination-scoped proxy, network-wide | lead 6 | `--dest-proxy` | **closed: pooled robust +0.06, worse on 3 of 4** |
 | Q4 | out-of-fold encoding of the trace offset (y - own stand exit) by airport, stand, operator, plus the corrected estimate | fresh | `--adsb-offset-te` | queued |
 
 Q1 result (`mixed2_lgb`): robust holdout -0.09, inner +0.25 (normal +0.25;
@@ -488,6 +488,13 @@ exit costs far more than using it as a feature), EDDM better on all four
 trees already use the stand exit well as a feature. A restricted variant
 (anchor only on take-off matches, or only where the airport's trace is
 reliable) would be tuned on these splits; logged, not pursued.
+
+Q3 result (`dest_lgb`): robust holdout +0.09, inner +0.25, dec_jun +0.04,
+mar_sep -0.15, pooled +0.06 (CI -0.08..+0.22); normal rows +0.09 / +0.18 /
++0.03 / -0.25. EGLL +0.21..+0.32 and EHAM worse on all four; LIRF, LTFM swing
+both ways. On inner and dec_jun the 3000-6000s band it targets carries
+237% / 253% of the net loss. Lead 6 closed: the destination's gaps add
+nothing once the traces and the airport proxy are in.
 
 Q2 rationale: where the trace shows the stand exit, the label is that time
 plus a small steady per-airport offset (EHAM IQR 23s, LEMD 80s), and trees

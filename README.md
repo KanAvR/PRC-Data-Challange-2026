@@ -128,6 +128,7 @@ Flags that stay off by default are kept as the record of measured negatives:
 | v26 | v25 + each departure's own ADS-B trace (adsb.lol, apt.dat stands) | 250.981 |
 | v27 | v26 + callsign match where the take-off roll is not seen | 237.866 |
 | **v28** | **v27 + neighbours' trace-measured taxi and surface traffic** | **237.048** |
+| v29 | v28 + trace-offset encodings (`--adsb-offset-te`; -0.002, noise, kept off) | 237.047 |
 
 Offline gains do not always carry over:
 

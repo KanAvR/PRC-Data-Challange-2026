@@ -40,6 +40,7 @@ record. Anything that ships lives in `src/`.
 | v26 | ours: v25 + `--adsb` (own-flight ADS-B trace, take-off match) | 250.9809 |
 | v27 | ours: v26 + callsign fallback match (ADS-B coverage 29.5% -> 58.6%) | 237.8662 |
 | **v28** | **ours: v27 + `--adsb-nbr` (neighbours' trace-measured taxi, surface counts)** | **237.0484** |
+| v29 | ours: v28 + `--adsb-offset-te` (trace-offset encodings) | 237.0468 (-0.0016: noise) |
 
 **Team best is v28 (237.0484, 2026-09-28)**: `predict.py --mu lgb cat cat_note
 cat_ctr1 pa --proxy --adsb --adsb-nbr` at `42a2086` (branch `adsb-traces`;
@@ -61,6 +62,14 @@ default afterwards); sha256 prefix `978eef415fb508ce`. Upload log:
 | v26 | `0c8e5f4` | `--adsb --out output/submitting_adsb.parquet` | `3f69031c018605ac` | 250.9809 | **-12.892 vs v25** |
 | v27 | `05b9532` | `--adsb --out output/submitting_adsb2.parquet` | `93ddadc7486a2e7b` | 237.8662 | **-13.115 vs v26** |
 | v28 | `42a2086` | `--adsb --adsb-nbr --out output/submitting_adsb3.parquet` | `bc03327eae7cfae8` | 237.0484 | -0.818 vs v27 |
+| v29 | `9234f11` | `--adsb --adsb-nbr --adsb-offset-te --out output/submitting_adsb4.parquet` | `f5fb76e5adbecc06` | 237.0468 | -0.0016 vs v28 |
+
+**v29: -0.0016 live against -0.16 offline**: a weak screen pass (row changes
+nearly cancelling) that did not carry. Nominally the best score, but the
+difference is noise, so `--adsb-offset-te` stays **off** by default and v28
+remains the reference recipe (user, 2026-09-28). `--adsb-offset-te`
+reproduces v29. Lesson: a pooled pass whose per-row changes cancel (as many
+rows worse as better) is not evidence, whatever the interval says.
 
 **v28: -0.82 live against -0.24 offline** (3.4x; `--adsb-nbr`, only holdout
 significant offline). Every ADS-B step has transferred above 1x (1.9x, 1.2x,
@@ -472,8 +481,8 @@ default.
 | Q1 | same-runway landings on top of the traces | G3b, held | `--mixed-mode` | **closed: pooled robust -0.05 (CI -0.25..+0.23)** |
 | Q2 | trace-anchored `mu`: every family fits y - own stand exit where one exists, anchor added back | fresh (this session) | `--adsb-anchor` | **closed: pooled robust +0.06, dec_jun significantly worse** |
 | Q3 | destination-scoped proxy, network-wide | lead 6 | `--dest-proxy` | **closed: pooled robust +0.06, worse on 3 of 4** |
-| Q4 | out-of-fold encoding of the trace offset (y - own stand exit) by airport, stand, operator, plus the corrected estimate | fresh | `--adsb-offset-te` | **passes (weak): pooled robust -0.16; built as v29 candidate** |
-| Q5 | A5 tree-count sweeps on the v28 matrix (`output/diag/rounds_adsb.py lgb`, `cat`) | A5 | -- | **done: CatBoost still gains past 6000; not yet acted on** |
+| Q4 | out-of-fold encoding of the trace offset (y - own stand exit) by airport, stand, operator, plus the corrected estimate | fresh | `--adsb-offset-te` | passes weakly offline (-0.16); **v29 live -0.0016: noise, stays off** |
+| Q5 | A5 tree-count sweeps on the v28 matrix (`output/diag/rounds_adsb.py lgb`, `cat`) | A5 | -- | done: CatBoost still gains past 6000; **deferred (runtime)** |
 
 Q1 result (`mixed2_lgb`): robust holdout -0.09, inner +0.25 (normal +0.25;
 LTFM +2.03 on the snow split), dec_jun -0.06, mar_sep -0.30 (only one
@@ -522,7 +531,13 @@ Same pattern as N3: the CatBoost optimum grows with training size (~8000 at
 of trees; LightGBM's optimum moved from 900 to a 1200-1500 plateau. N3's
 -1.13 single-member holdout gain became -0.37 live (two of five families).
 Candidates: `--cat-iterations 10000` (~1.7x the cat/cat_note cost, so a
-~6.5-7h `predict.py`) and LightGBM 1200-1500 (needs a rounds flag). Not built.
+~6.5-7h `predict.py`) and LightGBM 1200-1500 (needs a rounds flag).
+**Deferred (user, 2026-09-28):** more iterations lengthen every later
+`predict.py` and validation run, which costs more than the likely gain
+(N3's -1.13 single-member became -0.37 live) while other work is still
+being tested. Take it last, as a final-submission polish, once the recipe is
+frozen: `--cat-iterations 8000-10000` for `cat`/`cat_note`, LightGBM at 1200
+(the plateau middle, not holdout's 1500).
 
 Q2 rationale: where the trace shows the stand exit, the label is that time
 plus a small steady per-airport offset (EHAM IQR 23s, LEMD 80s), and trees

@@ -554,16 +554,47 @@ Fresh ideas logged, not yet screened:
   far stronger than anything the counts were tuned on (N3); the best
   iteration counts for `lgb`, `cat` and `pa` may have moved. Lead N3b
   (`cat_ctr1`, `pa`) folds in.
-- **A6 OpenSky probe for LFPG / LTFM / LIRF**, the airports adsb.lol cannot
-  see on the ground (ranking stand exit 0-6%). Gated on someone having
-  OpenSky Trino access and on it counting as open data under the rules.
+- ~~A6 OpenSky probe~~ **dropped (user, 2026-09-28):** nobody on the team
+  has OpenSky access, and its data is research-licensed, not open data.
+  Lead 29 is closed with it.
 - ~~A7~~ moot: the specialist (`high_lobt.py`) already reads every column
   except `met_*` / `te_*`, so it has had the trace features since v26.
-- **A7 (as first logged) trace features for the matched long-taxi specialist.** Outside LIRF
-  the trace found genuine long waits to the second (EDDM `BAW951L`, EHAM
-  `AC901`); the specialist's matched rows might use `adsb_push` /
-  `adsb_leave_stand` directly. Small population; check its size first.
 - A full four-split ensemble validation for the record (~14h) remains open.
+
+**Where the error sits after the traces (2026-09-28, `adsbnbr_lgb`, four
+splits, v28's features):**
+
+| population | share of squared error | RMSE |
+|---|---|---|
+| normal rows, no trace at all | **43.6%** | 243 |
+| tail rows (> 6000s) | 33.2% | 6,268 |
+| normal rows, trace matched, no stand exit | **19.6%** | 188 |
+| normal rows, stand exit seen | 3.7% | 112 |
+
+Normal-row squared error by airport: **LIRF 33.8%** (RMSE 429, no trace on
+56% of rows), **LTFM 19.4%** (249, 100%), **LFPG 14.0%** (226, 98%), **EGLL
+11.8%** (207, 68% in 2025), LEBL 5.4%, LEMD 5.4%, EDDF 3.5%, EHAM 2.8%, EDDM
+2.1%, LSZH 1.9%. The four least-covered airports hold 79% of it; once the
+stand exit is seen the row is nearly solved. **The next gain is seeing more
+flights, not modelling the seen ones better.**
+
+**Data-source brainstorm (2026-09-28), ranked by gain per hour:**
+
+| # | idea | data | cost | gate / prior |
+|---|---|---|---|---|
+| B1 | **Back-extrapolated pushback** for "matched, no exit" rows (19.6% of error): trace starts after the stand; estimated exit = first-seen time - apt.dat taxi-network distance (stand -> first point) / typical taxi speed, on the label's scale. The model has straight-line distance and first-seen separately, but the trees used a label-scale estimate (the stand exit) best | existing `dataset/adsb` + apt.dat 1201/1202 graph | ~2h + screen | **top**: cheap, no download |
+| B2 | **LIRF artefact class via the trace.** LIRF is 34% of normal error, much of it rows whose recorded block time is ~the scheduled time (class C, section 5), not the real pushback. Where LIRF has a trace it shows the real pushback, so trace-vs-`gap_SCHED` disagreement may flag class C; the provided columns reached AUC 0.87 but blending hurt | existing | ~30 min diagnostic | check separability (AUC) before building |
+| B3 | **EUROCONTROL ATFM regulation lists**, if an open, daily, regulation-level dataset exists (reference location, start/end, reason): "a regulation on your destination / airspace was active" for the 3000-6000s band ("pushed back, then held for a slot"). Per-flight CTOTs are not open; daily per-airport delay totals already carried nothing | external, open if it exists | ~30 min availability check | only if regulation-level and openly licensed |
+| B4 | **Airborne arrival pressure within ~50 km** (holding stacks, arrival stream) at LTFM / LFPG / LIRF, where adsb.lol sees the air but not the ground; on mixed-mode runways arrivals hold departures | adsb.lol, **re-download** with a wider radius (6-7h) | probe one day first | [state] prior moderate; reaches the uncovered airports |
+| B5 | **Pushback tugs.** Some airports fit tugs with ADS-B squawkers (readsb surface-vehicle categories); a tug moving at a stand is a pushback even when the aircraft is not seen | adsb.lol, **re-download** (the extractor keeps aircraft only) | probe one day first | speculative; only where ground reception exists |
+
+Re-downloads (B4, B5) only on the user's say-so and after a one-day probe
+(`src/adsb.py download --out-dir`). **Off limits, recorded so nobody tries
+them:** airport operator flight APIs that publish actual off-block times
+(e.g. Schiphol's) and EUROCONTROL's research data repository: both come from
+the reference data the labels are built from (`AGENTS.md`, "derived from the
+labels"), and neither offers 2026 history. Weather, holidays and schedules
+are exhausted or proprietary.
 
 **G2-G4 residual diagnostics (2026-09-26), against `v20_full` OOF `mu`,
 1,375,542 normal rows. All three closed; apt.dat's remaining value is the
@@ -1052,7 +1083,7 @@ final submission regardless.
 | 26 | ~~Runway / stand-area usage shift 2026 vs 2025~~ | done 2026-09-24 | -- | wind-direction flips, covered; no action | closed |
 | 27 | Validation scored with 2026 weights | ~2h | -- | enabler | -- |
 | 28 | Aircraft rotation via the inbound flight's `ARVT_3` | ~2h | 1 screen | 0-0.4 | low |
-| 29 | Raw OpenSky state vectors: push-back proxy (gate: coverage) | ~2h | -- | unknown | superseded by A1/A2 (adsb.lol) |
+| 29 | ~~Raw OpenSky state vectors~~ | -- | -- | -- | **dropped 2026-09-28: no access, not open data** |
 | N1 | ~~January 2026 level: artifact?~~ | done 2026-09-24 | -- | plausibly real (delays + snow) | closed |
 | N2 | Scale TE `_n` counts to the fit rows' out-of-fold basis | ~1h | 1 screen | 0-0.2 | low-medium |
 | N3 | ~~Tree counts for the 12-month fit~~ | done 2026-09-24 | -- | **v25: -0.371 live**; LightGBM right, CatBoost under-trained | shipped |

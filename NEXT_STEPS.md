@@ -38,12 +38,13 @@ record. Anything that ships lives in `src/`.
 | v24 | ours: v22 + `te_flight` backoff + dropout 0.2 (renamed callsigns) | 264.2436 |
 | v25 | ours: v24 + CatBoost `cat`/`cat_note` at 6000 iterations (12-month fit) | 263.8731 |
 | v26 | ours: v25 + `--adsb` (own-flight ADS-B trace, take-off match) | 250.9809 |
-| **v27** | **ours: v26 + callsign fallback match (ADS-B coverage 29.5% -> 58.6%)** | **237.8662** |
+| v27 | ours: v26 + callsign fallback match (ADS-B coverage 29.5% -> 58.6%) | 237.8662 |
+| **v28** | **ours: v27 + `--adsb-nbr` (neighbours' trace-measured taxi, surface counts)** | **237.0484** |
 
-**Team best is v27 (237.8662, 2026-09-27)**: `predict.py --mu lgb cat cat_note
-cat_ctr1 pa --proxy --adsb` at `05b9532` (branch `adsb-traces`; `--adsb` is the
-default from `c37e00f`), after `src/adsb.py download` for
-2024-12-31..2025-12-31 and the scored months.
+**Team best is v28 (237.0484, 2026-09-28)**: `predict.py --mu lgb cat cat_note
+cat_ctr1 pa --proxy --adsb --adsb-nbr` at `42a2086` (branch `adsb-traces`;
+`--adsb` and `--adsb-nbr` are defaults from the commit recording v28), after
+`src/adsb.py download` for 2024-12-31..2025-12-31 and the scored months.
 
 Previous best v25 (263.8731, 2026-09-25). Reproduce with `predict.py --mu
 lgb cat cat_note cat_ctr1 pa --proxy`; the tail cap, the flight backoff and
@@ -59,6 +60,12 @@ default afterwards); sha256 prefix `978eef415fb508ce`. Upload log:
 | v25 | `64a7b85` | `--cat-iterations 6000` | `978eef415fb508ce` | 263.8731 | -0.371 vs v24 |
 | v26 | `0c8e5f4` | `--adsb --out output/submitting_adsb.parquet` | `3f69031c018605ac` | 250.9809 | **-12.892 vs v25** |
 | v27 | `05b9532` | `--adsb --out output/submitting_adsb2.parquet` | `93ddadc7486a2e7b` | 237.8662 | **-13.115 vs v26** |
+| v28 | `42a2086` | `--adsb --adsb-nbr --out output/submitting_adsb3.parquet` | `bc03327eae7cfae8` | 237.0484 | -0.818 vs v27 |
+
+**v28: -0.82 live against -0.24 offline** (3.4x; `--adsb-nbr`, only holdout
+significant offline). Every ADS-B step has transferred above 1x (1.9x, 1.2x,
+3.4x): the scored months carry more trace coverage than 2025. v25 -> v28 is
+-26.82 live.
 
 **v27: -13.12 live against -10.85 offline** (1.2x; the callsign fallback,
 coverage 29.5% -> 58.6% of scored DEP rows). v25 -> v27 is -26.01 live.
@@ -451,11 +458,11 @@ adsb2_lgb`: robust holdout -0.37 (CI -0.58..-0.15), inner -0.28, dec_jun
 four splits at EHAM, LSZH, EDDF, LEBL. Net gain is small against gross
 movement: on dec_jun and mar_sep the top 10 rows carry 82% / 141% of the
 net change, so those splits are no evidence alone. Built as v28 on the
-user's go-ahead; expect -0.2..-0.5 live.
+user's go-ahead. **Live: v28 237.0484, -0.82 against v27 (3.4x).**
 
-**Next:** v27 (`05b9532`, 237.8662) is the team best; v28 = v27 +
-`--adsb-nbr`. Then `--mixed-mode` on top; a full four-split ensemble
-validation for the record.
+**Next:** v28 (`42a2086`, 237.0484) is the team best; `--adsb-nbr` is now a
+default. Then `--mixed-mode` on top; a full four-split ensemble validation
+for the record.
 
 **G2-G4 residual diagnostics (2026-09-26), against `v20_full` OOF `mu`,
 1,375,542 normal rows. All three closed; apt.dat's remaining value is the

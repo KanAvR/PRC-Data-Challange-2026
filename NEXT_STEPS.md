@@ -473,7 +473,7 @@ default.
 | Q2 | trace-anchored `mu`: every family fits y - own stand exit where one exists, anchor added back | fresh (this session) | `--adsb-anchor` | **closed: pooled robust +0.06, dec_jun significantly worse** |
 | Q3 | destination-scoped proxy, network-wide | lead 6 | `--dest-proxy` | **closed: pooled robust +0.06, worse on 3 of 4** |
 | Q4 | out-of-fold encoding of the trace offset (y - own stand exit) by airport, stand, operator, plus the corrected estimate | fresh | `--adsb-offset-te` | **passes (weak): pooled robust -0.16; built as v29 candidate** |
-| Q5 | A5 tree-count sweeps on the v28 matrix (`output/diag/rounds_adsb.py lgb`, `cat`) | A5 | -- | queued after the build |
+| Q5 | A5 tree-count sweeps on the v28 matrix (`output/diag/rounds_adsb.py lgb`, `cat`) | A5 | -- | **done: CatBoost still gains past 6000; not yet acted on** |
 
 Q1 result (`mixed2_lgb`): robust holdout -0.09, inner +0.25 (normal +0.25;
 LTFM +2.03 on the snow split), dec_jun -0.06, mar_sep -0.30 (only one
@@ -506,6 +506,23 @@ all four (+0.23..+0.49). Comparable to `--adsb-nbr` offline (-0.24), which
 won -0.82 live. Built per the queue rule: `predict.py --mu lgb cat cat_note
 cat_ctr1 pa --proxy --adsb --adsb-nbr --adsb-offset-te --out
 output/submitting_adsb4.parquet` at `9234f11`, started 07:37.
+
+Q5 result (A5, 2026-09-28; normal-row `mu` RMSE, one model scored at several
+counts, v28 matrix):
+
+| family | split (months) | curve | best vs shipped |
+|---|---|---|---|
+| LightGBM | inner (8) | 600: 207.58, 900: 206.88, **1200: 206.78**, 1500: 206.81, 2000: 206.95 | -0.10 |
+| LightGBM | holdout (10) | 900: 204.95, 1200: 204.81, **1500: 204.80**, 2000: 204.97 | -0.15 |
+| CatBoost `cat` | inner (8) | 3000: 198.67, 4000: 198.09, 6000: 198.06, **8000: 198.00**, 10000: 198.27 | -0.06 |
+| CatBoost `cat` | holdout (10) | 4000: 201.73, 6000: 200.98, 8000: 200.72, **10000: 200.57** | -0.42 |
+
+Same pattern as N3: the CatBoost optimum grows with training size (~8000 at
+8 months, still falling at 10000 with 10), so the 12-month fit is again short
+of trees; LightGBM's optimum moved from 900 to a 1200-1500 plateau. N3's
+-1.13 single-member holdout gain became -0.37 live (two of five families).
+Candidates: `--cat-iterations 10000` (~1.7x the cat/cat_note cost, so a
+~6.5-7h `predict.py`) and LightGBM 1200-1500 (needs a rounds flag). Not built.
 
 Q2 rationale: where the trace shows the stand exit, the label is that time
 plus a small steady per-airport offset (EHAM IQR 23s, LEMD 80s), and trees

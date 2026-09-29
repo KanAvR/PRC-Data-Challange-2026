@@ -4,11 +4,11 @@ Predict `TAXITIME_SEC_mvt` for departures at ten European airports using 2025
 training data. The ranking set is 344,841 departures from January and July 2026,
 scored by RMSE.
 
-**Current best: 263.873 RMSE (v25).** v25 is v20 (the v16 recipe plus
-neighbour taxi-proxy features) with the tail hedge capped (v22), a
-flight-number encoding that survives renamed callsigns (v24), and CatBoost
-trained for the 12-month fit (v25). All three are on by default, so
-`predict.py` with the command below reproduces it.
+**Current best: 236.7134 RMSE (v30).** v30 is the v28 ADS-B recipe plus a
+consistent count basis for target encodings: prediction rows receive the mean
+per-level count visible to an out-of-fold training row, rather than the larger
+full-training count. The winning behavior is now the default, following the
+promotion rule in `AGENTS.md`; the command under **Run** reproduces the recipe.
 
 Working rules for anyone, person or agent, changing this code or building a
 submission are in `AGENTS.md`. The experimental record, including what has
@@ -76,6 +76,10 @@ applies two corrections keyed on the flight plan's LOBT.
     with coverage and quality columns (`src/adsb.py`). Four-split screen:
     pooled robust -6.84, every split better (`NEXT_STEPS.md`, lead A2).
   - Out-of-fold target encodings, shrunk with `PRIOR_WEIGHT = 10`.
+    Their `_n` columns use the mean exposure of an out-of-fold fit row,
+    `N - sum_f(N_f^2) / N`, on prediction rows as well. This removes a small
+    train/serve distribution mismatch (`--no-te-count-oof-basis` restores the
+    pre-v30 full count).
   - The flight-number encoding falls back to the same airline's flights on
     the same route and scheduled 30-minute slot, then the route, when a
     flight is unseen (`--te-flight-backoff`). Airlines reissue alphanumeric
@@ -129,6 +133,7 @@ Flags that stay off by default are kept as the record of measured negatives:
 | v27 | v26 + callsign match where the take-off roll is not seen | 237.866 |
 | **v28** | **v27 + neighbours' trace-measured taxi and surface traffic** | **237.048** |
 | v29 | v28 + trace-offset encodings (`--adsb-offset-te`; -0.002, noise, kept off) | 237.047 |
+| **v30** | **v28 + OOF-equivalent target-encoding count basis** | **236.7134** |
 
 Offline gains do not always carry over:
 
@@ -182,15 +187,15 @@ predictions as `<tag>_unmasked`. Judge encoding and key changes on both.
 ## Run
 
 ```bash
-# Reproduce v28: train on all twelve months and score the ranking set (several
+# Reproduce v30: train on all twelve months and score the ranking set (several
 # hours; fetch the ADS-B days first, see Setup). The ADS-B trace features and
 # their neighbour/surface columns, the tail cap, the flight backoff/dropout and
-# 6,000 CatBoost iterations are defaults. v28 was built at 152a650. v27 adds
-# --no-adsb-nbr (built at ce25390); v26 is that at 571e9ad, before the callsign
-# fallback match. Earlier versions: v25 adds --no-adsb; v24 also --cat-iterations 3000;
-# v22 also --no-te-flight-backoff --te-flight-dropout 0; v20 also --no-tail-cap.
+# 6,000 CatBoost iterations are defaults. v30 was built at 832a01a with
+# --te-count-oof-basis explicit; it is now the default. Add
+# --no-te-count-oof-basis for v28's count behavior; add --adsb-offset-te as well
+# for v29. Earlier versions are recorded in NEXT_STEPS.md and in --help.
 .venv/bin/python src/predict.py --mu lgb cat cat_note cat_ctr1 pa --proxy \
-    --out output/submitting_v28.parquet
+    --out output/submitting_v30.parquet
 
 # Tail options can also be applied to a finished submission, exactly, from its
 # .parts.parquet, without retraining (this is how v22 was built from v20).

@@ -658,9 +658,10 @@ def add_model_args(ap):
                     help="named set of target-encoding keys (encode.KEY_SETS)")
     ap.add_argument("--te-counts", action=argparse.BooleanOptionalAction, default=True,
                     help="add the _n log-count column beside each encoding")
-    ap.add_argument("--te-count-oof-basis", action=argparse.BooleanOptionalAction, default=False,
-                    help="scale apply-side target-encoding counts to the effective count seen "
-                         "by out-of-fold training rows")
+    ap.add_argument("--te-count-oof-basis", action=argparse.BooleanOptionalAction, default=True,
+                    help="scale apply-side target-encoding counts to the mean effective count "
+                         "seen by out-of-fold training rows (v30: -0.3334 live vs v29; "
+                         "--no-te-count-oof-basis restores the pre-v30 full counts)")
     ap.add_argument("--te-fold-size", type=int, default=1, metavar="MONTHS",
                     help="months per out-of-fold encoding block (1 = shipped)")
     ap.add_argument("--te-flight-backoff", action=argparse.BooleanOptionalAction, default=True,

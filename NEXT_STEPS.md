@@ -41,11 +41,14 @@ record. Anything that ships lives in `src/`.
 | v27 | ours: v26 + callsign fallback match (ADS-B coverage 29.5% -> 58.6%) | 237.8662 |
 | **v28** | **ours: v27 + `--adsb-nbr` (neighbours' trace-measured taxi, surface counts)** | **237.0484** |
 | v29 | ours: v28 + `--adsb-offset-te` (trace-offset encodings) | 237.0468 (-0.0016: noise) |
+| **v30** | **ours: v28 + OOF-equivalent target-encoding counts** | **236.7134** |
 
-**Team best is v28 (237.0484, 2026-09-28)**: `predict.py --mu lgb cat cat_note
-cat_ctr1 pa --proxy --adsb --adsb-nbr` at `152a650` (branch `adsb-traces`;
-`--adsb` and `--adsb-nbr` are defaults from the commit recording v28), after
-`src/adsb.py download` for 2024-12-31..2025-12-31 and the scored months.
+**Team best is v30 (236.7134, 2026-09-30)**: `predict.py --mu lgb cat cat_note
+cat_ctr1 pa --proxy --adsb --adsb-nbr --te-count-oof-basis` at `832a01a`,
+after `src/adsb.py download` for 2024-12-31..2025-12-31 and the scored months.
+The count-basis flag is now a default; `--no-te-count-oof-basis` restores the
+pre-v30 behavior. The file had 344,841 rows and sha256
+`77d6830d239e81b23fa8356781953eef602ae24d1301bc859263d58f087770a3`.
 
 Previous best v25 (263.8731, 2026-09-25). Reproduce with `predict.py --mu
 lgb cat cat_note cat_ctr1 pa --proxy`; the tail cap, the flight backoff and
@@ -63,6 +66,17 @@ default afterwards); sha256 prefix `978eef415fb508ce`. Upload log:
 | v27 | `ce25390` | `--adsb --out output/submitting_adsb2.parquet` | `93ddadc7486a2e7b` | 237.8662 | **-13.115 vs v26** |
 | v28 | `152a650` | `--adsb --adsb-nbr --out output/submitting_adsb3.parquet` | `bc03327eae7cfae8` | 237.0484 | -0.818 vs v27 |
 | v29 | `494fc53` | `--adsb --adsb-nbr --adsb-offset-te --out output/submitting_adsb4.parquet` | `f5fb76e5adbecc06` | 237.0468 | -0.0016 vs v28 |
+| v30 | `832a01a` | `--adsb --adsb-nbr --te-count-oof-basis --out output/submitting_n2_v30.parquet` | `77d6830d239e81b2` | **236.7134** | **-0.3350 vs v28** |
+
+**v30: -0.3350 live against -0.03 pooled all-row offline** (and -0.3334
+against v29). The LightGBM screen was deliberately weak: normal rows improved
+on all four splits by 0.06-0.18, but the pooled all/robust intervals crossed
+zero and `dec_jun` all rows worsened by 0.04. The user requested the full
+ensemble submission despite that gate. It transferred about 11x on the point
+estimate and is spread through every target-encoding `_n` column, so the
+behavior is promoted under `AGENTS.md`, "Defaults follow the leaderboard."
+This is also a warning that a consistent train/serve representation can carry
+more strongly in the full nonlinear ensemble than in a LightGBM-only screen.
 
 **v29: -0.0016 live against -0.16 offline**: a weak screen pass (row changes
 nearly cancelling) that did not carry. Nominally the best score, but the
@@ -629,7 +643,7 @@ flights, not modelling the seen ones better.**
   variant was +0.010. The 15 km signal was zero on over 90% of rows and its
   quartiles were non-monotone. Do not perform the year-scale wide-radius
   re-download. Diagnostic: `output/diag/b4_arrival_pressure_probe.py`.
-- **N2 target-encoding count basis: not established.** Apply-side `_n`
+- **N2 target-encoding count basis: shipped after a weak offline screen.** Apply-side `_n`
   columns were changed from the full per-level count to the exact effective
   count seen by an average out-of-fold fit row,
   `N - sum_f(N_f^2) / N`. Against `baseline_adsbnbr_lgb`, all/robust/normal
@@ -637,8 +651,9 @@ flights, not modelling the seen ones better.**
   -0.09/-0.15/-0.18, dec_jun +0.04/+0.03/-0.12, and mar_sep
   -0.04/-0.04/-0.06. Four-split pooled all was -0.03 (CI -0.09..+0.04)
   and robust -0.06 (CI -0.12..+0.01). Normal rows improved slightly on all
-  splits, but the final metric was not established and dec_jun worsened. Do
-  not promote or pay for a full-ensemble run.
+  splits, but the final metric was not established and dec_jun worsened. The
+  user nevertheless requested a full-ensemble run: v30 scored **236.7134**,
+  **-0.3350 versus v28**, so the OOF-equivalent basis is now the default.
 - **Lead 7, seven-day per-key proxy drift: negative before training.** Recent
   `MVT - AOBT_3` versus each key's long-run mean was computed without labels,
   with same-second rows excluded, for flight, stand-runway and airline keys.
@@ -656,8 +671,25 @@ flights, not modelling the seen ones better.**
   shipped 3,500 / 2,000 counts while feature work remains; do not restart the
   same 8,000-tree sweep without a materially faster setup.
 
-Re-downloads (B5 only; B4 is closed) only on the user's say-so and after a one-day probe
-(`src/adsb.py download --out-dir`). **Off limits, recorded so nobody tries
+- **B5 pushback tugs: closed on the one-day gate.** The existing
+  2025-01-15 ADS-B extract contained ten `GND` tracks, all at EHAM. Only 39
+  points came within 80 m of a stand, and just 4 of 512 departures matched a
+  candidate vehicle movement (0.781%). The resulting vehicle-derived taxi
+  estimate had RMSE 2,779 s and MAE 2,575 s. Coverage is too small and the
+  matches too poor to justify changing the extractor or re-downloading a year.
+- **Lead 25 saturated-run queue: closed before training.** Consecutive
+  departures within 90/120/150 s covered about 51-53% of rows, but after
+  airport centering their residual correlations were only -0.003..+0.015
+  across the four splits. Residuals by run-length bin were non-monotone; the
+  existing queue and congestion columns already absorb the usable signal.
+- **Lead 28 inbound-aircraft rotation: closed before training.** Matching an
+  arrival to a later departure at the same stand gave 97.6-99.1% coverage, but
+  previous-arrival delay, taxi time, aircraft-type gap and next-use gap had
+  centered residual correlations only -0.025..+0.002. Arrival-delay quintiles
+  moved residual means by only a few seconds and did not justify a feature.
+
+Both wide-radius re-download leads, B4 and B5, are closed by their one-day
+gates. **Off limits, recorded so nobody tries
 them:** airport operator flight APIs that publish actual off-block times
 (e.g. Schiphol's) and EUROCONTROL's research data repository: both come from
 the reference data the labels are built from (`AGENTS.md`, "derived from the
@@ -1147,13 +1179,13 @@ final submission regardless.
 | 22 | ~~Check Phoenix's `AOBT_3 - LOBT > 7200` rule~~ | done 2026-09-24 | -- | already covered by the LOBT projection | closed |
 | 23 | ~~Planned taxi hidden in `ARVT_1`~~ | done 2026-09-24 | -- | screen -0.07, not established | closed |
 | 24 | ~~Timestamp seconds-field forensics~~ | done 2026-09-24 | -- | weak, low value | closed |
-| 25 | Saturated-run queue length at the runway [state, physical] | ~1h | 1 screen | 0-0.4 | low |
+| 25 | ~~Saturated-run queue length at the runway [state, physical]~~ | done 2026-09-29 | -- | centered residual corr -0.003..+0.015; non-monotone | closed |
 | 26 | ~~Runway / stand-area usage shift 2026 vs 2025~~ | done 2026-09-24 | -- | wind-direction flips, covered; no action | closed |
 | 27 | Validation scored with 2026 weights | ~2h | -- | enabler | -- |
-| 28 | Aircraft rotation via the inbound flight's `ARVT_3` | ~2h | 1 screen | 0-0.4 | low |
+| 28 | ~~Aircraft rotation via the inbound flight's `ARVT_3`~~ | done 2026-09-29 | -- | 98-99% coverage, residual corr -0.025..+0.002 | closed |
 | 29 | ~~Raw OpenSky state vectors~~ | -- | -- | -- | **dropped 2026-09-28: no access, not open data** |
 | N1 | ~~January 2026 level: artifact?~~ | done 2026-09-24 | -- | plausibly real (delays + snow) | closed |
-| N2 | Scale TE `_n` counts to the fit rows' out-of-fold basis | ~1h | 1 screen | 0-0.2 | low-medium |
+| N2 | ~~Scale TE `_n` counts to the fit rows' out-of-fold basis~~ | done 2026-09-30 | full v30 | **-0.3350 live vs v28** | shipped/default |
 | N3 | ~~Tree counts for the 12-month fit~~ | done 2026-09-24 | -- | **v25: -0.371 live**; LightGBM right, CatBoost under-trained | shipped |
 | N3b | Sweep `cat_ctr1` (3500) and the per-airport CatBoost (2000) the same way | attempted 2026-09-29 | 8000-tree inner fit exceeded runtime gate | 0-0.4 | deferred; needs faster setup |
 | N4 | Validation scored with 2026 row weights (= lead 27) | ~2h | -- | enabler | -- |

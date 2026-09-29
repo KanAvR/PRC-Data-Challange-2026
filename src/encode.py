@@ -99,7 +99,7 @@ def _key(X, flight, cols):
 
 
 def _encode(k_fit, y, folds, k_apply, unseen_apply=None, prior_fit=None, prior_apply=None,
-            drop_fit=None, count_oof_basis=False):
+            drop_fit=None, count_oof_basis=True):
     """unseen_apply: apply rows to encode as if their level were never seen,
     the way a renamed callsign is at serve time (see add_target_encodings).
     prior_fit / prior_apply: per-row prior to shrink toward (default: the global
@@ -131,9 +131,11 @@ def _encode(k_fit, y, folds, k_apply, unseen_apply=None, prior_fit=None, prior_a
     app_mean = smooth(s_all[c_apply], n_all[c_apply], prior_apply)
     app_n = n_all[c_apply]
     if count_oof_basis:
-        # Fit rows never see their own fold's labels. Put apply-side counts on
-        # the exact average OOF basis for each level, including levels whose
-        # observations are concentrated in a small number of months.
+        # A fit row in fold f sees N - N_f examples of its level. The weighted
+        # average over all rows of that level is N - sum_f(N_f^2) / N. Use that
+        # same exposure at apply time, so the _n feature has the distribution
+        # the model saw during training. v30 showed this small consistency fix
+        # carries live; count_oof_basis=False reproduces the older full counts.
         sq = np.square(n).sum(axis=0)
         effective = n_all - np.divide(sq, n_all, out=np.zeros_like(n_all), where=n_all > 0)
         app_n = effective[c_apply]
@@ -193,11 +195,13 @@ def add_target_encodings(X_fit, y_fit, folds, flight_fit, X_apply, flight_apply,
                          keys=None, counts=True, fold_size=1,
                          X_apply_masked=None, flight_unseen=None,
                          flight_backoff=False, flight_dropout=0.0, airport_prior=False,
-                         count_oof_basis=False):
+                         count_oof_basis=True):
     """Add te_* columns to both frames in place.
 
     keys: names from KEY_SETS' vocabulary (default: the shipped TE_KEYS).
     counts: also add the _n log-count column beside each encoding.
+    count_oof_basis: give apply rows the mean count exposure seen by out-of-fold
+    fit rows (the shipped v30 behavior); False restores the pre-v30 full count.
     fold_size: months per out-of-fold block (1 = the shipped scheme).
     X_apply_masked, flight_unseen: evaluation only. X_apply_masked (a copy of
     X_apply) gets the same columns, except that on rows where flight_unseen is

@@ -93,22 +93,21 @@ class AirportPriorTest(unittest.TestCase):
 
 
 class CountBasisTest(unittest.TestCase):
-    def test_apply_count_matches_average_oof_exposure(self):
+    def test_default_apply_count_matches_average_oof_exposure(self):
         fit, app = frame(6), frame(1)
         y = np.arange(6, dtype=float) + 600
         folds = np.array(["m1", "m1", "m1", "m2", "m2", "m3"])
         flights = np.array(["A_F"] * 6)
-        add_target_encodings(fit, y, folds, flights, app, np.array(["A_F"]),
-                             keys=["te_stand"], count_oof_basis=True)
+        add_target_encodings(fit, y, folds, flights, app, np.array(["A_F"]), keys=["te_stand"])
         self.assertAlmostEqual(app["te_stand_n"].iloc[0], np.log1p(11 / 3))
 
-    def test_count_basis_is_opt_in(self):
+    def test_pre_v30_full_count_is_opt_in(self):
         fit, app = frame(6), frame(1)
         y = np.arange(6, dtype=float) + 600
         folds = np.array(["m1", "m1", "m1", "m2", "m2", "m3"])
         flights = np.array(["A_F"] * 6)
         add_target_encodings(fit, y, folds, flights, app, np.array(["A_F"]),
-                             keys=["te_stand"])
+                             keys=["te_stand"], count_oof_basis=False)
         self.assertAlmostEqual(app["te_stand_n"].iloc[0], np.log1p(6))
 
 

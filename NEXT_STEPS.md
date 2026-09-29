@@ -619,6 +619,26 @@ flights, not modelling the seen ones better.**
   regulation-level source suitable for 2025/2026 was found. Sources checked:
   `data-app.eurocontrol.int/api`, the NOP Public Portal user guide, the current
   NMIR user guide, and EUROCONTROL's FATHOM access page.
+- **B4 airborne arrival pressure: negative on the one-day gate.** A corrected
+  worker-configured extraction retained 58,624 observations within 50 km and
+  20,000 ft of LTFM on 2025-02-23, including 32,563 observations classified
+  inbound. Against 642 inner-split LTFM departures, three-minute pressure at
+  15/30/50 km had raw residual correlations -0.170/-0.084/-0.104, but these
+  followed the day's large time-of-day residual shift. After centering within
+  UTC hour the correlations were only +0.018/+0.062/+0.013; the terminal-area
+  variant was +0.010. The 15 km signal was zero on over 90% of rows and its
+  quartiles were non-monotone. Do not perform the year-scale wide-radius
+  re-download. Diagnostic: `output/diag/b4_arrival_pressure_probe.py`.
+- **N2 target-encoding count basis: not established.** Apply-side `_n`
+  columns were changed from the full per-level count to the exact effective
+  count seen by an average out-of-fold fit row,
+  `N - sum_f(N_f^2) / N`. Against `baseline_adsbnbr_lgb`, all/robust/normal
+  RMSE deltas were holdout -0.03/-0.09/-0.13, inner
+  -0.09/-0.15/-0.18, dec_jun +0.04/+0.03/-0.12, and mar_sep
+  -0.04/-0.04/-0.06. Four-split pooled all was -0.03 (CI -0.09..+0.04)
+  and robust -0.06 (CI -0.12..+0.01). Normal rows improved slightly on all
+  splits, but the final metric was not established and dec_jun worsened. Do
+  not promote or pay for a full-ensemble run.
 - **Lead 7, seven-day per-key proxy drift: negative before training.** Recent
   `MVT - AOBT_3` versus each key's long-run mean was computed without labels,
   with same-second rows excluded, for flight, stand-runway and airline keys.
@@ -636,7 +656,7 @@ flights, not modelling the seen ones better.**
   shipped 3,500 / 2,000 counts while feature work remains; do not restart the
   same 8,000-tree sweep without a materially faster setup.
 
-Re-downloads (B4, B5) only on the user's say-so and after a one-day probe
+Re-downloads (B5 only; B4 is closed) only on the user's say-so and after a one-day probe
 (`src/adsb.py download --out-dir`). **Off limits, recorded so nobody tries
 them:** airport operator flight APIs that publish actual off-block times
 (e.g. Schiphol's) and EUROCONTROL's research data repository: both come from

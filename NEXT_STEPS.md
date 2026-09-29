@@ -619,6 +619,22 @@ flights, not modelling the seen ones better.**
   regulation-level source suitable for 2025/2026 was found. Sources checked:
   `data-app.eurocontrol.int/api`, the NOP Public Portal user guide, the current
   NMIR user guide, and EUROCONTROL's FATHOM access page.
+- **Lead 7, seven-day per-key proxy drift: negative before training.** Recent
+  `MVT - AOBT_3` versus each key's long-run mean was computed without labels,
+  with same-second rows excluded, for flight, stand-runway and airline keys.
+  Against the four-split control's normal-row residual, correlations were
+  +0.010/+0.008/+0.006/+0.001 (flight),
+  -0.003/+0.027/-0.004/+0.000 (stand-runway), and
+  +0.003/+0.027/+0.006/+0.005 (airline). Quintile residuals were non-monotone
+  on the three near-zero splits. The one `inner` signal does not transfer; do
+  not build the feature.
+- **N3b `cat_ctr1` count sweep: stopped on the runtime gate, not a measured
+  model result.** One inner-split depth-10 model at 8,000 trees did not finish
+  within the allotted extended run and was interrupted before producing a
+  curve. A holdout or per-airport sweep would multiply that cost, and Q5
+  already estimates only a small final blend gain from more trees. Keep the
+  shipped 3,500 / 2,000 counts while feature work remains; do not restart the
+  same 8,000-tree sweep without a materially faster setup.
 
 Re-downloads (B4, B5) only on the user's say-so and after a one-day probe
 (`src/adsb.py download --out-dir`). **Off limits, recorded so nobody tries
@@ -1091,7 +1107,7 @@ final submission regardless.
 | 4 | Reference-scaled target | ~2h | full runs | 0-0.3 | low |
 | 5 | ~~Residualised neighbour proxy~~ | done 2026-09-24 | -- | 4 splits -0.05, inner +0.32; not established | closed |
 | 6 | Destination-scoped proxy, network-wide [target] | ~2h | 2 screens | 0.3-1.5 | **top**, widest spread |
-| 7 | Proxy over time: per-key drift tracker [target] | ~3h | 2 screens | 0.2-0.8 | medium |
+| 7 | ~~Proxy over time: per-key drift tracker [target]~~ | done 2026-09-29 | -- | residual correlations near zero on 3/4 splits | closed |
 | 8 | ~~`ARVT_1`/`ARVT_3` diagnostic~~ | done 2026-09-24 | -- | see 23: not established | closed |
 | 9 | ~~Re-match unmatched DEP via destination ARR row~~ | done 2026-09-24 | -- | **negative**: recovered LOBT wrong flight | closed |
 | 10 | Narrower proxy neighbour sets [target] | with 5 | with 5 | 0.1-0.5 | medium |
@@ -1119,7 +1135,7 @@ final submission regardless.
 | N1 | ~~January 2026 level: artifact?~~ | done 2026-09-24 | -- | plausibly real (delays + snow) | closed |
 | N2 | Scale TE `_n` counts to the fit rows' out-of-fold basis | ~1h | 1 screen | 0-0.2 | low-medium |
 | N3 | ~~Tree counts for the 12-month fit~~ | done 2026-09-24 | -- | **v25: -0.371 live**; LightGBM right, CatBoost under-trained | shipped |
-| N3b | Sweep `cat_ctr1` (3500) and the per-airport CatBoost (2000) the same way | ~2h | sweep + full run | 0-0.4 | **top** |
+| N3b | Sweep `cat_ctr1` (3500) and the per-airport CatBoost (2000) the same way | attempted 2026-09-29 | 8000-tree inner fit exceeded runtime gate | 0-0.4 | deferred; needs faster setup |
 | N4 | Validation scored with 2026 row weights (= lead 27) | ~2h | -- | enabler | -- |
 
 1. **Four-split baseline of the full v20 recipe: done 2026-09-24**, saved as

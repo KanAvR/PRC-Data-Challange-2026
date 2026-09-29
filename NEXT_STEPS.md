@@ -588,6 +588,38 @@ flights, not modelling the seen ones better.**
 | B4 | **Airborne arrival pressure within ~50 km** (holding stacks, arrival stream) at LTFM / LFPG / LIRF, where adsb.lol sees the air but not the ground; on mixed-mode runways arrivals hold departures | adsb.lol, **re-download** with a wider radius (6-7h) | probe one day first | [state] prior moderate; reaches the uncovered airports |
 | B5 | **Pushback tugs.** Some airports fit tugs with ADS-B squawkers (readsb surface-vehicle categories); a tug moving at a stand is a pushback even when the aircraft is not seen | adsb.lol, **re-download** (the extractor keeps aircraft only) | probe one day first | speculative; only where ground reception exists |
 
+**B1-B3 triage (2026-09-29): closed.** The tests used a fresh four-split
+`--mu lgb --proxy --adsb --adsb-nbr` control in an isolated checkout
+(`baseline_adsbnbr_lgb`). No submission was built or uploaded.
+
+- **B1 back-extrapolated pushback: negative before training.** On real
+  matched/no-stand-exit normal rows, the existing straight-line distance added
+  to `adsb_first_seen` at fixed 3-12 kt had residual correlations of only
+  -0.005..+0.041 against the control and remained far worse than `mu` at every
+  airport. A bounded taxi-graph pilot then parsed apt.dat 1201/1202 records on
+  eight fixed mid-month days. Only 1,721 rows passed routing and 250 m endpoint
+  snap gates; the routed distance was 1.54x straight-line at the median. At
+  4 kt its RMSE was 337 / 505 / 537 / 502 on holdout / inner / dec_jun /
+  mar_sep, against control `mu` 150 / 234 / 178 / 158. Residual correlation
+  changed sign (+0.171 / **-0.139** / +0.077 / +0.075). The graph corrects
+  distance but cannot infer when a trace that starts mid-taxi actually left
+  the stand; do not build or screen this feature.
+- **B2 LIRF artefact class via trace: negative.** On delayed normal LIRF rows,
+  stand-exit coverage was only 1.6-10.8% by split and push coverage 1.0-6.0%.
+  The broadly available `gap_SCHED - adsb_first_seen` signal had oriented AUC
+  only 0.58-0.62, below the provided-column classifier that already failed to
+  improve RMSE. ADS-B sees the real taxi but does not identify which recording
+  convention produced the label. Do not build another class-C classifier.
+- **B3 historical ATFM regulation lists: unavailable as open data.** The
+  public EUROCONTROL Data app API documents daily aggregate delay totals, not
+  regulation records. The public NOP documents ANM regulation lists for the
+  selected day of operation; historical daily regulation lists and
+  flight/regulation attribution are described in NMIR/FATHOM/B2B, whose access
+  is restricted to operational stakeholders. No open, licensed, historical
+  regulation-level source suitable for 2025/2026 was found. Sources checked:
+  `data-app.eurocontrol.int/api`, the NOP Public Portal user guide, the current
+  NMIR user guide, and EUROCONTROL's FATHOM access page.
+
 Re-downloads (B4, B5) only on the user's say-so and after a one-day probe
 (`src/adsb.py download --out-dir`). **Off limits, recorded so nobody tries
 them:** airport operator flight APIs that publish actual off-block times

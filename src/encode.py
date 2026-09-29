@@ -99,7 +99,7 @@ def _key(X, flight, cols):
 
 
 def _encode(k_fit, y, folds, k_apply, unseen_apply=None, prior_fit=None, prior_apply=None,
-            drop_fit=None):
+            drop_fit=None, count_oof_basis=False):
     """unseen_apply: apply rows to encode as if their level were never seen,
     the way a renamed callsign is at serve time (see add_target_encodings).
     prior_fit / prior_apply: per-row prior to shrink toward (default: the global
@@ -128,7 +128,15 @@ def _encode(k_fit, y, folds, k_apply, unseen_apply=None, prior_fit=None, prior_a
     fit_mean, fit_n = smooth(s_oof, n_oof, prior_fit), n_oof
     if drop_fit is not None:
         fit_mean, fit_n = np.where(drop_fit, prior_fit, fit_mean), np.where(drop_fit, 0.0, fit_n)
-    app_mean, app_n = smooth(s_all[c_apply], n_all[c_apply], prior_apply), n_all[c_apply]
+    app_mean = smooth(s_all[c_apply], n_all[c_apply], prior_apply)
+    app_n = n_all[c_apply]
+    if count_oof_basis:
+        # Fit rows never see their own fold's labels. Put apply-side counts on
+        # the exact average OOF basis for each level, including levels whose
+        # observations are concentrated in a small number of months.
+        sq = np.square(n).sum(axis=0)
+        effective = n_all - np.divide(sq, n_all, out=np.zeros_like(n_all), where=n_all > 0)
+        app_n = effective[c_apply]
     masked = None
     if unseen_apply is not None:
         masked = (np.where(unseen_apply, prior_apply, app_mean),
@@ -184,7 +192,8 @@ def _hashed(keys, frac, salt):
 def add_target_encodings(X_fit, y_fit, folds, flight_fit, X_apply, flight_apply,
                          keys=None, counts=True, fold_size=1,
                          X_apply_masked=None, flight_unseen=None,
-                         flight_backoff=False, flight_dropout=0.0, airport_prior=False):
+                         flight_backoff=False, flight_dropout=0.0, airport_prior=False,
+                         count_oof_basis=False):
     """Add te_* columns to both frames in place.
 
     keys: names from KEY_SETS' vocabulary (default: the shipped TE_KEYS).
@@ -224,7 +233,8 @@ def add_target_encodings(X_fit, y_fit, folds, flight_fit, X_apply, flight_apply,
                                              _key(X_apply, flight_apply, cols), mask,
                                              prior_fit=back_fit if is_flight else apt_fit,
                                              prior_apply=back_app if is_flight else apt_app,
-                                             drop_fit=drop)
+                                             drop_fit=drop,
+                                             count_oof_basis=count_oof_basis)
         X_fit[name], X_apply[name] = fm, am
         if counts:
             X_fit[name + "_n"], X_apply[name + "_n"] = fn, an

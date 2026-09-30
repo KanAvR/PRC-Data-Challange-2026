@@ -2,6 +2,7 @@
 import glob
 import pathlib
 import re
+from contextlib import nullcontext
 
 import pandas as pd
 
@@ -29,7 +30,7 @@ def month_of(path):
     return re.search(r"training_(\d{4}-\d{2})", path).group(1)
 
 
-def load_training(adsb=False):
+def load_training(adsb=False, timings=None):
     """Features, target and per-row metadata for every training DEP row.
 
     adsb=True appends each departure's own-trace columns (adsb.ADSB_COLS).
@@ -37,32 +38,40 @@ def load_training(adsb=False):
     Metadata (month, date) is returned separately so it can never end up as a
     model input: train_mu() trains on every column of X.
     """
+    measure = timings.stage if timings is not None else lambda *args, **kwargs: nullcontext()
     xs, ys, metas = [], [], []
     for f in TRAIN_FILES:
-        df = pd.read_parquet(f)
-        dep = df["PHASE_mvt"].values == "DEP"
-        feats = build_features_cached(f, df)
+        month = month_of(f)
+        prefix = f"training.{month}"
+        with measure(f"{prefix}.parquet_read", path=f):
+            df = pd.read_parquet(f)
+        with measure(f"{prefix}.select_departures"):
+            dep = df["PHASE_mvt"].values == "DEP"
+        feats = build_features_cached(f, df, timings=timings, stage=f"{prefix}.features")
         if adsb:
-            import adsb as _adsb
-            feats = feats.join(_adsb.dep_features(df, pathlib.Path(f).stem))
-        xs.append(feats.loc[dep])
-        ys.append(df.loc[dep, "TAXITIME_SEC_mvt"].astype(float))
-        metas.append(pd.DataFrame({
-            "MVT_ID_mvt": df.loc[dep, "MVT_ID_mvt"],
-            "month": month_of(f),
-            "date": df.loc[dep, "MVT_TIME_UTC_mvt"].dt.strftime("%Y-%m-%d"),
-            "ADEP_mvt": df.loc[dep, "ADEP_mvt"],
-            "flight": flight_ids(df.loc[dep]),
-            # absolute take-off time, for features computed after the target
-            # encodings (resproxy.py); metadata never reaches a model
-            "t": mvt_seconds(df.loc[dep]),
-        }))
-    X = pd.concat(xs, ignore_index=True)
-    y = pd.concat(ys, ignore_index=True).values
-    meta = pd.concat(metas, ignore_index=True)
-    keep = y >= MIN_TAXI_SEC
-    return (X.loc[keep].reset_index(drop=True), y[keep],
-            meta.loc[keep].reset_index(drop=True))
+            with measure(f"{prefix}.adsb_features"):
+                import adsb as _adsb
+                feats = feats.join(_adsb.dep_features(df, pathlib.Path(f).stem))
+        with measure(f"{prefix}.extract"):
+            xs.append(feats.loc[dep])
+            ys.append(df.loc[dep, "TAXITIME_SEC_mvt"].astype(float))
+            metas.append(pd.DataFrame({
+                "MVT_ID_mvt": df.loc[dep, "MVT_ID_mvt"],
+                "month": month,
+                "date": df.loc[dep, "MVT_TIME_UTC_mvt"].dt.strftime("%Y-%m-%d"),
+                "ADEP_mvt": df.loc[dep, "ADEP_mvt"],
+                "flight": flight_ids(df.loc[dep]),
+                # absolute take-off time, for features computed after the target
+                # encodings (resproxy.py); metadata never reaches a model
+                "t": mvt_seconds(df.loc[dep]),
+            }))
+    with measure("training.concat_and_filter"):
+        X = pd.concat(xs, ignore_index=True)
+        y = pd.concat(ys, ignore_index=True).values
+        meta = pd.concat(metas, ignore_index=True)
+        keep = y >= MIN_TAXI_SEC
+        return (X.loc[keep].reset_index(drop=True), y[keep],
+                meta.loc[keep].reset_index(drop=True))
 
 
 def align_categoricals(*frames):

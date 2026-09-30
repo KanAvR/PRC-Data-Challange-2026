@@ -197,6 +197,12 @@ predictions as `<tag>_unmasked`. Judge encoding and key changes on both.
 .venv/bin/python src/predict.py --mu lgb cat cat_note cat_ctr1 pa --proxy \
     --out output/submitting_v30.parquet
 
+# Profile a run without changing its model or predictions. The JSON is updated
+# after every stage, so a failed long run still shows where its time went.
+.venv/bin/python src/predict.py --mu lgb cat cat_note cat_ctr1 pa --proxy \
+    --timings output/profile/v30-timings.json \
+    --out output/profile/submitting_v30.parquet
+
 # Tail options can also be applied to a finished submission, exactly, from its
 # .parts.parquet, without retraining (this is how v22 was built from v20).
 .venv/bin/python src/tail_submission.py --input output/submitting_v20.parquet \
@@ -217,6 +223,11 @@ so a post-hoc correction does not need a retrain.
 reproduced exactly. `--help` lists them. `--mu` defaults to the fast development
 pair `lgb cat`. `--mu lgb --clf-pooled lgb --clf-nolobt lgb --no-te` is a
 LightGBM-only run that finishes in a few minutes.
+
+`predict.py --timings FILE` records wall time, process CPU time and peak RSS for
+each monthly Parquet/cache read, feature preparation, target encoding, model
+fit, model prediction, submission assembly and output write. Timing is opt-in
+and stores only a small JSON report; it does not serialise model matrices.
 
 ### Cheaper experiments
 

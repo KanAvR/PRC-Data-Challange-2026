@@ -9,6 +9,7 @@ can never silently survive a feature change.
 import hashlib
 import os
 import pathlib
+from contextlib import nullcontext
 
 import pandas as pd
 
@@ -36,14 +37,20 @@ def _cache_path(path):
     return CACHE_DIR / f"{pathlib.Path(path).stem}.{h}.parquet"
 
 
-def build_features_cached(path, df):
+def build_features_cached(path, df, timings=None, stage="features"):
     """build_features(df) for a parquet file, memoised on disk."""
-    cp = _cache_path(path)
+    measure = timings.stage if timings is not None else lambda *args, **kwargs: nullcontext()
+    with measure(f"{stage}.cache_key"):
+        cp = _cache_path(path)
     if cp.exists():
-        return pd.read_parquet(cp)
-    feats = _features.build_features(df)
+        with measure(f"{stage}.cache_read", path=str(cp)):
+            return pd.read_parquet(cp)
+    with measure(f"{stage}.build"):
+        feats = _features.build_features(df)
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     tmp = cp.with_suffix(".tmp.parquet")
-    feats.reset_index(drop=True).to_parquet(tmp, index=False)
-    tmp.replace(cp)  # atomic: a crash mid-write cannot leave a partial cache
-    return pd.read_parquet(cp)
+    with measure(f"{stage}.cache_write", path=str(cp)):
+        feats.reset_index(drop=True).to_parquet(tmp, index=False)
+        tmp.replace(cp)  # atomic: a crash mid-write cannot leave a partial cache
+    with measure(f"{stage}.cache_reopen", path=str(cp)):
+        return pd.read_parquet(cp)

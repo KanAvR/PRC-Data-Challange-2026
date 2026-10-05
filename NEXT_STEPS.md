@@ -67,6 +67,22 @@ default afterwards); sha256 prefix `978eef415fb508ce`. Upload log:
 | v28 | `152a650` | `--adsb --adsb-nbr --out output/submitting_adsb3.parquet` | `bc03327eae7cfae8` | 237.0484 | -0.818 vs v27 |
 | v29 | `494fc53` | `--adsb --adsb-nbr --adsb-offset-te --out output/submitting_adsb4.parquet` | `f5fb76e5adbecc06` | 237.0468 | -0.0016 vs v28 |
 | v30 | `832a01a` | `--adsb --adsb-nbr --te-count-oof-basis --out output/submitting_n2_v30.parquet` | `77d6830d239e81b2` | **236.7134** | **-0.3350 vs v28** |
+| (v31 candidate, not uploaded) | `a870e8a` | `--mu lgb cat cat_note cat_ctr1 pa --proxy --adsb-climb-id --out output/submitting_v31_climb.parquet` | `40128a07813b1a60` | -- | offline -0.81 pooled robust vs v30 recipe |
+
+**v31 candidate (built 2026-10-06, not uploaded):** v30's defaults plus
+`--adsb-climb-id` (B8). 4h52m on a 16-core Windows machine. Verified against
+`dataset/submitting.parquet` (schema, dtypes, row order; no NaN, inf or
+negatives). Against v28's file: mean |change| 16.5s, top-10 rows 2.6% of the
+squared change; rows matched by the climb-out with a departure segment moved
+59.4s on average, the rest 13.5s; EDDF moved most (30.7s). Expected live
+roughly -0.5 to -1 (offline -0.81; 3.9% of ranking rows gain a departure
+segment, against ~4-10% of 2025 rows).
+
+**The runtime-profiling refactor (`a2c609c`) is prediction-neutral.** The fast
+build `predict.py --mu lgb --clf-pooled lgb --clf-nolobt lgb --no-te --proxy`
+at `519b157` (before it) and at `91ef6a8`: 0 of 344,841 rows differ (one
+machine). `2d2f888` makes `runtime_profile.py` importable on Windows (no
+`resource` module there; peak RSS reported as NaN).
 
 **v30: -0.3350 live against -0.03 pooled all-row offline** (and -0.3334
 against v29). The LightGBM screen was deliberately weak: normal rows improved
@@ -755,6 +771,13 @@ ground receivers the archive does not have. Error after the climb-out match
 no-LOBT tail 31.8% (536 rows, RMSE 7,150), trace without exit 25.5% (195),
 exit seen 3.8% (113); normal-row share LIRF 34.1%, LTFM 19.7%, LFPG 14.1%,
 EGLL 11.4%.
+
+**B14 LEMD climb-out after the altitude fix: not worth a re-download.** The
+shipped extract has no LEMD airborne points (the old 1,500 ft MSL cut), so
+the climb-out match cannot fire there. On the two days re-extracted with the
+fix (`output/diag/adsb_elev`, 2025-07-15/16), LEMD gains 149 climb-out
+matches of 1,232 normal rows, but only **11** are departure segments: its
+receivers see the inbound taxi-in, not the departure apron.
 
 **B13 `--trace-te`: not established (2026-10-06).** Label-free "encodings" of
 the own-trace stand exits of other flights (`src/tracete.py`): mean

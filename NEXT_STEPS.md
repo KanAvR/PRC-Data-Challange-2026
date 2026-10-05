@@ -778,6 +778,14 @@ no-LOBT tail 31.8% (536 rows, RMSE 7,150), trace without exit 25.5% (195),
 exit seen 3.8% (113); normal-row share LIRF 34.1%, LTFM 19.7%, LFPG 14.1%,
 EGLL 11.4%.
 
+**B16 airborne arrival time for climb-identified rows without ground points:
+no signal.** Rows the matchers miss but whose climb-out names the airframe
+(Jul 2025, 20 days, 14,803 normal rows, 92% with an earlier approach at the
+same airport): corr(`climb_lgb` residual, log time since the airframe's last
+approach point) EGLL +0.002 (n=8,126), LFPG -0.002 (4,331), EDDM +0.114
+(470), others -0.04..+0.04. Like lead 28: turnaround time carries nothing.
+The inbound-segment climb rows' gain comes from their ground-trace columns.
+
 **B15 `--adsb-climb-nbr-clean`: negative (2026-10-06).** Climb-out matches whose
 last ground segment ends > 300s before take-off (the inbound taxi-in) put
 arrival-time `adsb_first_seen` values into everyone's neighbour means (July

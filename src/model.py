@@ -638,6 +638,10 @@ def add_model_args(ap):
                          "airport and runway scope, and aircraft taxiing / holding in the 10-20 "
                          "min before take-off. Built with --adsb; this flag only chooses whether "
                          "the models see them. v28: -0.82 live. --no-adsb-nbr reproduces v27")
+    ap.add_argument("--adsb-climb-id", action=argparse.BooleanOptionalAction, default=False,
+                    help="with --adsb, also match rows by the airborne climb-out: its callsign names "
+                         "the airframe, whose ground points then need no callsign "
+                         "(adsb._climb_matches; NEXT_STEPS.md, B8)")
     ap.add_argument("--dest-proxy", action=argparse.BooleanOptionalAction, default=False,
                     help="use departures to the same destination from all ten airports "
                          "(features.DEST_COLS): their MVT-AOBT_3 / MVT-EOBT_1 gaps and counts "
@@ -658,6 +662,13 @@ def add_model_args(ap):
                     help="named set of target-encoding keys (encode.KEY_SETS)")
     ap.add_argument("--te-counts", action=argparse.BooleanOptionalAction, default=True,
                     help="add the _n log-count column beside each encoding")
+    ap.add_argument("--te-prior-weight", type=float, default=None, metavar="K",
+                    help="target-encoding shrinkage toward the prior (default: encode.PRIOR_WEIGHT, "
+                         "10, tuned before the ADS-B features existed)")
+    ap.add_argument("--te-mean-oof-basis", action=argparse.BooleanOptionalAction, default=False,
+                    help="shrink apply-side target-encoding means with the same out-of-fold "
+                         "effective count as --te-count-oof-basis, not the full count, so the "
+                         "means have the shrinkage the models were fitted on")
     ap.add_argument("--te-count-oof-basis", action=argparse.BooleanOptionalAction, default=True,
                     help="scale apply-side target-encoding counts to the mean effective count "
                          "seen by out-of-fold training rows (v30: -0.3334 live vs v29; "
@@ -700,6 +711,9 @@ def add_model_args(ap):
 def apply_model_args(args):
     """Module-level settings that add_model_args exposes. Call once after parsing."""
     CAT_MU_PARAMS["iterations"] = args.cat_iterations
+    if getattr(args, "te_prior_weight", None) is not None:
+        import encode  # encode imports model, so not at module level
+        encode.PRIOR_WEIGHT = args.te_prior_weight
 
 
 def mu_weights(args, families):

@@ -39,7 +39,7 @@ def main():
     timings = RuntimeProfile(args.timings)
 
     print("Loading training data and building features...", flush=True)
-    train_data, y_train, meta = load_training(adsb=args.adsb, timings=timings)
+    train_data, y_train, meta = load_training(adsb=args.adsb, timings=timings, climb=args.adsb_climb_id)
     with timings.stage("training.select_features"):
         if not args.proxy:
             train_data = drop_proxy(train_data)
@@ -68,7 +68,8 @@ def main():
     if args.adsb:
         with timings.stage("ranking.adsb_features"):
             import adsb
-            ranking_feats = ranking_feats.join(adsb.dep_features(ranking_raw, "ranking"))
+            ranking_feats = ranking_feats.join(adsb.dep_features(ranking_raw, "ranking",
+                                                                 climb=args.adsb_climb_id))
     with timings.stage("ranking.select_features"):
         ranking_dep = ranking_feats.loc[dep_mask].copy()
         if not args.proxy:
@@ -94,6 +95,7 @@ def main():
                                  keys=KEY_SETS[args.te_keys],
                                  counts=args.te_counts, fold_size=args.te_fold_size,
                                  count_oof_basis=args.te_count_oof_basis,
+                                 mean_oof_basis=args.te_mean_oof_basis,
                                  flight_backoff=args.te_flight_backoff,
                                  flight_dropout=args.te_flight_dropout,
                                  airport_prior=args.te_airport_prior)

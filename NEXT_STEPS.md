@@ -688,6 +688,75 @@ flights, not modelling the seen ones better.**
   centered residual correlations only -0.025..+0.002. Arrival-delay quintiles
   moved residual means by only a few seconds and did not justify a feature.
 
+**More from the existing adsb.lol extract (2026-10-05): five probes, all
+closed before training.** Scripts were scratch, label-free on ranking days
+unless stated.
+
+- **B6 other adsb.lol instances: nothing to add.** The releases are
+  `prod-0`, `staging-0` (same byte size every day: a mirror) and
+  `mlatonly-0` (~0.1 of the size). FlyItalyADSB and TheAirTraffic already
+  feed adsb.lol. adsb.fi is non-commercial with a live API only; ADSBHub is a
+  live exchange for feeders. No second open archive exists.
+- **B7 airborne-format points while taxiing: negligible.** Points within
+  150 ft of field elevation below 40 kt: 0-560 per airport-day, against
+  1e4-3e5 ground points; none at LEMD, LTFM, LIRF (Jul 2026). LTFM has
+  almost no points under 1,500 ft at all (35 aircraft on 2026-01-14).
+- **B8 airframe identified from the climb-out callsign: OPEN, the one live
+  lead.** Rows the matcher misses (no seen take-off roll, no ground point with
+  the departure callsign) often have an airborne climb-out within 300s of
+  MVT_TIME carrying the callsign; its icao's ground points need no callsign.
+  A first pass took the earliest point in the 4h window and found only the
+  inbound taxi-in; that was the test's fault. Run as production would
+  (`_trace_features`, last segment only) on 20 Jul 2025 days, against the
+  `adsbnbr_lgb` holdout residual: EDDF 1,693 new rows, 77% a departure
+  segment, corr(residual, first_seen - mu) +0.25, leave_stand +0.38, leave0
+  +0.35; LEBL leave_stand +0.53; EGLL leave_stand +0.48 (4% coverage); LFPG
+  20% departure segment, first_seen +0.25. **Departure-segment rows gained,
+  as a share of all DEP rows: 2026 (6 days) EDDF 26.6%, LFPG 6.1%, LEBL
+  2.8%, LIRF 2.4%; Jul 2025 EDDF 9.7%, EGLL 9.5%, LFPG 4.0%.** Larger in
+  2026 than in training, like v27's callsign fallback.
+  **Screen (2026-10-05): wins.** `validate.py --mu lgb --proxy --adsb-climb-id
+  --tag climb_lgb --compare v30_lgb` (control = HEAD, v30 defaults): robust
+  holdout -0.94, inner -0.54 (CI -1.07..+0.08), dec_jun -0.58, mar_sep -1.25;
+  **pooled robust -0.81 (CI -1.04..-0.60)**; normal rows -1.02 / -0.62 /
+  -0.80 / -1.30, above the all-row gain on every split. Top 3/10/25 rows carry
+  6-36% / 14-68% / 25-117% of the net (inner, the LTFM snow split, is the
+  concentrated one). Normal-row MSE falls at EGLL (-181..-268) and EDDF
+  (-80..-137) on all four splits, the airports the match reaches. The match
+  adds 6.5k-20k rows a month in 2025 and 8.9% of ranking DEP rows (3.9% with
+  a departure segment; EDDF 21%, LFPG 5.2%, LIRF 4.8%). On-stand points from earlier segments
+  bound the off-block only loosely (corr 0.05-0.38); a 60 -> 80 m stand
+  radius is noise except LEMD (corr +0.45, n=191).
+- **B9 why matched rows have no stand exit (Jul 2025, 3 days, 5,896 normal
+  rows): 80% start mid-taxi** (receivers do not see that apron), 13%
+  parked 65-150 m from the stand (holding spots: label 200-1,300s after
+  leaving them), 7% no stand coordinate. No radius or coordinate fix reaches
+  the bucket.
+- **B10 learned "time since stand exit" per 50 m cell** (from exit-seen
+  traces, leave-one-day-out, 20 Jul 2025 days) for the mid-taxi starts:
+  estimator RMSE 240-900 against `mu` 82-419, corr(residual, estimate - mu)
+  -0.04..+0.03 except EDDM (-0.20, n=287). `mu` is already 91-114 on these
+  rows at EDDF / EHAM / LSZH; the bucket's error is LIRF (418) and LEBL (258).
+- **B11 trace-aware tail classifier: the classifier is already right.** On
+  no-LOBT tail candidates with a stand exit seen, the label equals the exit
+  on 89% and v on 1% (17 tails in 1,252), and `adsb_first_seen` alone has AUC
+  0.75. But the current p there is 0.014-0.036, so setting those rows to `mu`
+  gains -0.01 per split (`adsbnbr_lgb` parts). At LIRF the label follows v
+  (41%), and the same rule including LIRF costs +5..+20.
+
+**N2b `--te-mean-oof-basis`: negative (2026-10-05).** v30's sibling: the
+apply-side te_* *means* were still shrunk with the full count N while fit rows
+were shrunk with their out-of-fold count, so apply means are less shrunk than
+any fit mean. The flag keeps the full-data average but weights it against the
+prior with the effective count. Shifts are small and spread (mean |shift|
+0.2-2.9s per column, p99 3-52s). `validate.py --mu lgb --proxy
+--te-mean-oof-basis --tag temean_lgb --compare v30_lgb`: **pooled robust
++0.14 (CI +0.08..+0.20)**, significantly worse on holdout, inner and mar_sep,
+normal rows worse on all four (mar_sep +0.12). The full-count mean is the
+better estimate, and its extra precision is worth more than the
+consistency. The `_n` mismatch was different: a count says how much to trust
+the mean, and there the fit-row distribution is what the trees learned.
+
 Both wide-radius re-download leads, B4 and B5, are closed by their one-day
 gates. **Off limits, recorded so nobody tries
 them:** airport operator flight APIs that publish actual off-block times

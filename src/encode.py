@@ -99,12 +99,13 @@ def _key(X, flight, cols):
 
 
 def _encode(k_fit, y, folds, k_apply, unseen_apply=None, prior_fit=None, prior_apply=None,
-            drop_fit=None, count_oof_basis=True):
+            drop_fit=None, count_oof_basis=True, mean_oof_basis=False):
     """unseen_apply: apply rows to encode as if their level were never seen,
     the way a renamed callsign is at serve time (see add_target_encodings).
     prior_fit / prior_apply: per-row prior to shrink toward (default: the global
     mean), for a hierarchical backoff. drop_fit: fit rows to encode as unseen,
-    so the model trains on the regime serving will show it."""
+    so the model trains on the regime serving will show it. mean_oof_basis:
+    shrink the apply mean with the same effective count as count_oof_basis."""
     normal = y <= TAIL_THR
     glob = y[normal].mean()
     prior_fit = np.full(len(k_fit), glob) if prior_fit is None else prior_fit
@@ -130,15 +131,22 @@ def _encode(k_fit, y, folds, k_apply, unseen_apply=None, prior_fit=None, prior_a
         fit_mean, fit_n = np.where(drop_fit, prior_fit, fit_mean), np.where(drop_fit, 0.0, fit_n)
     app_mean = smooth(s_all[c_apply], n_all[c_apply], prior_apply)
     app_n = n_all[c_apply]
+    # A fit row in fold f sees N - N_f examples of its level. The weighted
+    # average over all rows of that level is N - sum_f(N_f^2) / N.
+    sq = np.square(n).sum(axis=0)
+    effective = n_all - np.divide(sq, n_all, out=np.zeros_like(n_all), where=n_all > 0)
     if count_oof_basis:
-        # A fit row in fold f sees N - N_f examples of its level. The weighted
-        # average over all rows of that level is N - sum_f(N_f^2) / N. Use that
-        # same exposure at apply time, so the _n feature has the distribution
-        # the model saw during training. v30 showed this small consistency fix
-        # carries live; count_oof_basis=False reproduces the older full counts.
-        sq = np.square(n).sum(axis=0)
-        effective = n_all - np.divide(sq, n_all, out=np.zeros_like(n_all), where=n_all > 0)
+        # Use that same exposure at apply time, so the _n feature has the
+        # distribution the model saw during training. v30 showed this small
+        # consistency fix carries live; count_oof_basis=False reproduces the
+        # older full counts.
         app_n = effective[c_apply]
+    if mean_oof_basis:
+        # The mean beside it was still shrunk with the full count N, i.e. less
+        # than any fit row's mean ever was. Keep the full-data average but give
+        # it the effective count's weight against the prior.
+        avg = np.divide(s_all, n_all, out=np.zeros_like(s_all), where=n_all > 0)
+        app_mean = smooth(avg[c_apply] * effective[c_apply], effective[c_apply], prior_apply)
     masked = None
     if unseen_apply is not None:
         masked = (np.where(unseen_apply, prior_apply, app_mean),
@@ -195,13 +203,14 @@ def add_target_encodings(X_fit, y_fit, folds, flight_fit, X_apply, flight_apply,
                          keys=None, counts=True, fold_size=1,
                          X_apply_masked=None, flight_unseen=None,
                          flight_backoff=False, flight_dropout=0.0, airport_prior=False,
-                         count_oof_basis=True):
+                         count_oof_basis=True, mean_oof_basis=False):
     """Add te_* columns to both frames in place.
 
     keys: names from KEY_SETS' vocabulary (default: the shipped TE_KEYS).
     counts: also add the _n log-count column beside each encoding.
     count_oof_basis: give apply rows the mean count exposure seen by out-of-fold
     fit rows (the shipped v30 behavior); False restores the pre-v30 full count.
+    mean_oof_basis: shrink apply means with that same effective count.
     fold_size: months per out-of-fold block (1 = the shipped scheme).
     X_apply_masked, flight_unseen: evaluation only. X_apply_masked (a copy of
     X_apply) gets the same columns, except that on rows where flight_unseen is
@@ -221,13 +230,14 @@ def add_target_encodings(X_fit, y_fit, folds, flight_fit, X_apply, flight_apply,
     apt_fit = apt_app = None
     if airport_prior:
         (apt_fit, _), (apt_app, _), _ = _encode(_key(X_fit, flight_fit, ["ADEP_mvt"]), y_fit, ids,
-                                                _key(X_apply, flight_apply, ["ADEP_mvt"]))
+                                                _key(X_apply, flight_apply, ["ADEP_mvt"]),
+                                                mean_oof_basis=mean_oof_basis)
     back_fit, back_app = apt_fit, apt_app
     if flight_backoff:
         for cols in FLIGHT_BACKOFF:
             (back_fit, _), (back_app, _), _ = _encode(
                 _key(X_fit, flight_fit, cols), y_fit, ids, _key(X_apply, flight_apply, cols),
-                prior_fit=back_fit, prior_apply=back_app)
+                prior_fit=back_fit, prior_apply=back_app, mean_oof_basis=mean_oof_basis)
     for name in names:
         cols = ALL_KEYS[name]
         is_flight = "flight" in cols
@@ -238,7 +248,8 @@ def add_target_encodings(X_fit, y_fit, folds, flight_fit, X_apply, flight_apply,
                                              prior_fit=back_fit if is_flight else apt_fit,
                                              prior_apply=back_app if is_flight else apt_app,
                                              drop_fit=drop,
-                                             count_oof_basis=count_oof_basis)
+                                             count_oof_basis=count_oof_basis,
+                                             mean_oof_basis=mean_oof_basis)
         X_fit[name], X_apply[name] = fm, am
         if counts:
             X_fit[name + "_n"], X_apply[name + "_n"] = fn, an

@@ -68,6 +68,11 @@ ADSB_COLS = ["adsb_match", "adsb_cs_ok", "adsb_to_dt", "adsb_first_seen", "adsb_
              "adsb_gs_first", "adsb_n_ground", "adsb_cadence", "adsb_max_gap", "adsb_since_land",
              "adsb_cov_apt_day", "adsb_via_cs"]
 CS_AFTER_S = 120       # callsign fallback: ground points may end this long after MVT_TIME
+# --adsb-climb-id: the airborne climb-out carries the departure callsign even where
+# the ground points do not (none set yet, or the inbound flight's), so it names
+# the airframe; that airframe's ground points then need no callsign
+CLIMB_BEFORE_S, CLIMB_AFTER_S = 60, 300
+CLIMB_COLS = ["adsb_via_climb"]
 
 # --adsb-nbr: the traces' view of everybody else. Neighbours' trace-measured
 # taxi (stand exit, pushback, first seen) is the neighbour proxy measured
@@ -382,7 +387,52 @@ def _callsign_matches(dep, both, to):
                      on="index")
 
 
-def _day_features(dep, day, prev_pts, pts):
+def _climb_matches(dep, both, taken):
+    """Second fallback (--adsb-climb-id), for rows neither earlier match found.
+
+    An airborne point at the airport carrying this row's CALLSIGN_flt or
+    FLIGHT_mvt within CLIMB_BEFORE_S before to CLIMB_AFTER_S after MVT_TIME is
+    the climb-out; its icao is the airframe. The stand-in take-off (`to_ts`) is
+    that airframe's last ground point here between LOOKBACK_S before and
+    CS_AFTER_S after MVT_TIME, whatever callsign it carried. Rows with no such
+    ground point stay unmatched. On labelled Jul 2025 days 77% (EDDF) to 20%
+    (LFPG) of these last segments are the departure's own taxi; the rest are
+    the inbound taxi-in, which adsb_to_dt (far below zero) tells apart.
+    """
+    cols = ["index", "icao", "callsign", "to_ts", "dt", "cs_ok", "adt", "via_cs", "via_climb", "mvt_ts"]
+    air = both.loc[(both["alt"].values != -1) & both["callsign"].notna(), ["icao", "callsign", "airport", "ts"]]
+    if dep.empty or air.empty:
+        return pd.DataFrame(columns=cols)
+    air = air.assign(cs=air["callsign"].str.upper().str.strip())
+    d = dep.reset_index()
+    parts = []
+    for key in ["CALLSIGN_flt", "FLIGHT_mvt"]:
+        k = d[["index", "ADEP_mvt", "mvt_ts", key]].dropna(subset=[key])
+        k = k.assign(cs=k[key].astype(str).str.upper().str.strip())
+        parts.append(k.merge(air, left_on=["ADEP_mvt", "cs"], right_on=["airport", "cs"]))
+    m = pd.concat(parts, ignore_index=True)
+    m = m[(m["ts"] >= m["mvt_ts"] - CLIMB_BEFORE_S) & (m["ts"] <= m["mvt_ts"] + CLIMB_AFTER_S)]
+    if m.empty:
+        return pd.DataFrame(columns=cols)
+    m = m.sort_values("ts").drop_duplicates("index")[["index", "icao", "callsign", "airport", "mvt_ts"]]
+    g = both.loc[both["alt"].values == -1, ["icao", "airport", "ts"]]
+    m = m.merge(g, on=["icao", "airport"])
+    m = m[(m["ts"] >= m["mvt_ts"] - LOOKBACK_S) & (m["ts"] <= m["mvt_ts"] + CS_AFTER_S)]
+    if m.empty:
+        return pd.DataFrame(columns=cols)
+    m = m.groupby(["index", "icao"], as_index=False).agg(
+        to_ts=("ts", "max"), mvt_ts=("mvt_ts", "first"), callsign=("callsign", "first"))
+    m = m.drop_duplicates("index")
+    # an airframe segment already matched to another row is that row's
+    m = m[~m.set_index(["icao", "to_ts"]).index.isin(taken)]
+    m = m.drop_duplicates(["icao", "to_ts"])
+    m["dt"] = m["to_ts"] - m["mvt_ts"]
+    m["adt"], m["cs_ok"], m["via_cs"], m["via_climb"] = m["dt"].abs(), 1, 0, 1
+    out = dep.loc[m["index"]].reset_index().drop(columns=["mvt_ts"], errors="ignore")
+    return out.merge(m[cols], on="index")
+
+
+def _day_features(dep, day, prev_pts, pts, climb=False):
     """ADS-B columns for the DEP rows taking off on `day`."""
     both = pd.concat([p for p in (prev_pts, pts) if p is not None], ignore_index=True)
     both = both.sort_values(["icao", "ts"], kind="stable").reset_index(drop=True)
@@ -402,6 +452,11 @@ def _day_features(dep, day, prev_pts, pts):
     cand["via_cs"] = 0
     cand = pd.concat([cand, _callsign_matches(dep[~dep.index.isin(cand["index"])], both, to)],
                      ignore_index=True)
+    if climb:
+        cand["via_climb"] = 0
+        taken = pd.MultiIndex.from_arrays([cand["icao"], cand["to_ts"].astype(float)])
+        cand = pd.concat([cand, _climb_matches(dep[~dep.index.isin(cand["index"])], both, taken)],
+                         ignore_index=True)
     series = _ground_series(both)
     lands = {k: (g["ts"].to_numpy(float), g["airport"].to_numpy())
              for k, g in _landings(both).groupby("icao", sort=False)}
@@ -409,6 +464,8 @@ def _day_features(dep, day, prev_pts, pts):
     for r in cand.itertuples():
         f = {"index": r.index, "adsb_match": 1, "adsb_cs_ok": r.cs_ok, "adsb_to_dt": r.dt,
              "adsb_via_cs": r.via_cs}
+        if climb:
+            f["adsb_via_climb"] = r.via_climb
         ld = lands.get(r.icao)
         if ld is not None:
             # the same airframe's last touchdown here, over this day and the one before
@@ -422,8 +479,8 @@ def _day_features(dep, day, prev_pts, pts):
                 f.update(tf)
         f["_icao"] = r.icao
         rows.append(f)
-    out = pd.DataFrame(rows, columns=["index"] + ADSB_COLS + ["_icao"]).set_index("index")
-    return out
+    out = pd.DataFrame(rows, columns=["index"] + ADSB_COLS + (CLIMB_COLS if climb else []) + ["_icao"])
+    return out.set_index("index")
 
 
 def _stand_xy(apt):
@@ -544,10 +601,11 @@ def _cache_key(days_needed):
     return hashlib.sha256(src.replace(b"\r\n", b"\n")).hexdigest()[:16]
 
 
-def dep_features(raw, tag):
+def dep_features(raw, tag, climb=False):
     """ADSB_COLS + ADSB_NBR_COLS for every row of `raw` (a training month or ranking.parquet);
     NaN on ARR rows, on DEP rows without a matched trace, and on days whose
-    archive has not been fetched (adsb_match = 0 only where the day exists)."""
+    archive has not been fetched (adsb_match = 0 only where the day exists).
+    climb=True adds the climb-out airframe match and CLIMB_COLS (--adsb-climb-id)."""
     import aptdat
     dep = raw[raw["PHASE_mvt"] == "DEP"][["ADEP_mvt", "STAND_mvt", "MVT_TIME_UTC_mvt",
                                           "CALLSIGN_flt", "FLIGHT_mvt", "RUNWAY_mvt"]].copy()
@@ -557,7 +615,7 @@ def dep_features(raw, tag):
     days = sorted(dep["day"].unique())
     prev = {d: (pd.Timestamp(d) - pd.Timedelta(days=1)).strftime("%Y-%m-%d") for d in days}
     key = _cache_key(sorted(set(days) | set(prev.values())))
-    cache = CACHE_DIR / f"{tag}.{key}.parquet"
+    cache = CACHE_DIR / f"{tag}{'.climb' if climb else ''}.{key}.parquet"
     if cache.exists():
         return pd.read_parquet(cache).reindex(raw.index)
     dep[["stand_lat", "stand_lon"]] = aptdat.lookup(dep["ADEP_mvt"], dep["STAND_mvt"]).to_numpy()
@@ -568,7 +626,7 @@ def dep_features(raw, tag):
             continue
         today = dep[dep["day"] == d]
         pp = _load_points(prev[d])
-        f = _day_features(today, d, pp, pts).reindex(today.index)
+        f = _day_features(today, d, pp, pts, climb=climb).reindex(today.index)
         both = pd.concat([x for x in (pp, pts) if x is not None], ignore_index=True)
         surf = _surface(both, today, f["_icao"])
         f = pd.concat([f.drop(columns="_icao"), surf], axis=1)
@@ -581,8 +639,10 @@ def dep_features(raw, tag):
         f["adsb_cov_apt_day"] = f["adsb_match"].groupby(today["ADEP_mvt"]).transform("mean")
         # an hour the archive does not cover has no surface to count
         f.loc[f["adsb_match"].isna(), SURF_COLS] = np.nan
+        if climb:
+            f["adsb_via_climb"] = f["adsb_via_climb"].fillna(0).where(f["adsb_match"].notna())
         parts.append(f)
-    cols = ADSB_COLS + ADSB_NBR_COLS
+    cols = ADSB_COLS + ADSB_NBR_COLS + (CLIMB_COLS if climb else [])
     feats = (pd.concat(parts) if parts else pd.DataFrame(columns=cols)).reindex(dep.index)
     feats[NBR_COLS] = _neighbours(dep, feats)
     feats = feats[cols].reindex(raw.index).astype("float32")

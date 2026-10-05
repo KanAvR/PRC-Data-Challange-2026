@@ -110,6 +110,34 @@ class CountBasisTest(unittest.TestCase):
                              keys=["te_stand"], count_oof_basis=False)
         self.assertAlmostEqual(app["te_stand_n"].iloc[0], np.log1p(6))
 
+    def test_mean_basis_shrinks_with_the_effective_count(self):
+        fit, app, off = frame(6), frame(1), frame(1)
+        y = np.arange(6, dtype=float) + 600
+        folds = np.array(["m1", "m1", "m1", "m2", "m2", "m3"])
+        flights = np.array(["A_F"] * 6)
+        add_target_encodings(fit.copy(), y, folds, flights, off, np.array(["A_F"]), keys=["te_stand"])
+        add_target_encodings(fit, y, folds, flights, app, np.array(["A_F"]), keys=["te_stand"],
+                             mean_oof_basis=True)
+        prior, eff = y.mean(), 11 / 3
+        # full-data average, weighted against the prior as if seen eff times
+        self.assertAlmostEqual(app["te_stand"].iloc[0], (prior * eff + PRIOR_WEIGHT * prior) / (eff + PRIOR_WEIGHT))
+        self.assertAlmostEqual(off["te_stand"].iloc[0], (y.sum() + PRIOR_WEIGHT * prior) / (6 + PRIOR_WEIGHT))
+        # fit rows and counts are untouched
+        self.assertAlmostEqual(app["te_stand_n"].iloc[0], off["te_stand_n"].iloc[0])
+
+    def test_mean_basis_pulls_toward_the_prior(self):
+        fit = pd.concat([frame(6), frame(6).assign(ADEP_STAND="A_2")], ignore_index=True)
+        y = np.r_[np.full(6, 600.0), np.full(6, 1800.0)]
+        folds = np.array(["m1", "m1", "m1", "m2", "m2", "m3"] * 2)
+        flights = np.array(["A_F"] * 12)
+        on, off = frame(1), frame(1)
+        add_target_encodings(fit.copy(), y, folds, flights, off, np.array(["A_F"]), keys=["te_stand"])
+        add_target_encodings(fit, y, folds, flights, on, np.array(["A_F"]), keys=["te_stand"],
+                             mean_oof_basis=True)
+        prior = 1200.0
+        self.assertLess(abs(on["te_stand"].iloc[0] - prior), abs(off["te_stand"].iloc[0] - prior))
+        self.assertAlmostEqual(on["te_stand"].iloc[0], (600 * 11 / 3 + PRIOR_WEIGHT * prior) / (11 / 3 + PRIOR_WEIGHT))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -94,6 +94,27 @@ class MatchTest(unittest.TestCase):
         # a different callsign finds nothing
         self.assertEqual(len(_day_features(self.dep(MVT, "OTHER9"), "2025-06-15", None, pts)), 0)
 
+    def test_climb_out_names_the_airframe(self):
+        pts = trace()
+        # ground points carry no callsign and the runway end is not seen; the
+        # climb-out (airborne, with the callsign) is
+        pts = pts[(pts.alt != -1) | (pts.gs < 100)].copy()
+        pts.loc[pts.alt == -1, "callsign"] = None
+        self.assertEqual(len(_day_features(self.dep(MVT, "KLM1"), "2025-06-15", None, pts)), 0)
+        out = _day_features(self.dep(MVT, "KLM1"), "2025-06-15", None, pts, climb=True)
+        self.assertEqual(out.loc[7, "adsb_via_climb"], 1)
+        self.assertEqual(out.loc[7, "adsb_via_cs"], 0)
+        self.assertAlmostEqual(out.loc[7, "adsb_first_seen"], MVT - T0)
+        self.assertAlmostEqual(out.loc[7, "adsb_leave_stand"], MVT - (PUSH + 50))
+        # a climb-out with another callsign names nothing
+        self.assertEqual(len(_day_features(self.dep(MVT, "OTHER9"), "2025-06-15", None, pts, climb=True)), 0)
+
+    def test_climb_flag_leaves_earlier_matches_alone(self):
+        a = _day_features(self.dep(MVT, "KLM1"), "2025-06-15", None, trace())
+        b = _day_features(self.dep(MVT, "KLM1"), "2025-06-15", None, trace(), climb=True)
+        self.assertEqual(b.loc[7, "adsb_via_climb"], 0)
+        pd.testing.assert_frame_equal(a, b.drop(columns="adsb_via_climb"))
+
     def test_callsign_preferred(self):
         pts = pd.concat([trace("aaa111", "OTHER"), trace("bbb222", "KLM1")])
         pts.loc[pts.icao == "aaa111", "ts"] += 5    # closer in time, wrong callsign

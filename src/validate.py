@@ -323,7 +323,8 @@ def main():
         ap.error("--mask-flight needs the mu models, not a saved mu")
 
     print("Loading training data and building features...", flush=True)
-    X, y, meta = load_training(adsb=args.adsb, climb=args.adsb_climb_id)
+    X, y, meta = load_training(adsb=args.adsb, climb=args.adsb_climb_id,
+                               climb_nbr_clean=args.adsb_climb_nbr_clean)
     if not args.proxy:
         X = drop_proxy(X)
     if not args.arvt:

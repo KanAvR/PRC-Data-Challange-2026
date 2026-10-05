@@ -30,7 +30,7 @@ def month_of(path):
     return re.search(r"training_(\d{4}-\d{2})", path).group(1)
 
 
-def load_training(adsb=False, timings=None, climb=False):
+def load_training(adsb=False, timings=None, climb=False, climb_nbr_clean=False):
     """Features, target and per-row metadata for every training DEP row.
 
     adsb=True appends each departure's own-trace columns (adsb.ADSB_COLS);
@@ -52,7 +52,11 @@ def load_training(adsb=False, timings=None, climb=False):
         if adsb:
             with measure(f"{prefix}.adsb_features"):
                 import adsb as _adsb
-                feats = feats.join(_adsb.dep_features(df, pathlib.Path(f).stem, climb=climb))
+                af = _adsb.dep_features(df, pathlib.Path(f).stem, climb=climb)
+                if climb and climb_nbr_clean:
+                    from climbnbr import clean_neighbours
+                    af = clean_neighbours(df, af)
+                feats = feats.join(af)
         with measure(f"{prefix}.extract"):
             xs.append(feats.loc[dep])
             ys.append(df.loc[dep, "TAXITIME_SEC_mvt"].astype(float))

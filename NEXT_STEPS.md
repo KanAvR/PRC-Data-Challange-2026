@@ -75,13 +75,19 @@ default afterwards); sha256 prefix `978eef415fb508ce`. Upload log:
 negatives). Against v28's file: mean |change| 16.5s, top-10 rows 2.6% of the
 squared change; rows matched by the climb-out with a departure segment moved
 59.4s on average, the rest 13.5s; EDDF moved most (30.7s). Expected live
-roughly -0.5 to -1 (offline -0.81; 3.9% of ranking rows gain a departure
-segment, against ~4-10% of 2025 rows).
+about -0.8: the four-split normal-row MSE gain (-378) reweighted per airport
+by the 2026/2025 departure-segment coverage ratio is unchanged (EDDF's rise
+offsets EGLL's fall). By row type (`climb_lgb` vs `v30_lgb`, normal-row MSE
+per split): climb rows with a departure segment -215..-260, climb rows whose
+last segment is the inbound taxi-in -183..-300 (the arrival time is
+informative), untouched rows **+38..+143 on all four splits**, which led to
+`--adsb-climb-nbr-clean` below.
 
 **The runtime-profiling refactor (`a2c609c`) is prediction-neutral.** The fast
-build `predict.py --mu lgb --clf-pooled lgb --clf-nolobt lgb --no-te --proxy`
-at `519b157` (before it) and at `91ef6a8`: 0 of 344,841 rows differ (one
-machine). `2d2f888` makes `runtime_profile.py` importable on Windows (no
+build `predict.py --mu lgb --clf-pooled lgb --clf-nolobt lgb --proxy` at
+`519b157` (before it) and at HEAD (with this session's `encode.py` change and
+off-by-default flags): 0 of 344,841 rows differ, with target encoding on and
+with `--no-te` (one machine). `2d2f888` makes `runtime_profile.py` importable on Windows (no
 `resource` module there; peak RSS reported as NaN).
 
 **v30: -0.3350 live against -0.03 pooled all-row offline** (and -0.3334
@@ -771,6 +777,17 @@ ground receivers the archive does not have. Error after the climb-out match
 no-LOBT tail 31.8% (536 rows, RMSE 7,150), trace without exit 25.5% (195),
 exit seen 3.8% (113); normal-row share LIRF 34.1%, LTFM 19.7%, LFPG 14.1%,
 EGLL 11.4%.
+
+**B15 `--adsb-climb-nbr-clean`: negative (2026-10-06).** Climb-out matches whose
+last ground segment ends > 300s before take-off (the inbound taxi-in) put
+arrival-time `adsb_first_seen` values into everyone's neighbour means (July
+2025: `adsb_nbr_first_apt_prev30` mean 1,099s -> 731s without them, 43k rows
+changed). `src/climbnbr.py` recomputes `adsb.NBR_COLS` without them (exact to
+float32 rounding when nothing is filtered). Against `climb_lgb`: robust
+holdout +0.07, inner +0.42, dec_jun -0.24 (significant), mar_sep +0.04;
+**pooled robust +0.06 (CI -0.07..+0.23)**. The untouched-row drift on
+`climb_lgb` is not this pollution; at +0.1-0.3 RMSE per split it is within
+run-to-run model variance. Off.
 
 **B14 LEMD climb-out after the altitude fix: not worth a re-download.** The
 shipped extract has no LEMD airborne points (the old 1,500 ft MSL cut), so

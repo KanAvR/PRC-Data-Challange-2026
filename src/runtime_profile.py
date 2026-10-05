@@ -9,14 +9,20 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
-import resource
 import sys
 import time
+
+try:
+    import resource
+except ImportError:  # Windows has no resource module; predict.py must still run there
+    resource = None
 
 
 def _rss_mb():
     # Linux reports ru_maxrss in KiB. This repository's supported long-run
     # environment is Linux; keep the conversion explicit in the JSON schema.
+    if resource is None:
+        return float("nan")
     return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0
 
 

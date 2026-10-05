@@ -56,6 +56,9 @@ def main():
             train_data = adsb.drop_adsb_nbr(train_data)
         if args.lobt_bounds:
             check_lobt_support(y_train, train_data["gap_LOBT_flt"].values)
+        if args.adsb and args.trace_te:
+            from tracete import add_trace_encodings
+            add_trace_encodings(train_data, meta["date"].values)
     print("Training rows:", len(train_data))
 
     print("Loading ranking data and building features...", flush=True)
@@ -84,6 +87,9 @@ def main():
             ranking_dep = drop_dest(ranking_dep)
         if args.adsb and not args.adsb_nbr:
             ranking_dep = adsb.drop_adsb_nbr(ranking_dep)
+        if args.adsb and args.trace_te:
+            dates = pd.to_datetime(ranking_raw.loc[dep_mask, "MVT_TIME_UTC_mvt"], utc=True).dt.strftime("%Y-%m-%d")
+            add_trace_encodings(ranking_dep, dates.values)
         ranking_ids = ranking_raw.loc[dep_mask, "MVT_ID_mvt"].values
 
     with timings.stage("features.align_categoricals"):

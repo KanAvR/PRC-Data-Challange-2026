@@ -662,6 +662,10 @@ def add_model_args(ap):
                     help="named set of target-encoding keys (encode.KEY_SETS)")
     ap.add_argument("--te-counts", action=argparse.BooleanOptionalAction, default=True,
                     help="add the _n log-count column beside each encoding")
+    ap.add_argument("--trace-te", action=argparse.BooleanOptionalAction, default=False,
+                    help="with --adsb, add the mean own-trace stand exit of the other departures "
+                         "from the same runway in the same UTC hour of the day (tracete.py); "
+                         "label-free, so built the same way on ranking rows")
     ap.add_argument("--te-prior-weight", type=float, default=None, metavar="K",
                     help="target-encoding shrinkage toward the prior (default: encode.PRIOR_WEIGHT, "
                          "10, tuned before the ADS-B features existed)")

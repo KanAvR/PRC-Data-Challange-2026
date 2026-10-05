@@ -744,6 +744,36 @@ unless stated.
   gains -0.01 per split (`adsbnbr_lgb` parts). At LIRF the label follows v
   (41%), and the same rule including LIRF costs +5..+20.
 
+**B12 rows still unmatched with `--adsb-climb-id`: matching is exhausted.**
+On 2026-01-14 and 07-15 (3,547 unmatched DEP rows): no airborne point at all
+1,087 (LEMD 452, airborne cut at extraction; LTFM 628), climb-out seen with the
+right callsign but no ground point for that airframe 759 (LIRF 360, LFPG 296),
+only other aircraft's climb-outs 1,699 (LTFM 891, LFPG 451), and **callsign
+normalisation (spaces, leading zeros) would add 2 rows**. What is left needs
+ground receivers the archive does not have. Error after the climb-out match
+(`climb_lgb`, four splits): normal no trace 37.2% of squared error (RMSE 243),
+no-LOBT tail 31.8% (536 rows, RMSE 7,150), trace without exit 25.5% (195),
+exit seen 3.8% (113); normal-row share LIRF 34.1%, LTFM 19.7%, LFPG 14.1%,
+EGLL 11.4%.
+
+**B13 `--trace-te`: not established (2026-10-06).** Label-free "encodings" of
+the own-trace stand exits of other flights (`src/tracete.py`): mean
+`adsb_leave_stand` of the other departures from the same runway in the same
+UTC hour of the day, with its count. Residual check against `climb_lgb`
+(normal rows without an own exit, centred within airport) was the only
+consistent one among eight keys: +0.033 / +0.015 / +0.017 / +0.020; month-level
+stand, stand-runway and airline means were -0.014..+0.007. Screen against
+`climb_lgb`: robust holdout -0.03, inner -0.08, dec_jun -0.11, mar_sep -0.04,
+**pooled robust -0.07 (CI -0.18..+0.05)**; normal rows +0.03 / -0.11 / -0.23 /
+-0.13. Off by default, like Q4 (-0.16 offline, noise live).
+
+**`PRIOR_WEIGHT` re-tuned with the trace features: 10 stays (2026-10-06).**
+`--te-prior-weight K` (new flag), tuned on inner + dec_jun against
+`v30_lgb`: K=5 pooled robust **+0.36** (CI +0.00..+0.79), inner +0.81
+significantly worse; K=20 **+0.23** (CI +0.06..+0.43), inner +0.36
+significantly worse. Both sides of 10 lose, as before the traces; holdout and
+mar_sep were not run.
+
 **N2b `--te-mean-oof-basis`: negative (2026-10-05).** v30's sibling: the
 apply-side te_* *means* were still shrunk with the full count N while fit rows
 were shrunk with their out-of-fold count, so apply means are less shrunk than

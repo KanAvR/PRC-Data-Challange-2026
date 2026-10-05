@@ -337,6 +337,9 @@ def main():
     if args.adsb and not args.adsb_nbr:
         import adsb
         X = adsb.drop_adsb_nbr(X)
+    if args.adsb and args.trace_te:
+        from tracete import add_trace_encodings
+        add_trace_encodings(X, meta["date"].values)
 
     out = OUT_DIR / args.tag
     out.mkdir(parents=True, exist_ok=True)

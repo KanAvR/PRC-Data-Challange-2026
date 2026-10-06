@@ -883,6 +883,14 @@ LIRF no-LOBT tail candidates (736 rows, 429 tail) carry **23.2% of all
 validation squared error** and the 25 tail rows with v <= 6000 another 14%:
 the residual mass is still the recording-mode problem B17 closed.
 
+**B22 per-airport CatBoost at 5000 iterations (N3b, 2026-10-06): small,
+consistent gain.** `--pa-cat-iterations 5000` (shipped 2000, never swept),
+`validate.py --mu pa ... --tag pa5k_climb` against `pa_climb`, blended post
+hoc with the shipped clip/weight: holdout (global 0.25 lgb + 0.75 cat) -0.14
+normal rows, 9 of 10 airports better (LIRF the exception); mar_sep (global
+lgb) -0.16, 10 of 10. `pa` alone -0.05 / -0.15. Tree-count polish like v25/v32;
+fold into the next full build rather than spend a slot on it alone.
+
 **B19 per-airport blend clip/weight after the traces: shipped values stay
 (2026-10-06).** `validate.py --mu pa --proxy --adsb-climb-id --splits holdout
 mar_sep --tag pa_climb`, blended post hoc into saved globals. `pa` alone is now

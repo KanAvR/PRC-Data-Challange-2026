@@ -854,6 +854,16 @@ June/December 2025 (June artefacts with the aircraft on stand hours before
 SCHED), and every variant's RMSE effect sits inside the +/-2 per-split noise
 of a few hundred heavy-tailed rows. Not a large lever; all three flags off.
 
+**B23 `--lgb-linear-tree`: negative (2026-10-07).** LightGBM `linear_tree`
+(linear_lambda 1.0, output clipped to [0, 7200]) for the `lgb` member, idea from
+public READMEs (local gains on weaker bases). `validate.py --mu lgb
+--lgb-linear-tree --lgb-rounds 900 --no-clf-inbound --proxy --adsb-climb-id
+--tag linear_lgb --compare climb_lgb`: **pooled robust +3.54 (CI
++2.96..+4.20)**, significantly worse on all four splits, normal rows +3.83 /
++2.89 / +5.92 / +3.52. With 511 leaves the per-leaf ridge fits overfit; our
+mixture and trace features already supply the "label ~ gap + offset" shape
+those teams were reaching for. Off; not worth retrying.
+
 **Screening controls after the v33 defaults (2026-10-07).** `climb_lgb`, the
 control for B13-B22, predates the new defaults (`--clf-inbound`, LightGBM 1200).
 A screen compared against it must pass `--lgb-rounds 900 --no-clf-inbound`, or

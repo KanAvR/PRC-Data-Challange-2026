@@ -73,6 +73,12 @@ CS_AFTER_S = 120       # callsign fallback: ground points may end this long afte
 # the airframe; that airframe's ground points then need no callsign
 CLIMB_BEFORE_S, CLIMB_AFTER_S = 60, 300
 CLIMB_COLS = ["adsb_via_climb"]
+# --adsb-pos: where on the airport the trace's last segment starts (metres east /
+# north of the reference point) and how much ground path it covers. A trace that
+# starts mid-taxi (80% of matched rows without a stand exit, B9) says how far
+# along the route the aircraft already was; the trees learn per location how long
+# that took. Another team found removing first-point lat/lon cost 1.54 live
+POS_COLS = ["adsb_x0", "adsb_y0", "adsb_path_m"]
 
 # --adsb-nbr: the traces' view of everybody else. Neighbours' trace-measured
 # taxi (stand exit, pushback, first seen) is the neighbour proxy measured
@@ -319,6 +325,10 @@ def _trace_features(series, to_ts, ref, apt, stand_lat, stand_lon):
     f = dict(adsb_first_seen=ref - ts[0], adsb_gs_first=gs[0], adsb_n_ground=len(ts),
              adsb_cadence=np.median(np.diff(ts)) if len(ts) > 1 else np.nan,
              adsb_max_gap=np.max(np.diff(ts)) if len(ts) > 1 else np.nan)
+    la0, lo0 = APT[apt]
+    f["adsb_x0"] = (lon[0] - lo0) * 111200.0 * np.cos(np.radians(la0))
+    f["adsb_y0"] = (lat[0] - la0) * 111200.0
+    f["adsb_path_m"] = float(np.sum(_dist_m(lat[1:], lon[1:], lat[:-1], lon[:-1]))) if len(ts) > 1 else 0.0
     d0 = _dist_m(lat, lon, lat[0], lon[0])
     mv = np.where(d0 > 30)[0]
     f["adsb_leave0"] = ref - ts[mv[0]] if (len(mv) and gs[0] < 3) else np.nan
@@ -479,7 +489,8 @@ def _day_features(dep, day, prev_pts, pts, climb=False):
                 f.update(tf)
         f["_icao"] = r.icao
         rows.append(f)
-    out = pd.DataFrame(rows, columns=["index"] + ADSB_COLS + (CLIMB_COLS if climb else []) + ["_icao"])
+    out = pd.DataFrame(rows, columns=["index"] + ADSB_COLS + POS_COLS + (CLIMB_COLS if climb else [])
+                       + ["_icao"])
     return out.set_index("index")
 
 
@@ -592,6 +603,11 @@ def drop_adsb_nbr(frame):
     return frame.drop(columns=[c for c in ADSB_NBR_COLS if c in frame.columns])
 
 
+def drop_adsb_pos(frame):
+    """The --no-adsb-pos arm: same cache, without POS_COLS."""
+    return frame.drop(columns=[c for c in POS_COLS if c in frame.columns])
+
+
 def _cache_key(days_needed):
     import aptdat
     src = pathlib.Path(__file__).read_bytes() + pathlib.Path(aptdat.__file__).read_bytes()
@@ -642,8 +658,8 @@ def dep_features(raw, tag, climb=False):
         if climb:
             f["adsb_via_climb"] = f["adsb_via_climb"].fillna(0).where(f["adsb_match"].notna())
         parts.append(f)
-    cols = ADSB_COLS + ADSB_NBR_COLS + (CLIMB_COLS if climb else [])
-    feats = (pd.concat(parts) if parts else pd.DataFrame(columns=cols)).reindex(dep.index)
+    cols = ADSB_COLS + ADSB_NBR_COLS + POS_COLS + (CLIMB_COLS if climb else [])
+    feats =(pd.concat(parts) if parts else pd.DataFrame(columns=cols)).reindex(dep.index)
     feats[NBR_COLS] = _neighbours(dep, feats)
     feats = feats[cols].reindex(raw.index).astype("float32")
     CACHE_DIR.mkdir(parents=True, exist_ok=True)

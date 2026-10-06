@@ -56,6 +56,9 @@ def main():
         if args.adsb and not args.adsb_nbr:
             import adsb
             train_data = adsb.drop_adsb_nbr(train_data)
+        if args.adsb and not args.adsb_pos:
+            import adsb
+            train_data = adsb.drop_adsb_pos(train_data)
         if args.lobt_bounds:
             check_lobt_support(y_train, train_data["gap_LOBT_flt"].values)
         if args.adsb and args.trace_te:
@@ -92,6 +95,8 @@ def main():
             ranking_dep = drop_dest(ranking_dep)
         if args.adsb and not args.adsb_nbr:
             ranking_dep = adsb.drop_adsb_nbr(ranking_dep)
+        if args.adsb and not args.adsb_pos:
+            ranking_dep = adsb.drop_adsb_pos(ranking_dep)
         if args.adsb and args.trace_te:
             dates = pd.to_datetime(ranking_raw.loc[dep_mask, "MVT_TIME_UTC_mvt"], utc=True).dt.strftime("%Y-%m-%d")
             add_trace_encodings(ranking_dep, dates.values)

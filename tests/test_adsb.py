@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from adsb import ADSB_COLS, NBR_COLS, SURF_COLS, _day_features, _neighbours, _surface, _trace_features
+from adsb import APT, ADSB_COLS, NBR_COLS, POS_COLS, SURF_COLS, _day_features, _neighbours, _surface, _trace_features
 from aptdat import _base, norm_stand
 
 STAND = (52.3100, 4.7600)
@@ -53,6 +53,15 @@ class TraceFeatureTest(unittest.TestCase):
         # first point beyond 30 m of the first position: PUSH+30 (40 m)
         self.assertAlmostEqual(f["adsb_leave0"], MVT - (PUSH + 30))
 
+    def test_start_position_and_path(self):
+        f = _trace_features(self.series(), TO, MVT, "EHAM", *STAND)
+        la0, lo0 = APT["EHAM"]
+        self.assertAlmostEqual(f["adsb_y0"], (STAND[0] - la0) * 111200.0, places=3)
+        self.assertAlmostEqual(f["adsb_x0"], (STAND[1] - lo0) * 111200.0 * np.cos(np.radians(la0)), places=3)
+        # ~10 m per 10 s from PUSH to TO, along a meridian
+        n_moving = len(np.arange(PUSH, TO + 1, 10.0))
+        self.assertAlmostEqual(f["adsb_path_m"], n_moving * 10.0, delta=1.0)
+
     def test_other_airport_ignored(self):
         self.assertIsNone(_trace_features(self.series(), TO, MVT, "EDDF", *STAND))
 
@@ -65,7 +74,7 @@ class MatchTest(unittest.TestCase):
 
     def test_match_and_columns(self):
         out = _day_features(self.dep(MVT, "KLM1"), "2025-06-15", None, trace())
-        self.assertEqual([c for c in out.columns if c != "_icao"], ADSB_COLS)
+        self.assertEqual([c for c in out.columns if c != "_icao"], ADSB_COLS + POS_COLS)
         self.assertEqual(out.loc[7, "_icao"], "abc123")
         self.assertEqual(out.loc[7, "adsb_match"], 1)
         self.assertEqual(out.loc[7, "adsb_cs_ok"], 1)

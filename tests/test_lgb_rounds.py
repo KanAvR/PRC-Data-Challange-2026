@@ -12,7 +12,7 @@ import model
 
 class LgbRoundsTest(unittest.TestCase):
     def tearDown(self):
-        model.LGB_MU_ROUNDS = 900
+        model.LGB_MU_ROUNDS = 1200
 
     def parse(self, argv):
         ap = argparse.ArgumentParser()
@@ -21,9 +21,11 @@ class LgbRoundsTest(unittest.TestCase):
         model.apply_model_args(args)
         return args
 
-    def test_default_keeps_900(self):
-        self.parse([])
-        self.assertEqual(model.LGB_MU_ROUNDS, 900)
+    def test_defaults_follow_v33(self):
+        args = self.parse([])
+        self.assertEqual(model.LGB_MU_ROUNDS, 1200)
+        self.assertEqual(model.CAT_MU_PARAMS["iterations"], 10000)
+        self.assertTrue(args.adsb_climb_id and args.clf_inbound)
 
     def test_flag_sets_rounds_used_by_train_mu(self):
         self.parse(["--lgb-rounds", "7"])

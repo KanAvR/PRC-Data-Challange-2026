@@ -43,7 +43,8 @@ record. Anything that ships lives in `src/`.
 | v29 | ours: v28 + `--adsb-offset-te` (trace-offset encodings) | 237.0468 (-0.0016: noise) |
 | v30 | ours: v28 + OOF-equivalent target-encoding counts | 236.7134 |
 | v31 | ours: v30 + `--adsb-climb-id` (airframe named by the climb-out callsign) | 235.9474 |
-| **v32** | **ours: v31 + CatBoost 10000 / LightGBM 1200 for the 12-month fit** | **235.5782** |
+| v32 | ours: v31 + CatBoost 10000 / LightGBM 1200 for the 12-month fit | 235.5782 |
+| **v33** | **ours: v32 + `--clf-inbound` (late inbound -> LIRF schedule-copy tail; first partial-success submission)** | **233.3269** |
 
 **Team best is v30 (236.7134, 2026-09-30)**: `predict.py --mu lgb cat cat_note
 cat_ctr1 pa --proxy --adsb --adsb-nbr --te-count-oof-basis` at `832a01a`,
@@ -71,7 +72,7 @@ default afterwards); sha256 prefix `978eef415fb508ce`. Upload log:
 | v30 | `832a01a` | `--adsb --adsb-nbr --te-count-oof-basis --out output/submitting_n2_v30.parquet` | `77d6830d239e81b2` | **236.7134** | **-0.3350 vs v28** |
 | v31 | `a870e8a` | `--mu lgb cat cat_note cat_ctr1 pa --proxy --adsb-climb-id --out output/submitting_v31_climb.parquet` | `40128a07813b1a60` | **235.9474** | **-0.7660 vs v30** (offline -0.81: ~0.95x) |
 | v32 | `8720cc5` | v31's command `--cat-iterations 10000 --lgb-rounds 1200 --out output/submitting_v32_trees.parquet` | `d6500f2cd4cfac0f` | **235.5782** | **-0.3692 vs v31** (expected -0.2..-0.4; v25's tree step -0.37) |
-| (v33 candidate) | `f6b8f3d` | v32's command `--clf-inbound --reuse-mu-parts output/submitting_v32_trees.parts.parquet --out output/submitting_v33_inbound.parquet` | `393a7d576b63f6ce` | -- | partial success B17 (pooled -0.89, holdout -3.26); tail only, submit once |
+| v33 | `f6b8f3d` | v32's command `--clf-inbound --reuse-mu-parts output/submitting_v32_trees.parts.parquet --out output/submitting_v33_inbound.parquet` | `393a7d576b63f6ce` | **233.3269** | **-2.2513 vs v32** (offline pooled -0.89, holdout -3.26: ~2.5x) |
 
 
 **v32 (2026-10-06): 235.5782, -0.3692 against v31, team best.** v31 plus the Q5 final
@@ -151,7 +152,10 @@ gain was our proxy signal at a fifth of the weight (section 5, "Porting v19").
 (pooled point estimate negative, better on three of four splits or clearly on
 holdout) may be submitted to test them live; only a live win makes them a
 default. Rules in `AGENTS.md`, "Partial successes get a submission too". First
-candidate under it: `--clf-inbound` (B17) as v33.
+candidate under it: `--clf-inbound` (B17) as v33: **233.3269, -2.25 live**
+against an offline pooled -0.89 whose interval crossed zero and one split
+(dec_jun +0.73) was worse. Concentrated (top 10 rows 42% of the squared
+change), so no per-row inference and no live re-tuning; it is now a default.
 
 ### v20: recipe, transfer, reproducibility
 

@@ -133,7 +133,10 @@ Flags that stay off by default are kept as the record of measured negatives:
 | v27 | v26 + callsign match where the take-off roll is not seen | 237.866 |
 | **v28** | **v27 + neighbours' trace-measured taxi and surface traffic** | **237.048** |
 | v29 | v28 + trace-offset encodings (`--adsb-offset-te`; -0.002, noise, kept off) | 237.047 |
-| **v30** | **v28 + OOF-equivalent target-encoding count basis** | **236.7134** |
+| v30 | v28 + OOF-equivalent target-encoding count basis | 236.7134 |
+| v31 | v30 + climb-out callsign names the airframe (`--adsb-climb-id`) | 235.9474 |
+| v32 | v31 + CatBoost 10,000 / LightGBM 1,200 for the 12-month fit | 235.5782 |
+| **v33** | **v32 + late-inbound signal in the no-flight-plan tail classifier** | **233.3269** |
 
 Offline gains do not always carry over:
 
@@ -187,15 +190,22 @@ predictions as `<tag>_unmasked`. Judge encoding and key changes on both.
 ## Run
 
 ```bash
-# Reproduce v30: train on all twelve months and score the ranking set (several
-# hours; fetch the ADS-B days first, see Setup). The ADS-B trace features and
-# their neighbour/surface columns, the tail cap, the flight backoff/dropout and
-# 6,000 CatBoost iterations are defaults. v30 was built at 832a01a with
-# --te-count-oof-basis explicit; it is now the default. Add
-# --no-te-count-oof-basis for v28's count behavior; add --adsb-offset-te as well
-# for v29. Earlier versions are recorded in NEXT_STEPS.md and in --help.
+# Reproduce v33: train on all twelve months and score the ranking set (several
+# hours; fetch the ADS-B days first, see Setup). The ADS-B trace features, their
+# neighbour/surface columns and the climb-out match, the late-inbound tail
+# classifier, the tail cap, the flight backoff/dropout, 10,000 CatBoost
+# iterations and 1,200 LightGBM rounds are defaults. v33 was built from v32's
+# mu with --reuse-mu-parts (exact: it reproduces v32 with 0 rows different).
+# --no-clf-inbound gives v32; add --cat-iterations 6000 --lgb-rounds 900 for
+# v31, and --no-adsb-climb-id as well for v30. Earlier versions are recorded in
+# NEXT_STEPS.md and in --help.
 .venv/bin/python src/predict.py --mu lgb cat cat_note cat_ctr1 pa --proxy \
-    --out output/submitting_v30.parquet
+    --out output/submitting_v33.parquet
+
+# Tail-only change: reuse a finished build's mu and retrain only the tail models
+# (minutes). Check it reproduces that build before shipping from it.
+.venv/bin/python src/predict.py --mu lgb cat cat_note cat_ctr1 pa --proxy \
+    --reuse-mu-parts output/submitting_v32.parts.parquet --out output/submitting_v33.parquet
 
 # Profile a run without changing its model or predictions. The JSON is updated
 # after every stage, so a failed long run still shows where its time went.

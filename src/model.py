@@ -170,8 +170,9 @@ def seasonal_weight(train_months, valid_months, tau):
 
 # 900 came from early stopping on inner (8 months). With the trace features the
 # optimum moved to a 1200-1500 plateau (Q5: inner best 1200, holdout 1500, -0.10 /
-# -0.15 normal rows), so --lgb-rounds can raise it; the default keeps v31.
-LGB_MU_ROUNDS = 900
+# -0.15 normal rows). v32 took 1200 live (with CatBoost 10000): -0.37, so it is
+# the default; --lgb-rounds 900 reproduces v31.
+LGB_MU_ROUNDS = 1200
 
 
 # --lgb-linear-tree: leaves fit a ridge model on the numeric features instead of
@@ -365,8 +366,9 @@ CAT_MU_PARAMS = dict(
 # CAT_MU_PARAMS' 3000 came from early stopping on the inner split (8 training
 # months). The optimum grows with the data (4000 at 8 months, still falling at
 # 6000 with 10), and the submission fits on 12, so --cat-iterations defaults to
-# this. Swept 2026-09-24; v25 took it live, -0.37.
-CAT_FULL_FIT_ITERATIONS = 6000
+# this. Swept 2026-09-24; v25 took it live, -0.37. With the trace features
+# holdout still fell at 10000 (Q5); v32 took 10000 live, -0.37 with LightGBM 1200.
+CAT_FULL_FIT_ITERATIONS = 10000
 
 XGB_MU_PARAMS = dict(
     objective="reg:squarederror", eval_metric="rmse", tree_method="hist",
@@ -774,12 +776,13 @@ def add_model_args(ap):
     ap.add_argument("--cat-iterations", type=int, default=CAT_FULL_FIT_ITERATIONS, metavar="N",
                     help="iterations for the cat and cat_note families (cat_ctr1 and the per-airport "
                          "CatBoost set their own). The best count grows with training size: ~4000 "
-                         "at 8 months, still falling at 6000 with 10. v25: -0.37 live. "
-                         "--cat-iterations 3000 reproduces v24")
+                         "at 8 months, still falling at 6000 with 10. v25 (6000): -0.37 live; "
+                         "v32 (10000): -0.37 live. --cat-iterations 6000 reproduces v25-v31, "
+                         "3000 reproduces v24")
     ap.add_argument("--lgb-rounds", type=int, default=LGB_MU_ROUNDS, metavar="N",
                     help="boosting rounds for the lgb mu family (the per-airport family sets its "
                          "own). 900 was tuned before the trace features; Q5 puts the optimum on a "
-                         "1200-1500 plateau")
+                         "1200-1500 plateau; v32 took 1200 live. 900 reproduces v31 and earlier")
     ap.add_argument("--lgb-linear-tree", action=argparse.BooleanOptionalAction, default=False,
                     help="fit linear models in the lgb mu family's leaves (LightGBM linear_tree), "
                          "output clipped to [0, 1.2 x TAIL_THR]")
@@ -808,10 +811,11 @@ def add_model_args(ap):
                          "airport and runway scope, and aircraft taxiing / holding in the 10-20 "
                          "min before take-off. Built with --adsb; this flag only chooses whether "
                          "the models see them. v28: -0.82 live. --no-adsb-nbr reproduces v27")
-    ap.add_argument("--adsb-climb-id", action=argparse.BooleanOptionalAction, default=False,
+    ap.add_argument("--adsb-climb-id", action=argparse.BooleanOptionalAction, default=True,
                     help="with --adsb, also match rows by the airborne climb-out: its callsign names "
                          "the airframe, whose ground points then need no callsign "
-                         "(adsb._climb_matches; NEXT_STEPS.md, B8)")
+                         "(adsb._climb_matches; NEXT_STEPS.md, B8). v31: -0.77 live; "
+                         "--no-adsb-climb-id reproduces v30")
     ap.add_argument("--adsb-pos", action=argparse.BooleanOptionalAction, default=False,
                     help="with --adsb, also give mu where the trace's last ground segment starts "
                          "(metres from the airport reference) and its path length (adsb.POS_COLS). "
@@ -836,10 +840,11 @@ def add_model_args(ap):
                     help="named set of target-encoding keys (encode.KEY_SETS)")
     ap.add_argument("--te-counts", action=argparse.BooleanOptionalAction, default=True,
                     help="add the _n log-count column beside each encoding")
-    ap.add_argument("--clf-inbound", action=argparse.BooleanOptionalAction, default=False,
+    ap.add_argument("--clf-inbound", action=argparse.BooleanOptionalAction, default=True,
                     help="give the no-LOBT tail classifier the stand's previous arrival relative to "
                          "the scheduled departure (model.INBOUND_COLS): late inbound aircraft make "
-                         "LIRF record the scheduled time as block time")
+                         "LIRF record the scheduled time as block time. v33: -2.25 live; "
+                         "--no-clf-inbound reproduces v32")
     ap.add_argument("--clf-inbound-mono", action=argparse.BooleanOptionalAction, default=False,
                     help="with --clf-inbound, use only the 'after the scheduled departure' columns "
                          "and constrain p to rise with them (model.INBOUND_MONO)")

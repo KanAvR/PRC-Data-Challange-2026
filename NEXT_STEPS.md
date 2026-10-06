@@ -857,6 +857,21 @@ part of which is model variance. Row changes nearly cancel (~173k better,
 ~171k worse per split); top 25 rows carry 47-72% of the net. Built as the v34
 candidate (full run: it changes `mu`).
 
+**B21 schedule-copy mixture (`--mu lgb_schedmix`, then `--lirf-schedmix`),
+2026-10-06.** Idea from outgoing-boat's README: p = P(|y - gap_SCHED| <= 60s)
+from a classifier, a regressor fitted without those rows, E[y] = p * gap_SCHED +
+(1 - p) * m0. Unlike our closed test (section 5, which blended an all-row `mu`
+toward gap_SCHED and so counted the copies twice). All airports, against
+`climb_lgb`: **pooled robust -0.27 (CI -0.72..+0.20), not established**;
+normal rows -0.55 / -0.15 / -1.27 / -1.10. Per airport it is two results: LIRF
+normal-row MSE -3,278..-7,433 on all four splits, every other airport
++130..+317. Post hoc, LIRF only (the record had already said only LIRF keeps
+copies on delayed departures): normal rows -0.93 / -0.93 / -1.55 / -1.66, all
+rows -0.35 / -0.59 / -0.16 / -0.86, ~14.0k LIRF rows better vs ~12.4k worse per
+split; top 10 rows carry 35-53% of the net (inner 99%). `--lirf-schedmix`
+wraps every family that way (LIRF copies left out of each fit, one classifier on
+LIRF normal rows); its own four-split screen is running as `lirfmix_lgb`.
+
 **B18 day-level bias seen through the stand exits: negative (2026-10-06).**
 Airport-day mean residual is 2.2% of normal-row SSE (`climb_lgb`, four
 splits). On airport-days with >= 20 exit-seen and >= 20 other normal rows

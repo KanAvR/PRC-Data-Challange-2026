@@ -68,6 +68,17 @@ default afterwards); sha256 prefix `978eef415fb508ce`. Upload log:
 | v29 | `494fc53` | `--adsb --adsb-nbr --adsb-offset-te --out output/submitting_adsb4.parquet` | `f5fb76e5adbecc06` | 237.0468 | -0.0016 vs v28 |
 | v30 | `832a01a` | `--adsb --adsb-nbr --te-count-oof-basis --out output/submitting_n2_v30.parquet` | `77d6830d239e81b2` | **236.7134** | **-0.3350 vs v28** |
 | (v31 candidate, not uploaded) | `a870e8a` | `--mu lgb cat cat_note cat_ctr1 pa --proxy --adsb-climb-id --out output/submitting_v31_climb.parquet` | `40128a07813b1a60` | -- | offline -0.81 pooled robust vs v30 recipe |
+| (v32 candidate, not uploaded) | `8720cc5` | v31's command `--cat-iterations 10000 --lgb-rounds 1200 --out output/submitting_v32_trees.parquet` | `d6500f2cd4cfac0f` | -- | v31 + Q5 tree counts; expected -0.2..-0.4 vs v31 |
+
+
+**v32 candidate (built 2026-10-06, not uploaded):** v31 plus the Q5 final
+polish: `cat`/`cat_note` at 10000 iterations (holdout's 10-month curve was
+still falling at 10000; the 12-month fit has more data, so the top of the swept
+range, picked from the trend, not by a live score) and LightGBM at 1200 (the
+plateau middle). Verified against the template. Against v31: p, v and the
+specialist identical, `mu` sd of change 4.25s (v25's tree step: 5.6s), mean
+|change| 2.5s, 1/99% -10/+12.5s, no row > 500s, top 10 rows 1.9% of the
+squared change. v25's comparable step gave -0.37 live; guess -0.2..-0.4.
 
 **v31 candidate (built 2026-10-06, not uploaded):** v30's defaults plus
 `--adsb-climb-id` (B8). 4h52m on a 16-core Windows machine. Verified against

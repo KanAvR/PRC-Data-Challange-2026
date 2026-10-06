@@ -73,6 +73,7 @@ default afterwards); sha256 prefix `978eef415fb508ce`. Upload log:
 | v31 | `a870e8a` | `--mu lgb cat cat_note cat_ctr1 pa --proxy --adsb-climb-id --out output/submitting_v31_climb.parquet` | `40128a07813b1a60` | **235.9474** | **-0.7660 vs v30** (offline -0.81: ~0.95x) |
 | v32 | `8720cc5` | v31's command `--cat-iterations 10000 --lgb-rounds 1200 --out output/submitting_v32_trees.parquet` | `d6500f2cd4cfac0f` | **235.5782** | **-0.3692 vs v31** (expected -0.2..-0.4; v25's tree step -0.37) |
 | v33 | `f6b8f3d` | v32's command `--clf-inbound --reuse-mu-parts output/submitting_v32_trees.parts.parquet --out output/submitting_v33_inbound.parquet` | `393a7d576b63f6ce` | **233.3269** | **-2.2513 vs v32** (offline pooled -0.89, holdout -3.26: ~2.5x) |
+| v34 | `1389b9c` | v33's defaults `--clf-inbound-air --reuse-mu-parts output/submitting_v32_trees.parts.parquet --out output/submitting_v35_inbair.parquet` (file named v35, uploaded as v34) | `80fa9189a6037418` | 235.4040 | **+2.0771 vs v33: lost**; dec_jun +5.71 offline was the real signal |
 
 
 **v32 (2026-10-06): 235.5782, -0.3692 against v31, team best.** v31 plus the Q5 final
@@ -156,6 +157,11 @@ candidate under it: `--clf-inbound` (B17) as v33: **233.3269, -2.25 live**
 against an offline pooled -0.89 whose interval crossed zero and one split
 (dec_jun +0.73) was worse. Concentrated (top 10 rows 42% of the squared
 change), so no per-row inference and no live re-tuning; it is now a default.
+Second: `--clf-inbound-air` as v34 (holdout -4.51, inner -1.01, mar_sep -1.71,
+but dec_jun **+5.71**): **235.4040, +2.08 against v33. Lost.** The disqualifier
+for a split significantly and heavily worse held. Top 10 rows carried 64% of
+its change against v33 (26 rows moved > 1000s), so no per-row inference; the
+flag stays off, and no adjusted copy of it is to be submitted.
 
 ### v20: recipe, transfer, reproducibility
 

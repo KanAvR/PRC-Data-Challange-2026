@@ -81,7 +81,10 @@ offsets EGLL's fall). By row type (`climb_lgb` vs `v30_lgb`, normal-row MSE
 per split): climb rows with a departure segment -215..-260, climb rows whose
 last segment is the inbound taxi-in -183..-300 (the arrival time is
 informative), untouched rows **+38..+143 on all four splits**, which led to
-`--adsb-climb-nbr-clean` below.
+`--adsb-climb-nbr-clean` below. **It carries into CatBoost:** `validate.py --mu
+cat --proxy --splits holdout`, `v30_cat_ho` against `climb_cat_ho`: all rows
+-1.13, normal rows **-1.43** (mu alone -1.38), against LightGBM's -1.02 on the
+same split; normal-row MSE EGLL -265, LIRF -142, EDDF -131, LFPG +26.
 
 **The runtime-profiling refactor (`a2c609c`) is prediction-neutral.** The fast
 build `predict.py --mu lgb --clf-pooled lgb --clf-nolobt lgb --proxy` at

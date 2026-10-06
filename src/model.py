@@ -530,6 +530,49 @@ def trace_anchored(train_fn):
     return fit
 
 
+# --lirf-schedmix: lgb_schedmix restricted to LIRF, for every family. Screened as
+# lgb_schedmix (all airports) it won at LIRF on all four splits and lost at every
+# other airport; the record already said only LIRF keeps copied block times on
+# delayed departures (NEXT_STEPS.md section 5). So each family drops LIRF's copy
+# rows from its fit (labelled above TAIL_THR, which every family excludes), a
+# classifier on LIRF's normal rows gives p(copy), and LIRF rows are predicted as
+# p * gap_SCHED + (1 - p) * family. Other airports are unchanged in form.
+SCHEDMIX_AIRPORT = "LIRF"
+
+
+class _SchedMixed:
+    def __init__(self, model, clf):
+        self.model, self.clf = model, clf
+
+    def predict(self, X):
+        base = np.asarray(self.model.predict(X), dtype=float)
+        g = X["gap_SCHED_TIME_UTC_mvt"].to_numpy(dtype=float)
+        sel = (X["ADEP_mvt"].astype(str).to_numpy() == SCHEDMIX_AIRPORT) & np.isfinite(g)
+        if sel.any():
+            p = self.clf.predict(X.loc[sel])
+            base = base.copy()
+            base[sel] = p * np.clip(g[sel], 0, None) + (1 - p) * base[sel]
+        return base
+
+
+def sched_copy_rows(X, y):
+    g = X["gap_SCHED_TIME_UTC_mvt"].to_numpy(dtype=float)
+    return ((X["ADEP_mvt"].astype(str).to_numpy() == SCHEDMIX_AIRPORT) & (y <= TAIL_THR)
+            & np.isfinite(g) & (np.abs(y - np.nan_to_num(g)) <= SCHED_COPY_S))
+
+
+def lirf_schedmixed(train_fn, clf_rounds=400):
+    def fit(X, y, **kw):
+        copy = sched_copy_rows(X, y)
+        lirf = (X["ADEP_mvt"].astype(str).to_numpy() == SCHEDMIX_AIRPORT) & (y <= TAIL_THR)
+        clf = lgb.train(SCHED_CLF_PARAMS, lgb.Dataset(X[lirf], label=copy[lirf].astype(int),
+                                                       categorical_feature=CAT_COLS),
+                        num_boost_round=clf_rounds)
+        y_fit = np.where(copy, TAIL_THR + 1.0, y)
+        return _SchedMixed(train_fn(X, y_fit, **kw), clf)
+    return fit
+
+
 MU_FAMILIES = {"lgb": train_mu, "cat": train_mu_cat, "xgb": train_mu_xgb,
                "cat_note": train_mu_cat_note, "cat_ctr1": train_mu_cat_ctr1,
                "lgb_nocat": train_mu_nocat, "lgb_anchor": train_mu_anchor,
@@ -740,6 +783,10 @@ def add_model_args(ap):
     ap.add_argument("--lgb-linear-tree", action=argparse.BooleanOptionalAction, default=False,
                     help="fit linear models in the lgb mu family's leaves (LightGBM linear_tree), "
                          "output clipped to [0, 1.2 x TAIL_THR]")
+    ap.add_argument("--lirf-schedmix", action=argparse.BooleanOptionalAction, default=False,
+                    help="every mu family: at LIRF, mix gap_SCHED (block time copied from the "
+                         "schedule) with a regressor fitted without those copies, weighted by a "
+                         "classifier's p (model.lirf_schedmixed)")
     ap.add_argument("--pa-cat-iterations", type=int, default=None, metavar="N",
                     help="iterations for the per-airport CatBoost (default: "
                          "per_airport.CAT_ITERATIONS, 2000; never swept, lead N3b)")

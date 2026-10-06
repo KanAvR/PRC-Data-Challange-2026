@@ -19,7 +19,7 @@ from high_lobt import APPLY_GAP_SEC, train_high_lobt
 from encode import KEY_SETS, add_offset_encodings, add_target_encodings
 from featcache import build_features_cached
 from features import drop_arvt, drop_dest, drop_episode, drop_mixed, drop_proxy
-from model import (MU_FAMILIES, trace_anchored, apply_model_args, add_model_args, analytic_tail_value, combine,
+from model import (MU_FAMILIES, trace_anchored, lirf_schedmixed, apply_model_args, add_model_args, analytic_tail_value, combine,
                    combine_mu,
                    predict_tail_proba, tail_options, train_tail_clf)
 from runtime_profile import RuntimeProfile
@@ -141,6 +141,8 @@ def main():
         for fam in args.mu:
             print(f"Training normal-regime regressor ({fam}) on all data...", flush=True)
             fit = trace_anchored(MU_FAMILIES[fam]) if args.adsb_anchor else MU_FAMILIES[fam]
+            if args.lirf_schedmix:
+                fit = lirf_schedmixed(fit)
             with timings.stage(f"mu.{fam}.fit"):
                 model = fit(train_data, y_train)
             with timings.stage(f"mu.{fam}.predict"):

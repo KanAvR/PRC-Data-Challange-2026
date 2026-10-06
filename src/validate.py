@@ -37,7 +37,7 @@ from constraints import check_lobt_support, project_lobt
 from high_lobt import APPLY_GAP_SEC, train_high_lobt
 from encode import KEY_SETS, add_offset_encodings, add_target_encodings
 from resproxy import RES_PROXY_COLS, add_residual_proxy
-from model import (MU_FAMILIES, trace_anchored, apply_model_args, seasonal_weight, TAIL_THR, add_model_args, combine_mu,
+from model import (MU_FAMILIES, trace_anchored, lirf_schedmixed, apply_model_args, seasonal_weight, TAIL_THR, add_model_args, combine_mu,
                    analytic_tail_value, combine, day_late_step_weight, day_late_weight,
                    predict_tail_proba, tail_options, train_tail_clf)
 
@@ -157,6 +157,8 @@ def run_split(name, X, y, meta, args, rates=None):
                 kw["weight"] = seasonal_weight(meta.loc[tr, "month"].values,
                                                spec["valid"], args.season_tau)
             fit = trace_anchored(MU_FAMILIES[fam]) if args.adsb_anchor else MU_FAMILIES[fam]
+            if args.lirf_schedmix:
+                fit = lirf_schedmixed(fit)
             model = fit(X_tr, y_tr, **kw)
             mus[f"mu_{fam}"] = np.clip(model.predict(X_va), 0, None)
             if X_va_m is not None:

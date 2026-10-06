@@ -168,7 +168,14 @@ def seasonal_weight(train_months, valid_months, tau):
     return w / w.mean()
 
 
-def train_mu(X, y, num_boost_round=900, monotone=False, weight=None):
+# 900 came from early stopping on inner (8 months). With the trace features the
+# optimum moved to a 1200-1500 plateau (Q5: inner best 1200, holdout 1500, -0.10 /
+# -0.15 normal rows), so --lgb-rounds can raise it; the default keeps v31.
+LGB_MU_ROUNDS = 900
+
+
+def train_mu(X, y, num_boost_round=None, monotone=False, weight=None):
+    num_boost_round = num_boost_round or LGB_MU_ROUNDS
     normal = y <= TAIL_THR
     ds = lgb.Dataset(X[normal], label=y[normal], categorical_feature=CAT_COLS,
                      weight=None if weight is None else np.asarray(weight)[normal])
@@ -668,6 +675,10 @@ def add_model_args(ap):
                          "CatBoost set their own). The best count grows with training size: ~4000 "
                          "at 8 months, still falling at 6000 with 10. v25: -0.37 live. "
                          "--cat-iterations 3000 reproduces v24")
+    ap.add_argument("--lgb-rounds", type=int, default=LGB_MU_ROUNDS, metavar="N",
+                    help="boosting rounds for the lgb mu family (the per-airport family sets its "
+                         "own). 900 was tuned before the trace features; Q5 puts the optimum on a "
+                         "1200-1500 plateau")
     ap.add_argument("--episode", action=argparse.BooleanOptionalAction, default=False,
                     help="use the long-taxi episode features (features.EPISODE_COLS): matched "
                          "neighbours' uncapped LOBT gaps. Built unconditionally like --proxy")
@@ -776,6 +787,8 @@ def add_model_args(ap):
 def apply_model_args(args):
     """Module-level settings that add_model_args exposes. Call once after parsing."""
     CAT_MU_PARAMS["iterations"] = args.cat_iterations
+    global LGB_MU_ROUNDS
+    LGB_MU_ROUNDS = getattr(args, "lgb_rounds", LGB_MU_ROUNDS)
     if getattr(args, "te_prior_weight", None) is not None:
         import encode  # encode imports model, so not at module level
         encode.PRIOR_WEIGHT = args.te_prior_weight

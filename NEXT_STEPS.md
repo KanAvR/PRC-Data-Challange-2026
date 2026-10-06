@@ -854,6 +854,11 @@ June/December 2025 (June artefacts with the aircraft on stand hours before
 SCHED), and every variant's RMSE effect sits inside the +/-2 per-split noise
 of a few hundred heavy-tailed rows. Not a large lever; all three flags off.
 
+**Screening controls after the v33 defaults (2026-10-07).** `climb_lgb`, the
+control for B13-B22, predates the new defaults (`--clf-inbound`, LightGBM 1200).
+A screen compared against it must pass `--lgb-rounds 900 --no-clf-inbound`, or
+build a fresh control on the new defaults.
+
 **B20 `--adsb-pos`: wins (2026-10-06).** Idea from outgoing-boat's public
 README (removing first-point lat/lon cost them 1.54 live); re-derived here.
 `adsb.POS_COLS`: where the trace's last ground segment starts (metres east /

@@ -146,6 +146,12 @@ gain was our proxy signal at a fifth of the weight (section 5, "Porting v19").
 
 **Check `submission.py list` for the next free number** before uploading.
 
+**Submission policy loosened (team decision 2026-10-06):** partial successes
+(pooled point estimate negative, better on three of four splits or clearly on
+holdout) may be submitted to test them live; only a live win makes them a
+default. Rules in `AGENTS.md`, "Partial successes get a submission too". First
+candidate under it: `--clf-inbound` (B17) as v33.
+
 ### v20: recipe, transfer, reproducibility
 
 - Recipe: `predict.py --mu lgb cat cat_note cat_ctr1 pa --proxy`. `--lobt-bounds`

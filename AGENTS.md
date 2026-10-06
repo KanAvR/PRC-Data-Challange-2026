@@ -219,6 +219,36 @@ research challenge.
   row-level diff against the previous submission.
 - Test one change per submission. Bundled changes cannot be attributed.
 
+### Partial successes get a submission too (team decision 2026-10-06)
+
+The validation rule above decides what becomes a **default**. It is not the
+bar for what may be **submitted**. Only the best submission counts, so a live
+loss costs one slot, and the leaderboard is an exact test on the scored rows,
+which offline validation is not. Strict gating has left measured gains unused:
+`--clf-inbound` was -3.26 on holdout (significant) and better on three of four
+splits, but stayed off because its pooled interval crossed zero.
+
+- **Eligible for a submission:** a flag whose pooled point estimate is
+  negative and which is better on at least three of four splits, or clearly
+  better on holdout (the split built like the ranking set), even when the
+  pooled interval crosses zero or one split is mildly worse. A split
+  *significantly* worse by a large margin (e.g. `--clf-inbound-air`, dec_jun
+  +5.71) still disqualifies it.
+- **Promotion to a default still needs the live score.** A partial success that
+  wins live becomes a default under "Defaults follow the leaderboard"; one that
+  loses stays off and is recorded with its live number.
+- **Everything else still holds:** generated from committed `src/` (rule 1),
+  one change per submission, verified before upload, and recorded in
+  `NEXT_STEPS.md` section 1.
+- **The ethics rules do not loosen.** A change concentrated in a few rows (top
+  10 rows carrying most of the squared change, typical of tail-classifier
+  flags) is submitted **once**, as validated on 2025 data, and never re-tuned
+  from its live score. If it loses, try a *different* validated variant (e.g.
+  `--clf-inbound-mono` after `--clf-inbound`), not an adjusted copy.
+- **Rank candidates by expected gain per slot and per hour**, cheapest first.
+  A tail-only flag can be built in minutes with `predict.py --reuse-mu-parts`
+  (below) instead of a multi-hour full run.
+
 ## Git
 
 - Never use `git add -A`, `git add .` or `git commit -a`; name the paths you
@@ -234,6 +264,9 @@ research challenge.
 ## Cheap experiment patterns, use them before paying for a full run
 
 - `validate.py --reuse-mu TAG` retrains only the tail parts against a saved `mu`.
+- `predict.py --reuse-mu-parts <out>.parts.parquet` does the same for a
+  submission: `mu` from a saved build with the same `mu` flags, tail models
+  retrained. Check it reproduces the saved build exactly before shipping from it.
 - `blend.py` re-scores saved runs without retraining (`--tail-cap`,
   `--day-late-step`), and can swap `mu` members between runs.
 - `validate.py --mask-flight` runs 2026-like and January-like in one training

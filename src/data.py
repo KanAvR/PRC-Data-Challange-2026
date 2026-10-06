@@ -30,7 +30,7 @@ def month_of(path):
     return re.search(r"training_(\d{4}-\d{2})", path).group(1)
 
 
-def load_training(adsb=False, timings=None, climb=False, climb_nbr_clean=False):
+def load_training(adsb=False, timings=None, climb=False, climb_nbr_clean=False, inbound_air=False):
     """Features, target and per-row metadata for every training DEP row.
 
     adsb=True appends each departure's own-trace columns (adsb.ADSB_COLS);
@@ -70,6 +70,10 @@ def load_training(adsb=False, timings=None, climb=False, climb_nbr_clean=False):
                 # encodings (resproxy.py); metadata never reaches a model
                 "t": mvt_seconds(df.loc[dep]),
             }))
+            if inbound_air:
+                # tail-classifier input only (--clf-inbound-air), kept out of X
+                import inbound as _inbound
+                metas[-1][_inbound.COL] = _inbound.air_arrival(df, pathlib.Path(f).stem).loc[dep].values
     with measure("training.concat_and_filter"):
         X = pd.concat(xs, ignore_index=True)
         y = pd.concat(ys, ignore_index=True).values

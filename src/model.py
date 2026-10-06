@@ -519,19 +519,37 @@ class _CatClf:
         return self.model.predict_proba(_as_catboost(X)[0])[:, 1]
 
 
-def _fit_seeds_cat(X, label, cols, iterations=None, weight=None):
+def _fit_seeds_cat(X, label, cols, iterations=None, weight=None, monotone=None):
     """CatBoost's ordered boosting is built to resist the target leakage that makes
-    the LightGBM classifier memorise its few hundred positives."""
+    the LightGBM classifier memorise its few hundred positives. monotone: {column:
+    +1/-1} constraints on numeric columns."""
     from catboost import CatBoostClassifier, Pool
     Xc, cats = _as_catboost(X[cols])
     pool = Pool(Xc, label, cat_features=cats, weight=weight)
     params = dict(CAT_CLF_PARAMS, **({"iterations": iterations} if iterations else {}))
+    if monotone:
+        params["monotone_constraints"] = [monotone.get(c, 0) for c in cols]
     return [_CatClf(CatBoostClassifier(**params, random_seed=s).fit(pool))
             for s in range(N_SEEDS)]
 
 
-CLF_FAMILIES = {"lgb": lambda X, label, cols, weight=None: _fit_seeds(X, label, cols, 300, weight),
-                "cat": lambda X, label, cols, weight=None: _fit_seeds_cat(X, label, cols, weight=weight)}
+def _fit_seeds_mono(X, label, cols, weight=None, monotone=None):
+    """LightGBM seeds with optional monotone constraints."""
+    if not monotone:
+        return _fit_seeds(X, label, cols, 300, weight)
+    cats = [c for c in CAT_COLS if c in cols]
+    ds = lgb.Dataset(X[cols], label=label, categorical_feature=cats, weight=weight, free_raw_data=False)
+    ds.construct()
+    mono = [monotone.get(c, 0) for c in cols]
+    return [lgb.train(dict(CLF_PARAMS, seed=s, bagging_seed=s, feature_fraction_seed=s,
+                           monotone_constraints=mono), ds, num_boost_round=300)
+            for s in range(N_SEEDS)]
+
+
+CLF_FAMILIES = {"lgb": lambda X, label, cols, weight=None, monotone=None:
+                _fit_seeds_mono(X, label, cols, weight, monotone),
+                "cat": lambda X, label, cols, weight=None, monotone=None:
+                _fit_seeds_cat(X, label, cols, weight=weight, monotone=monotone)}
 
 
 # p only matters where v exceeds TAIL_THR: combine() gates v back to mu below
@@ -562,7 +580,9 @@ def _stakes_weights(X, y, v, clip):
 # 0.5-2h before (NEXT_STEPS.md, B17). Both inputs are provided columns, built the
 # same way on ranking rows: how long after the scheduled departure the stand's
 # previous arrival blocked in.
-INBOUND_COLS = ["secs_since_prev_arr_block", "inbound_after_sched"]
+# --clf-inbound-air adds the airframe's own trace arrival (inbound.COL), passed
+# in by the caller from meta; _usable skips it when absent
+INBOUND_COLS = ["secs_since_prev_arr_block", "inbound_after_sched", "inbound_air_after_sched"]
 
 
 def with_inbound(X):
@@ -571,12 +591,22 @@ def with_inbound(X):
                     - X["secs_since_prev_arr_block"].astype(float))
 
 
-def train_tail_clf(X, y, pooled="lgb", no_lobt="lgb", stakes=0.0, fit_pooled=True, inbound=False):
+# --clf-inbound-mono: the late-inbound direction is physics, so impose it. Left
+# free, the classifier fitted a non-monotone shape on the ~400 LIRF candidates
+# of the dec_jun split (a 4.7h-late inbound lowered p 0.84 -> 0.45) and that
+# split lost +5.7 (NEXT_STEPS.md, B17).
+INBOUND_MONO = {"inbound_after_sched": 1, "inbound_air_after_sched": 1}
+
+
+def train_tail_clf(X, y, pooled="lgb", no_lobt="lgb", stakes=0.0, fit_pooled=True, inbound=False,
+                   inbound_mono=False):
     label = (y > TAIL_THR).astype(int)
     pooled_cols = _usable(TAIL_FEATURES, X)
     if inbound:
         X = with_inbound(X)
-    absent_cols = _usable(NO_LOBT_FEATURES + (INBOUND_COLS if inbound else []), X)
+    extra = list(INBOUND_MONO) if (inbound and inbound_mono) else (INBOUND_COLS if inbound else [])
+    absent_cols = _usable(NO_LOBT_FEATURES + extra, X)
+    mono = INBOUND_MONO if (inbound and inbound_mono) else None
     absent = ~_has_lobt(X)
     if stakes:
         v = analytic_tail_value(X)
@@ -592,7 +622,7 @@ def train_tail_clf(X, y, pooled="lgb", no_lobt="lgb", stakes=0.0, fit_pooled=Tru
                                         weight(sel_pooled)) if fit_pooled else [],
                    pooled_cols, pooled),
         "no_lobt": (CLF_FAMILIES[no_lobt](X[sel_absent], label[sel_absent], absent_cols,
-                                          weight(sel_absent)), absent_cols, no_lobt),
+                                          weight(sel_absent), monotone=mono), absent_cols, no_lobt),
         "q_day": fit_day_late_rate(X, y),
         "q_day_steps": fit_day_late_steps(X, y),
     }
@@ -684,6 +714,12 @@ def add_model_args(ap):
                     help="give the no-LOBT tail classifier the stand's previous arrival relative to "
                          "the scheduled departure (model.INBOUND_COLS): late inbound aircraft make "
                          "LIRF record the scheduled time as block time")
+    ap.add_argument("--clf-inbound-mono", action=argparse.BooleanOptionalAction, default=False,
+                    help="with --clf-inbound, use only the 'after the scheduled departure' columns "
+                         "and constrain p to rise with them (model.INBOUND_MONO)")
+    ap.add_argument("--clf-inbound-air", action=argparse.BooleanOptionalAction, default=False,
+                    help="with --clf-inbound, also give the no-LOBT tail classifier the departing "
+                         "airframe's own trace arrival relative to the scheduled departure (inbound.py)")
     ap.add_argument("--adsb-climb-nbr-clean", action=argparse.BooleanOptionalAction, default=False,
                     help="with --adsb-climb-id, leave climb-out matches whose last ground segment is "
                          "the inbound taxi-in out of the neighbour means (climbnbr.py)")

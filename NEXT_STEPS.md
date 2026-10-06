@@ -803,6 +803,25 @@ holdout **-3.26** (CI -6.21..-0.61), inner -0.22, dec_jun +0.73, mar_sep -0.80;
 top 10 rows carry 80% (holdout) to several times the net. Within LIRF
 candidates AUC 0.839->0.880, 0.847->0.857, 0.809->0.789 (dec_jun),
 0.880->0.893; log-loss better on three of four. Off by default.
+Strengthened twice against the same `clfbase` (2026-10-06):
+`--clf-inbound-air` adds the departing airframe's own trace arrival
+(`src/inbound.py`: climb-out or ground callsign -> icao -> its last airborne
+point near the airport > 20 min before take-off, minus SCHED; no-LOBT rows only,
+carried in `meta` so mu never sees it; reproduces the probe table exactly;
+coverage on LIRF candidates 70-84% in summer 2025, 5-27% in winter, 56% on the
+ranking rows): robust holdout **-4.51** (CI -7.40..-1.71), inner -1.01,
+mar_sep -1.71, but **dec_jun +5.71 (significantly worse)**; pooled -0.25.
+dec_jun trains without Jun/Jul/Dec/Jan, where most LIRF coverage is, and the
+free classifier fitted a non-monotone shape (a 4.7h-late inbound on an
+artefact row lowered p 0.84 -> 0.45). `--clf-inbound-mono` keeps only the two
+"after SCHED" columns and constrains p to rise with them: holdout -1.40,
+inner -0.01, dec_jun -0.72, mar_sep +0.14; **pooled -0.54 (CI -1.58..+0.45)**.
+LIRF-candidate AUC base / inbound / +air / mono: holdout .839/.880/.882/.870,
+inner .847/.857/.867/.852, **dec_jun .809/.789/.782/.792**, mar_sep
+.880/.893/.895/.894. The mechanism is real on average but does not hold in
+June/December 2025 (June artefacts with the aircraft on stand hours before
+SCHED), and every variant's RMSE effect sits inside the +/-2 per-split noise
+of a few hundred heavy-tailed rows. Not a large lever; all three flags off.
 
 **B16 airborne arrival time for climb-identified rows without ground points:
 no signal.** Rows the matchers miss but whose climb-out names the airframe

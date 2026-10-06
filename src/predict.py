@@ -40,7 +40,8 @@ def main():
 
     print("Loading training data and building features...", flush=True)
     train_data, y_train, meta = load_training(adsb=args.adsb, timings=timings, climb=args.adsb_climb_id,
-                                              climb_nbr_clean=args.adsb_climb_nbr_clean)
+                                              climb_nbr_clean=args.adsb_climb_nbr_clean,
+                                              inbound_air=args.clf_inbound and args.clf_inbound_air)
     with timings.stage("training.select_features"):
         if not args.proxy:
             train_data = drop_proxy(train_data)
@@ -132,12 +133,20 @@ def main():
 
     print("Training tail classifier on all data...", flush=True)
     with timings.stage("tail_classifier.fit"):
-        clf = train_tail_clf(train_data, y_train, pooled=args.clf_pooled, no_lobt=args.clf_nolobt,
-                             stakes=args.stakes, fit_pooled=not args.high_lobt, inbound=args.clf_inbound)
+        clf_train, clf_rank = train_data, ranking_dep
+        if "inbound_air_after_sched" in meta.columns:
+            # the airframe's trace arrival reaches the tail classifier only, never mu
+            import inbound
+            clf_train = train_data.assign(inbound_air_after_sched=meta["inbound_air_after_sched"].values)
+            clf_rank = ranking_dep.assign(inbound_air_after_sched=inbound.air_arrival(
+                ranking_raw, "ranking").loc[dep_mask].values)
+        clf = train_tail_clf(clf_train, y_train, pooled=args.clf_pooled, no_lobt=args.clf_nolobt,
+                             stakes=args.stakes, fit_pooled=not args.high_lobt, inbound=args.clf_inbound,
+                             inbound_mono=args.clf_inbound_mono)
 
     print("Predicting on ranking DEP rows...")
     with timings.stage("tail_classifier.predict"):
-        p = predict_tail_proba(clf, ranking_dep)
+        p = predict_tail_proba(clf, clf_rank)
     with timings.stage("tail.combine_and_constrain"):
         tail_kw = tail_options(args, clf, ranking_dep)
         q_day = tail_kw.get("q_day")

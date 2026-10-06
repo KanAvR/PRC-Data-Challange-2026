@@ -19,7 +19,7 @@ class InboundTest(unittest.TestCase):
         self.assertAlmostEqual(out.loc[0, "inbound_after_sched"], 7000.0)
         self.assertTrue(np.isnan(out.loc[1, "inbound_after_sched"]))
         self.assertNotIn("inbound_after_sched", X.columns)   # input untouched
-        self.assertEqual(INBOUND_COLS[-1], "inbound_after_sched")
+        self.assertIn("inbound_after_sched", INBOUND_COLS)
 
 
 if __name__ == "__main__":

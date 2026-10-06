@@ -163,9 +163,15 @@ def run_split(name, X, y, meta, args, rates=None):
                 mus_m[f"mu_{fam}"] = np.clip(model.predict(X_va_m), 0, None)
             print(f"  {fam}: done", flush=True)
         mu = combine_mu(mus, args.mu, args)
-    clf = train_tail_clf(X_tr, y_tr, pooled=args.clf_pooled, no_lobt=args.clf_nolobt,
-                         stakes=args.stakes, fit_pooled=not args.high_lobt, inbound=args.clf_inbound)
-    p = predict_tail_proba(clf, X_va)
+    clf_tr, clf_va = X_tr, X_va
+    if "inbound_air_after_sched" in meta.columns:
+        # the airframe's trace arrival reaches the tail classifier only, never mu
+        clf_tr = X_tr.assign(inbound_air_after_sched=meta.loc[tr, "inbound_air_after_sched"].values)
+        clf_va = X_va.assign(inbound_air_after_sched=meta.loc[va, "inbound_air_after_sched"].values)
+    clf = train_tail_clf(clf_tr, y_tr, pooled=args.clf_pooled, no_lobt=args.clf_nolobt,
+                         stakes=args.stakes, fit_pooled=not args.high_lobt, inbound=args.clf_inbound,
+                         inbound_mono=args.clf_inbound_mono)
+    p = predict_tail_proba(clf, clf_va)
     v = analytic_tail_value(X_va)
     # always saved, so blend.py can switch the day-late component on or off
     q_day = day_late_weight(clf, X_va)
@@ -324,7 +330,8 @@ def main():
 
     print("Loading training data and building features...", flush=True)
     X, y, meta = load_training(adsb=args.adsb, climb=args.adsb_climb_id,
-                               climb_nbr_clean=args.adsb_climb_nbr_clean)
+                               climb_nbr_clean=args.adsb_climb_nbr_clean,
+                               inbound_air=args.clf_inbound and args.clf_inbound_air)
     if not args.proxy:
         X = drop_proxy(X)
     if not args.arvt:

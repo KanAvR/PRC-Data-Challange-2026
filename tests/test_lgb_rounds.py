@@ -39,6 +39,25 @@ class LgbRoundsTest(unittest.TestCase):
             model.CAT_COLS = saved
         self.assertEqual(booster.current_iteration(), 7)
 
+    def test_linear_tree_extrapolates_a_gap(self):
+        self.parse(["--lgb-linear-tree", "--lgb-rounds", "400"])
+        try:
+            rng = np.random.default_rng(1)
+            X = pd.DataFrame({"gap": rng.uniform(300, 2000, 3000)})
+            y = X["gap"].values + 60.0
+            saved = model.CAT_COLS
+            model.CAT_COLS = []
+            try:
+                m = model.train_mu(X, y)
+            finally:
+                model.CAT_COLS = saved
+            pred = m.predict(pd.DataFrame({"gap": [1000.0, 2500.0, 1e6]}))
+            self.assertAlmostEqual(pred[0], 1060.0, delta=20)
+            self.assertGreater(pred[1], 2300.0)          # beyond the training range
+            self.assertEqual(pred[2], model.LINEAR_CLIP)  # clipped
+        finally:
+            model.LGB_LINEAR_TREE = False
+
     def test_pa_cat_iterations(self):
         import per_airport
         try:

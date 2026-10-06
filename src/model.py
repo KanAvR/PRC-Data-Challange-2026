@@ -174,15 +174,35 @@ def seasonal_weight(train_months, valid_months, tau):
 LGB_MU_ROUNDS = 900
 
 
+# --lgb-linear-tree: leaves fit a ridge model on the numeric features instead of
+# a constant, so "label ~ a timestamp gap plus an offset" is linear inside a
+# leaf, not a staircase. Another team reported local gains on a weaker base and
+# occasional wild extrapolations, hence the clip.
+LGB_LINEAR_TREE = False
+LINEAR_CLIP = 1.2 * TAIL_THR
+
+
+class _ClipMu:
+    def __init__(self, booster, hi):
+        self.booster, self.hi = booster, hi
+
+    def predict(self, X):
+        return np.clip(self.booster.predict(X), 0, self.hi)
+
+
 def train_mu(X, y, num_boost_round=None, monotone=False, weight=None):
     num_boost_round = num_boost_round or LGB_MU_ROUNDS
     normal = y <= TAIL_THR
-    ds = lgb.Dataset(X[normal], label=y[normal], categorical_feature=CAT_COLS,
-                     weight=None if weight is None else np.asarray(weight)[normal])
     params = dict(MU_PARAMS)
+    if LGB_LINEAR_TREE:
+        params.update(linear_tree=True, linear_lambda=1.0)
+    ds = lgb.Dataset(X[normal], label=y[normal], categorical_feature=CAT_COLS,
+                     weight=None if weight is None else np.asarray(weight)[normal],
+                     params={"linear_tree": True} if LGB_LINEAR_TREE else None)
     if monotone:
         params["monotone_constraints"] = monotone_vector(list(X.columns))
-    return lgb.train(params, ds, num_boost_round=num_boost_round)
+    booster = lgb.train(params, ds, num_boost_round=num_boost_round)
+    return _ClipMu(booster, LINEAR_CLIP) if LGB_LINEAR_TREE else booster
 
 
 # LightGBM splits a categorical by sorting its levels on the node's gradient
@@ -717,6 +737,9 @@ def add_model_args(ap):
                     help="boosting rounds for the lgb mu family (the per-airport family sets its "
                          "own). 900 was tuned before the trace features; Q5 puts the optimum on a "
                          "1200-1500 plateau")
+    ap.add_argument("--lgb-linear-tree", action=argparse.BooleanOptionalAction, default=False,
+                    help="fit linear models in the lgb mu family's leaves (LightGBM linear_tree), "
+                         "output clipped to [0, 1.2 x TAIL_THR]")
     ap.add_argument("--pa-cat-iterations", type=int, default=None, metavar="N",
                     help="iterations for the per-airport CatBoost (default: "
                          "per_airport.CAT_ITERATIONS, 2000; never swept, lead N3b)")
@@ -832,8 +855,9 @@ def add_model_args(ap):
 def apply_model_args(args):
     """Module-level settings that add_model_args exposes. Call once after parsing."""
     CAT_MU_PARAMS["iterations"] = args.cat_iterations
-    global LGB_MU_ROUNDS
+    global LGB_MU_ROUNDS, LGB_LINEAR_TREE
     LGB_MU_ROUNDS = getattr(args, "lgb_rounds", LGB_MU_ROUNDS)
+    LGB_LINEAR_TREE = getattr(args, "lgb_linear_tree", False)
     if getattr(args, "pa_cat_iterations", None):
         import per_airport  # per_airport imports model, so not at module level
         per_airport.CAT_ITERATIONS = args.pa_cat_iterations

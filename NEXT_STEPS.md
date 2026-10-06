@@ -842,6 +842,20 @@ June/December 2025 (June artefacts with the aircraft on stand hours before
 SCHED), and every variant's RMSE effect sits inside the +/-2 per-split noise
 of a few hundred heavy-tailed rows. Not a large lever; all three flags off.
 
+**B20 `--adsb-pos`: wins (2026-10-06).** Idea from outgoing-boat's public
+README (removing first-point lat/lon cost them 1.54 live); re-derived here.
+`adsb.POS_COLS`: where the trace's last ground segment starts (metres east /
+north of the airport reference) and its ground path length. Existing ADS-B
+columns are bit-identical in the rebuilt cache. `validate.py --mu lgb --proxy
+--adsb-climb-id --adsb-pos --tag pos_lgb --compare climb_lgb`: robust holdout
+-0.21, inner -0.51 (significant), dec_jun -0.22, mar_sep -0.23 (significant);
+**pooled robust -0.29 (CI -0.44..-0.15)**, all rows -0.20 (CI -0.35..-0.07);
+normal rows -0.20 / -0.51 / -0.47 / -0.35. EGLL and EDDF better on all four
+splits (the airports whose traces start mid-taxi); LIRF and LTFM also better,
+part of which is model variance. Row changes nearly cancel (~173k better,
+~171k worse per split); top 25 rows carry 47-72% of the net. Built as the v34
+candidate (full run: it changes `mu`).
+
 **B18 day-level bias seen through the stand exits: negative (2026-10-06).**
 Airport-day mean residual is 2.2% of normal-row SSE (`climb_lgb`, four
 splits). On airport-days with >= 20 exit-seen and >= 20 other normal rows

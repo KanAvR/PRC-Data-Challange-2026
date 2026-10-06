@@ -71,6 +71,7 @@ default afterwards); sha256 prefix `978eef415fb508ce`. Upload log:
 | v30 | `832a01a` | `--adsb --adsb-nbr --te-count-oof-basis --out output/submitting_n2_v30.parquet` | `77d6830d239e81b2` | **236.7134** | **-0.3350 vs v28** |
 | v31 | `a870e8a` | `--mu lgb cat cat_note cat_ctr1 pa --proxy --adsb-climb-id --out output/submitting_v31_climb.parquet` | `40128a07813b1a60` | **235.9474** | **-0.7660 vs v30** (offline -0.81: ~0.95x) |
 | v32 | `8720cc5` | v31's command `--cat-iterations 10000 --lgb-rounds 1200 --out output/submitting_v32_trees.parquet` | `d6500f2cd4cfac0f` | **235.5782** | **-0.3692 vs v31** (expected -0.2..-0.4; v25's tree step -0.37) |
+| (v33 candidate) | `f6b8f3d` | v32's command `--clf-inbound --reuse-mu-parts output/submitting_v32_trees.parts.parquet --out output/submitting_v33_inbound.parquet` | `393a7d576b63f6ce` | -- | partial success B17 (pooled -0.89, holdout -3.26); tail only, submit once |
 
 
 **v32 (2026-10-06): 235.5782, -0.3692 against v31, team best.** v31 plus the Q5 final

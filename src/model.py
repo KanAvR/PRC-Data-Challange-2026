@@ -286,6 +286,43 @@ class _NbrAnchorMu(_AnchorMu):
         return np.clip(self.booster.predict(X) + a, 0, None)
 
 
+# lgb_schedmix: some block times are copies of the scheduled time (LIRF keeps
+# them on delayed departures: 41.9% of its normal-row SSE, NEXT_STEPS.md section
+# 5). Our earlier test blended an all-row mu toward gap_SCHED, which counts the
+# copies twice, and lost. This is the mixture written out: p = P(|y - gap_SCHED|
+# <= SCHED_COPY_S) from a classifier, a regressor trained only on the rows that
+# are not copies, and E[y] = p * gap_SCHED + (1 - p) * m0, which a tree can
+# represent exactly where the copy component is a staircase for it.
+SCHED_COPY_S = 60
+SCHED_CLF_PARAMS = dict(objective="binary", learning_rate=0.05, num_leaves=127, min_data_in_leaf=50,
+                        feature_fraction=0.8, bagging_fraction=0.8, bagging_freq=1, verbose=-1,
+                        force_col_wise=True)
+
+
+class _SchedMixMu:
+    def __init__(self, clf, reg):
+        self.clf, self.reg = clf, reg
+
+    def predict(self, X):
+        g = X["gap_SCHED_TIME_UTC_mvt"].to_numpy(dtype=float)
+        m0 = self.reg.predict(X)
+        p = self.clf.predict(X)
+        return np.clip(np.where(np.isfinite(g), p * np.clip(np.nan_to_num(g), 0, None) + (1 - p) * m0, m0),
+                       0, None)
+
+
+def train_mu_schedmix(X, y, num_boost_round=None, clf_rounds=400):
+    normal = y <= TAIL_THR
+    g = X["gap_SCHED_TIME_UTC_mvt"].to_numpy(dtype=float)
+    copy = np.isfinite(g) & (np.abs(y - np.nan_to_num(g)) <= SCHED_COPY_S)
+    clf = lgb.train(SCHED_CLF_PARAMS, lgb.Dataset(X[normal], label=copy[normal].astype(int),
+                                                   categorical_feature=CAT_COLS), num_boost_round=clf_rounds)
+    sel = normal & ~copy
+    reg = lgb.train(MU_PARAMS, lgb.Dataset(X[sel], label=y[sel], categorical_feature=CAT_COLS),
+                    num_boost_round=num_boost_round or LGB_MU_ROUNDS)
+    return _SchedMixMu(clf, reg)
+
+
 def train_mu_anchor_nbr(X, y, num_boost_round=900):
     """LightGBM on y - neighbour_anchor(X). The anchor is always finite, so
     unlike train_mu_anchor there is no plain-target half to keep consistent."""
@@ -476,7 +513,8 @@ def trace_anchored(train_fn):
 MU_FAMILIES = {"lgb": train_mu, "cat": train_mu_cat, "xgb": train_mu_xgb,
                "cat_note": train_mu_cat_note, "cat_ctr1": train_mu_cat_ctr1,
                "lgb_nocat": train_mu_nocat, "lgb_anchor": train_mu_anchor,
-               "lgb_anchor_lobt": train_mu_anchor_lobt, "lgb_anchor_nbr": train_mu_anchor_nbr, "neural": train_mu_neural,
+               "lgb_anchor_lobt": train_mu_anchor_lobt, "lgb_anchor_nbr": train_mu_anchor_nbr,
+               "lgb_schedmix": train_mu_schedmix, "neural": train_mu_neural,
                "pa": train_mu_per_airport}
 
 

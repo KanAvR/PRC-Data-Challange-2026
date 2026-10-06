@@ -823,6 +823,28 @@ June/December 2025 (June artefacts with the aircraft on stand hours before
 SCHED), and every variant's RMSE effect sits inside the +/-2 per-split noise
 of a few hundred heavy-tailed rows. Not a large lever; all three flags off.
 
+**B18 day-level bias seen through the stand exits: negative (2026-10-06).**
+Airport-day mean residual is 2.2% of normal-row SSE (`climb_lgb`, four
+splits). On airport-days with >= 20 exit-seen and >= 20 other normal rows
+(1,628), the exit rows' observable residual (stand exit + per-airport median
+offset - `mu`) against the other rows' mean residual correlates -0.22 (EDDF)
+to +0.32 (LEMD), near zero at EDDM, EGLL, LEBL, LSZH. A label-free day-level
+correction from the traces has nothing to work with. In the same data the
+LIRF no-LOBT tail candidates (736 rows, 429 tail) carry **23.2% of all
+validation squared error** and the 25 tail rows with v <= 6000 another 14%:
+the residual mass is still the recording-mode problem B17 closed.
+
+**B19 per-airport blend clip/weight after the traces: shipped values stay
+(2026-10-06).** `validate.py --mu pa --proxy --adsb-climb-id --splits holdout
+mar_sep --tag pa_climb`, blended post hoc into saved globals. `pa` alone is now
+as good as LightGBM + CatBoost (holdout normal rows 197.83 vs 197.66). Against
+that global (holdout, 0.25 lgb + 0.75 cat), normal-row delta: shipped clip 150
+/ w 0.5 **-2.02**; best cell clip 200 / w 0.6-0.7 -2.19 (-0.17 more, chosen on
+the split it is scored on); unclipped w 0.5 -1.78. Against a LightGBM-only
+global (both splits) everything favours more `pa` (unclipped w 0.7 -6.2..-6.8),
+but that global is too weak to set the weight: the stronger the global, the
+lower the optimum. Five-member clip/weight is on its plateau; not changed.
+
 **B16 airborne arrival time for climb-identified rows without ground points:
 no signal.** Rows the matchers miss but whose climb-out names the airframe
 (Jul 2025, 20 days, 14,803 normal rows, 92% with an earlier approach at the

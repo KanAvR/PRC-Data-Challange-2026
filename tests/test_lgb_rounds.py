@@ -39,6 +39,16 @@ class LgbRoundsTest(unittest.TestCase):
             model.CAT_COLS = saved
         self.assertEqual(booster.current_iteration(), 7)
 
+    def test_pa_cat_iterations(self):
+        import per_airport
+        try:
+            self.parse([])
+            self.assertEqual(per_airport.CAT_ITERATIONS, 2000)
+            self.parse(["--pa-cat-iterations", "5000"])
+            self.assertEqual(per_airport.CAT_ITERATIONS, 5000)
+        finally:
+            per_airport.CAT_ITERATIONS = 2000
+
 
 if __name__ == "__main__":
     unittest.main()

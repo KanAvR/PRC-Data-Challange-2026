@@ -96,10 +96,11 @@ class _PerAirportMu:
         return ~np.isnan(self.predict(X)) if len(X) else np.zeros(0, bool)
 
 
-def train_mu_per_airport(X, y, iterations=CAT_ITERATIONS, rounds=LGB_ROUNDS,
+def train_mu_per_airport(X, y, iterations=None, rounds=LGB_ROUNDS,
                          verbose=True):
     from catboost import CatBoostRegressor, Pool
 
+    iterations = iterations or CAT_ITERATIONS
     normal = y <= TAIL_THR
     apt = X["ADEP_mvt"].astype(str).to_numpy()
     cols = list(X.columns)

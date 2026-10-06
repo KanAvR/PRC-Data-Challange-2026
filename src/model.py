@@ -679,6 +679,9 @@ def add_model_args(ap):
                     help="boosting rounds for the lgb mu family (the per-airport family sets its "
                          "own). 900 was tuned before the trace features; Q5 puts the optimum on a "
                          "1200-1500 plateau")
+    ap.add_argument("--pa-cat-iterations", type=int, default=None, metavar="N",
+                    help="iterations for the per-airport CatBoost (default: "
+                         "per_airport.CAT_ITERATIONS, 2000; never swept, lead N3b)")
     ap.add_argument("--episode", action=argparse.BooleanOptionalAction, default=False,
                     help="use the long-taxi episode features (features.EPISODE_COLS): matched "
                          "neighbours' uncapped LOBT gaps. Built unconditionally like --proxy")
@@ -789,6 +792,9 @@ def apply_model_args(args):
     CAT_MU_PARAMS["iterations"] = args.cat_iterations
     global LGB_MU_ROUNDS
     LGB_MU_ROUNDS = getattr(args, "lgb_rounds", LGB_MU_ROUNDS)
+    if getattr(args, "pa_cat_iterations", None):
+        import per_airport  # per_airport imports model, so not at module level
+        per_airport.CAT_ITERATIONS = args.pa_cat_iterations
     if getattr(args, "te_prior_weight", None) is not None:
         import encode  # encode imports model, so not at module level
         encode.PRIOR_WEIGHT = args.te_prior_weight

@@ -42,7 +42,8 @@ record. Anything that ships lives in `src/`.
 | **v28** | **ours: v27 + `--adsb-nbr` (neighbours' trace-measured taxi, surface counts)** | **237.0484** |
 | v29 | ours: v28 + `--adsb-offset-te` (trace-offset encodings) | 237.0468 (-0.0016: noise) |
 | v30 | ours: v28 + OOF-equivalent target-encoding counts | 236.7134 |
-| **v31** | **ours: v30 + `--adsb-climb-id` (airframe named by the climb-out callsign)** | **235.9474** |
+| v31 | ours: v30 + `--adsb-climb-id` (airframe named by the climb-out callsign) | 235.9474 |
+| **v32** | **ours: v31 + CatBoost 10000 / LightGBM 1200 for the 12-month fit** | **235.5782** |
 
 **Team best is v30 (236.7134, 2026-09-30)**: `predict.py --mu lgb cat cat_note
 cat_ctr1 pa --proxy --adsb --adsb-nbr --te-count-oof-basis` at `832a01a`,
@@ -69,10 +70,10 @@ default afterwards); sha256 prefix `978eef415fb508ce`. Upload log:
 | v29 | `494fc53` | `--adsb --adsb-nbr --adsb-offset-te --out output/submitting_adsb4.parquet` | `f5fb76e5adbecc06` | 237.0468 | -0.0016 vs v28 |
 | v30 | `832a01a` | `--adsb --adsb-nbr --te-count-oof-basis --out output/submitting_n2_v30.parquet` | `77d6830d239e81b2` | **236.7134** | **-0.3350 vs v28** |
 | v31 | `a870e8a` | `--mu lgb cat cat_note cat_ctr1 pa --proxy --adsb-climb-id --out output/submitting_v31_climb.parquet` | `40128a07813b1a60` | **235.9474** | **-0.7660 vs v30** (offline -0.81: ~0.95x) |
-| (v32 candidate, not uploaded) | `8720cc5` | v31's command `--cat-iterations 10000 --lgb-rounds 1200 --out output/submitting_v32_trees.parquet` | `d6500f2cd4cfac0f` | -- | v31 + Q5 tree counts; expected -0.2..-0.4 vs v31 |
+| v32 | `8720cc5` | v31's command `--cat-iterations 10000 --lgb-rounds 1200 --out output/submitting_v32_trees.parquet` | `d6500f2cd4cfac0f` | **235.5782** | **-0.3692 vs v31** (expected -0.2..-0.4; v25's tree step -0.37) |
 
 
-**v32 candidate (built 2026-10-06, not uploaded):** v31 plus the Q5 final
+**v32 (2026-10-06): 235.5782, -0.3692 against v31, team best.** v31 plus the Q5 final
 polish: `cat`/`cat_note` at 10000 iterations (holdout's 10-month curve was
 still falling at 10000; the 12-month fit has more data, so the top of the swept
 range, picked from the trend, not by a live score) and LightGBM at 1200 (the

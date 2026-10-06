@@ -32,6 +32,10 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     add_model_args(ap)
     ap.add_argument("--out", default="output/submitting.parquet")
+    ap.add_argument("--reuse-mu-parts", metavar="PARTS",
+                    help="take mu from a saved <out>.parts.parquet built with the same mu flags and "
+                         "retrain only the tail models (minutes, not hours). Shown exact for v32: "
+                         "reusing v32's parts with v32's command reproduces v32 with 0 rows different")
     ap.add_argument("--timings", metavar="JSON",
                     help="write low-overhead wall/CPU/RSS timings after every pipeline stage")
     args = ap.parse_args()
@@ -125,16 +129,24 @@ def main():
             add_residual_proxy(train_data, meta["t"].values)
             add_residual_proxy(ranking_dep, mvt_seconds(ranking_raw.loc[dep_mask]))
 
-    mus = []
-    for fam in args.mu:
-        print(f"Training normal-regime regressor ({fam}) on all data...", flush=True)
-        fit = trace_anchored(MU_FAMILIES[fam]) if args.adsb_anchor else MU_FAMILIES[fam]
-        with timings.stage(f"mu.{fam}.fit"):
-            model = fit(train_data, y_train)
-        with timings.stage(f"mu.{fam}.predict"):
-            mus.append(np.clip(model.predict(ranking_dep), 0, None))
-    with timings.stage("mu.combine"):
-        mu_pred = combine_mu({f"mu_{f}": m for f, m in zip(args.mu, mus)}, args.mu, args)
+    if args.reuse_mu_parts:
+        # tail-side changes only: mu comes from a saved run built with the same mu
+        # flags. Check exactness by reproducing that run's own file first
+        saved = pd.read_parquet(args.reuse_mu_parts, columns=["MVT_ID_mvt", "mu"]).set_index("MVT_ID_mvt")
+        mu_pred = saved["mu"].reindex(ranking_ids).to_numpy()
+        assert np.isfinite(mu_pred).all(), "saved parts do not cover every ranking DEP row"
+        print(f"Reusing mu from {args.reuse_mu_parts}", flush=True)
+    else:
+        mus = []
+        for fam in args.mu:
+            print(f"Training normal-regime regressor ({fam}) on all data...", flush=True)
+            fit = trace_anchored(MU_FAMILIES[fam]) if args.adsb_anchor else MU_FAMILIES[fam]
+            with timings.stage(f"mu.{fam}.fit"):
+                model = fit(train_data, y_train)
+            with timings.stage(f"mu.{fam}.predict"):
+                mus.append(np.clip(model.predict(ranking_dep), 0, None))
+        with timings.stage("mu.combine"):
+            mu_pred = combine_mu({f"mu_{f}": m for f, m in zip(args.mu, mus)}, args.mu, args)
 
     print("Training tail classifier on all data...", flush=True)
     with timings.stage("tail_classifier.fit"):

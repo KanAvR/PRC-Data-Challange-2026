@@ -133,7 +133,7 @@ def main():
     print("Training tail classifier on all data...", flush=True)
     with timings.stage("tail_classifier.fit"):
         clf = train_tail_clf(train_data, y_train, pooled=args.clf_pooled, no_lobt=args.clf_nolobt,
-                             stakes=args.stakes, fit_pooled=not args.high_lobt)
+                             stakes=args.stakes, fit_pooled=not args.high_lobt, inbound=args.clf_inbound)
 
     print("Predicting on ranking DEP rows...")
     with timings.stage("tail_classifier.predict"):

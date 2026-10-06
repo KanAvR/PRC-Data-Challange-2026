@@ -555,10 +555,28 @@ def _stakes_weights(X, y, v, clip):
     return np.clip(((v - typical) / TAIL_THR) ** 2, 1.0, clip)
 
 
-def train_tail_clf(X, y, pooled="lgb", no_lobt="lgb", stakes=0.0, fit_pooled=True):
+# --clf-inbound: LIRF records the *scheduled* time as block time on departures
+# delayed by a late inbound aircraft. Among LIRF no-LOBT tail candidates (2025),
+# the label is that artefact on 84% of rows whose stand's previous arrival blocked
+# in > 2h after the scheduled departure, against 34% when it was on the stand
+# 0.5-2h before (NEXT_STEPS.md, B17). Both inputs are provided columns, built the
+# same way on ranking rows: how long after the scheduled departure the stand's
+# previous arrival blocked in.
+INBOUND_COLS = ["secs_since_prev_arr_block", "inbound_after_sched"]
+
+
+def with_inbound(X):
+    """X plus inbound_after_sched (gap_SCHED minus the time since the stand's last arrival)."""
+    return X.assign(inbound_after_sched=X["gap_SCHED_TIME_UTC_mvt"].astype(float)
+                    - X["secs_since_prev_arr_block"].astype(float))
+
+
+def train_tail_clf(X, y, pooled="lgb", no_lobt="lgb", stakes=0.0, fit_pooled=True, inbound=False):
     label = (y > TAIL_THR).astype(int)
     pooled_cols = _usable(TAIL_FEATURES, X)
-    absent_cols = _usable(NO_LOBT_FEATURES, X)
+    if inbound:
+        X = with_inbound(X)
+    absent_cols = _usable(NO_LOBT_FEATURES + (INBOUND_COLS if inbound else []), X)
     absent = ~_has_lobt(X)
     if stakes:
         v = analytic_tail_value(X)
@@ -662,6 +680,10 @@ def add_model_args(ap):
                     help="named set of target-encoding keys (encode.KEY_SETS)")
     ap.add_argument("--te-counts", action=argparse.BooleanOptionalAction, default=True,
                     help="add the _n log-count column beside each encoding")
+    ap.add_argument("--clf-inbound", action=argparse.BooleanOptionalAction, default=False,
+                    help="give the no-LOBT tail classifier the stand's previous arrival relative to "
+                         "the scheduled departure (model.INBOUND_COLS): late inbound aircraft make "
+                         "LIRF record the scheduled time as block time")
     ap.add_argument("--adsb-climb-nbr-clean", action=argparse.BooleanOptionalAction, default=False,
                     help="with --adsb-climb-id, leave climb-out matches whose last ground segment is "
                          "the inbound taxi-in out of the neighbour means (climbnbr.py)")
@@ -765,6 +787,8 @@ def predict_tail_proba(models, X):
     Returns calibrated p: each family's CLF_BOOST is already applied."""
     out = np.empty(len(X))
     mask = _has_lobt(X)
+    if "inbound_after_sched" in models["no_lobt"][1] and "inbound_after_sched" not in X.columns:
+        X = with_inbound(X)
     for key, sel in (("pooled", mask), ("no_lobt", ~mask)):
         if not sel.any():
             continue

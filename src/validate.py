@@ -164,7 +164,7 @@ def run_split(name, X, y, meta, args, rates=None):
             print(f"  {fam}: done", flush=True)
         mu = combine_mu(mus, args.mu, args)
     clf = train_tail_clf(X_tr, y_tr, pooled=args.clf_pooled, no_lobt=args.clf_nolobt,
-                         stakes=args.stakes, fit_pooled=not args.high_lobt)
+                         stakes=args.stakes, fit_pooled=not args.high_lobt, inbound=args.clf_inbound)
     p = predict_tail_proba(clf, X_va)
     v = analytic_tail_value(X_va)
     # always saved, so blend.py can switch the day-late component on or off

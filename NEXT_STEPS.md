@@ -781,6 +781,29 @@ no-LOBT tail 31.8% (536 rows, RMSE 7,150), trace without exit 25.5% (195),
 exit seen 3.8% (113); normal-row share LIRF 34.1%, LTFM 19.7%, LFPG 14.1%,
 EGLL 11.4%.
 
+**B17 late inbound -> LIRF artefact labels; `--clf-inbound`: real signal, not
+established (2026-10-06).** Sizing first: on the scored set the mixture's own
+tail uncertainty, sum p(1-p)(v-mu)^2, is 5.1e9 = 27% of total squared error
+at 236, **21% at LIRF alone** (238 no-LOBT rows with v > 6000, mean p 0.55); in
+validation those LIRF rows carry 12-42% of each split's squared error. Among
+LIRF no-LOBT candidates in 2025 (899 rows: 539 label ~ v, 360 normal, 13
+day-late) the label is the artefact on 84% of rows whose stand's previous
+arrival blocked in > 2h *after* the scheduled departure, 75% at 0.5-2h after,
+34% when it was on the stand 0.5-2h before; the airframe's own approach seen in
+the trace (climb-out icao) gives the same table (81% / 73% / 28%), sign
+agreement 91%. The traces cannot see the artefact itself (movement near SCHED
+18.4% vs 17.5%), arrivals' own block == sched rate is weak (AUC 0.55-0.64),
+the 2026 LIRF regime looks unchanged (ARR block == sched 0.73-0.91% vs
+0.66-1.2%), and the same feature does nothing for LIRF's normal-band class C
+(residual corr 0.01). Month-grouped CV inside the candidates: shipped no-LOBT
+features AUC 0.771, + the two inbound columns 0.823, all columns 0.862.
+Screen (`--reuse-mu climb_lgb`, arm `--clf-inbound` vs `clfbase`): robust
+holdout **-3.26** (CI -6.21..-0.61), inner -0.22, dec_jun +0.73, mar_sep -0.80;
+**pooled robust -0.89 (CI -2.12..+0.27), not established**. Entirely LIRF;
+top 10 rows carry 80% (holdout) to several times the net. Within LIRF
+candidates AUC 0.839->0.880, 0.847->0.857, 0.809->0.789 (dec_jun),
+0.880->0.893; log-loss better on three of four. Off by default.
+
 **B16 airborne arrival time for climb-identified rows without ground points:
 no signal.** Rows the matchers miss but whose climb-out names the airframe
 (Jul 2025, 20 days, 14,803 normal rows, 92% with an earlier approach at the

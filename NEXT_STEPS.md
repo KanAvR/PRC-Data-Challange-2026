@@ -880,7 +880,16 @@ copies on delayed departures): normal rows -0.93 / -0.93 / -1.55 / -1.66, all
 rows -0.35 / -0.59 / -0.16 / -0.86, ~14.0k LIRF rows better vs ~12.4k worse per
 split; top 10 rows carry 35-53% of the net (inner 99%). `--lirf-schedmix`
 wraps every family that way (LIRF copies left out of each fit, one classifier on
-LIRF normal rows); its own four-split screen is running as `lirfmix_lgb`.
+LIRF normal rows). **Its four-split screen wins** (`--mu lgb --lirf-schedmix
+--proxy --adsb-climb-id --tag lirfmix_lgb --compare climb_lgb`): robust
+holdout -1.13, inner -1.14, dec_jun -1.52, mar_sep -1.72, each interval below
+zero; **pooled robust -1.37 (CI -1.83..-0.92)**, all rows -0.92 (CI
+-1.44..-0.40); normal rows -1.31 / -1.24 / -2.58 / -2.29. LIRF normal-row MSE
+-6,263 / -7,247 / -11,014 / -9,638; other airports -3..-133 (dropping LIRF's
+copies from the shared fit does not hurt them). ~7k more rows better than
+worse per split; top 25 rows carry 48-56% of the net (inner 87%). Next full
+build (v36), started after v35's live score so it includes `--adsb-pos` only
+if that won.
 
 **B18 day-level bias seen through the stand exits: negative (2026-10-06).**
 Airport-day mean residual is 2.2% of normal-row SSE (`climb_lgb`, four

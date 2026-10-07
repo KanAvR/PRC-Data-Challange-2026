@@ -915,8 +915,11 @@ labels; closed (2026-10-07).** Label-free on the ranking side
 (`output/diag/schedmix_shift.py`, `v36_decomp.py`). 82% of v36's squared change
 against v35 is at LIRF, 72% of that in July 2026 rows with no trace, mostly
 gap_SCHED 3000-6000s (131M of 333M). LIRF trace coverage by month: 2025 Jan-Apr
-0%, May 22%, Jun-Dec 58-96%; **2026 Jan 86%, Jul 0.3%**, so July 2026 looks like
-Jan-Apr 2025, a regime the fit already holds. The copy classifier refitted out
+0%, May 22%, Jun-Dec 58-96%; **2026 Jan 86%, Jul 0.3%**. Untraced LIRF rows
+exist in 2025 mostly in winter (Jan-Apr); June-August hold only ~3.7k (May and
+September ~17k), against 15.8k in July 2026, and no validation split scores
+summer LIRF without traces. So July 2026 LIRF is **not** a regime the fit
+covers well; that is tested separately (masked harness, B32). The copy classifier refitted out
 of month (2025 minus Jan/Jul, no te_* columns) is calibrated on Jan/Jul 2025
 (mean p 0.227 vs copy rate 0.223; 0.163 vs 0.161), and its 2026 mean p on
 delayed rows (gs > 1800) matches the same month of 2025 within 0.01 (Jan

@@ -70,6 +70,11 @@ def main():
         if args.adsb and not args.adsb_pos:
             import adsb
             train_data = adsb.drop_adsb_pos(train_data)
+        if args.adsb and args.adsb_day_dropout:
+            import adsb
+            drop = adsb.day_dropout_rows(meta["ADEP_mvt"].values, meta["date"].values, args.adsb_day_dropout)
+            adsb.blank_untraced(train_data, drop)
+            print(f"  adsb day dropout: {drop.mean():.1%} of training rows blanked", flush=True)
         if args.lobt_bounds:
             check_lobt_support(y_train, train_data["gap_LOBT_flt"].values)
         if args.adsb and args.trace_te:

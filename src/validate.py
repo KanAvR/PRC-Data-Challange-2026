@@ -110,6 +110,12 @@ def run_split(name, X, y, meta, args, rates=None):
     tr = ~va & ~meta["month"].isin(spec["drop"]).values
     X_tr, X_va = X.loc[tr].copy(), X.loc[va].copy()
     y_tr, y_va = y[tr], y[va]
+    if args.adsb and args.adsb_day_dropout:
+        import adsb
+        drop = adsb.day_dropout_rows(meta.loc[tr, "ADEP_mvt"].values, meta.loc[tr, "date"].values,
+                                     args.adsb_day_dropout)
+        adsb.blank_untraced(X_tr, drop)
+        print(f"  adsb day dropout: {drop.mean():.1%} of training rows blanked", flush=True)
     if args.lobt_bounds:
         check_lobt_support(y_tr, X_tr["gap_LOBT_flt"].values)
     align_categoricals(X_tr, X_va)
@@ -139,6 +145,14 @@ def run_split(name, X, y, meta, args, rates=None):
         if X_va_m is not None:  # te_stand_rwy is not flight-keyed, so the mask leaves these alone
             for c in RES_PROXY_COLS:
                 X_va_m[c] = X_va[c].values
+    if getattr(args, "mask_adsb_lirf", False):
+        # July 2026 LIRF: no traces at all. Same rows, same models, adsb_* blanked
+        import adsb
+        unseen = ((meta.loc[va, "ADEP_mvt"].values == "LIRF")
+                  & (meta.loc[va, "month"].values == spec["valid"][1]))
+        X_va_m = X_va.copy()
+        adsb.blank_untraced(X_va_m, unseen)
+        print(f"  masking ADS-B on {int(unseen.sum())} summer LIRF rows", flush=True)
     print(f"\n[{name}] train={len(X_tr)} valid={len(X_va)} "
           f"tail={int((y_tr > TAIL_THR).sum())}/{int((y_va > TAIL_THR).sum())}", flush=True)
 
@@ -329,10 +343,16 @@ def main():
                     help="evaluation only: in each split's summer month, encode each airport's "
                          "July 2026 share of flights as unseen (renamed callsigns). The masked "
                          "run is saved as TAG, the same models unmasked as TAG_unmasked")
+    ap.add_argument("--mask-adsb-lirf", action="store_true",
+                    help="evaluation only: in each split's summer month, blank LIRF's adsb_* "
+                         "columns as July 2026 LIRF carries them (no traces). Saved as TAG "
+                         "(masked) and TAG_unmasked, like --mask-flight (NEXT_STEPS.md, B32)")
     args = ap.parse_args()
     apply_model_args(args)
-    if args.mask_flight and args.reuse_mu:
-        ap.error("--mask-flight needs the mu models, not a saved mu")
+    if (args.mask_flight or args.mask_adsb_lirf) and args.reuse_mu:
+        ap.error("--mask-flight / --mask-adsb-lirf need the mu models, not a saved mu")
+    if args.mask_flight and args.mask_adsb_lirf:
+        ap.error("use one mask at a time")
 
     print("Loading training data and building features...", flush=True)
     X, y, meta = load_training(adsb=args.adsb, climb=args.adsb_climb_id,
@@ -365,11 +385,12 @@ def main():
         rates = ranking_unseen_rates()
         print("July 2026 unseen flight share by airport: "
               + "  ".join(f"{a}:{r:.1%}" for a, r in sorted(rates.items())), flush=True)
+    if args.mask_flight or args.mask_adsb_lirf:
         (OUT_DIR / f"{args.tag}_unmasked").mkdir(parents=True, exist_ok=True)
     results = {}
     for name in args.splits:
         r = run_split(name, X, y, meta, args, rates)
-        if rates is not None:
+        if args.mask_flight or args.mask_adsb_lirf:
             r, r_unmasked = r
             r_unmasked.to_parquet(OUT_DIR / f"{args.tag}_unmasked" / f"{name}.parquet", index=False)
             yv, m = r["y"].values, r["flight_masked"].values

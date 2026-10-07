@@ -882,6 +882,19 @@ by point estimate. LIRF-candidate AUC 0.880->0.887, 0.857->0.889,
 Extremely concentrated: top 10 rows carry more than the net on every split.
 Qualifies under the partial-success rule; submit once, no live tuning.
 
+**B32 untraced summer LIRF (July 2026): a real cost, partly fixable
+(2026-10-08).** July 2026 LIRF has a trace on 0.3% of departures; summer 2025
+LIRF on 87-96%, and no split scores untraced summer LIRF. Gate
+(`output/diag/lirf_mask.py`, LightGBM 1200, v35 features): in the summer
+validation month, LIRF rows get every ADS-B column as July 2026 LIRF rows carry
+it (0 for match / coverage / counts, NaN elsewhere). LIRF summer normal-row
+RMSE: holdout (Jul) unmasked 409.5, **masked 434.5**, a model trained without
+any adsb_* column 429.2; inner (Aug) 373.3 / 387.9 / 387.2. Split normal-row
+MSE: masking +923 / +511 (mostly information the July rows do not have),
+no-ADS-B model instead of the masked full model **-199 / -25**. The full model
+handles missing traces worse than a model that never saw any: winter is the
+only untraced LIRF it learned from. Fix under test: `--adsb-day-dropout`.
+
 **B31 `--te-airport-prior` re-screened on the trace features: negative
 (2026-10-08).** Every encoding shrunk toward its airport's mean (aimed at 2026's
 unseen stands, EDDM 4.6%); pre-ADS-B it was -0.11 not established.

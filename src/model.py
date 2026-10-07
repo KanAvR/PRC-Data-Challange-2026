@@ -904,6 +904,11 @@ def add_model_args(ap):
                     help="use a residual specialist when the matched LOBT gap exceeds 6000s")
     ap.add_argument("--clf-pooled", default="cat", choices=list(CLF_FAMILIES))
     ap.add_argument("--clf-nolobt", default="cat", choices=list(CLF_FAMILIES))
+    ap.add_argument("--adsb-day-dropout", type=float, default=0.0, metavar="FRAC",
+                    help="with --adsb, blank every adsb_* column on a hashed FRAC of airport-days "
+                         "of the TRAINING rows (adsb.blank_untraced), so every family learns the "
+                         "untraced regime outside winter LIRF: July 2026 LIRF has traces on 0.3%% of "
+                         "departures against 87-96%% in summer 2025 (NEXT_STEPS.md, B32)")
     ap.add_argument("--clf-seeds", type=int, default=N_SEEDS, metavar="N",
                     help="seeds averaged in each tail classifier (seeds 0..N-1, so N > 5 keeps the "
                          f"shipped {N_SEEDS} and adds more). Pure variance reduction: p's seed-to-seed "

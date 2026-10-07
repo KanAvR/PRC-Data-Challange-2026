@@ -608,6 +608,35 @@ def drop_adsb_pos(frame):
     return frame.drop(columns=[c for c in POS_COLS if c in frame.columns])
 
 
+# What a departure looks like when the archive has the day but the receivers saw
+# nothing at its airport (July 2026 LIRF: 0.3% matched): these columns read 0,
+# every other adsb_* column NaN (NEXT_STEPS.md, B32)
+ZERO_WHEN_UNTRACED = ["adsb_match", "adsb_cov_apt_day", "adsb_nbr_exit_n_apt_prev30",
+                      "adsb_surf_taxi_10", "adsb_surf_taxi_20", "adsb_surf_hold_10",
+                      "adsb_surf_hold_20", "adsb_via_climb"]
+DAY_DROPOUT_SALT = "adsb-day"
+
+
+def blank_untraced(frame, rows):
+    """Set the rows' adsb_* columns, in place, to an airport-day with no trace."""
+    rows = np.asarray(rows, bool)
+    if not rows.any():
+        return
+    for c in frame.columns:
+        if c.startswith("adsb_"):
+            fill = 0.0 if c in ZERO_WHEN_UNTRACED else np.nan
+            frame[c] = np.where(rows, fill, frame[c].to_numpy(dtype=float))
+
+
+def day_dropout_rows(airport, date, frac):
+    """A stable hashed `frac` of airport-days (all rows of a chosen day go)."""
+    import zlib
+    keys = pd.Series(np.asarray(airport).astype(str)) + "|" + pd.Series(np.asarray(date).astype(str))
+    codes, uniq = pd.factorize(keys)
+    h = np.array([zlib.crc32(f"{k}|{DAY_DROPOUT_SALT}".encode()) % 10000 for k in uniq])
+    return (h < frac * 10000)[codes]
+
+
 def _cache_key(days_needed):
     import aptdat
     src = pathlib.Path(__file__).read_bytes() + pathlib.Path(aptdat.__file__).read_bytes()

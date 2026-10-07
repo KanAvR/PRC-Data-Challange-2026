@@ -904,6 +904,10 @@ def add_model_args(ap):
                     help="use a residual specialist when the matched LOBT gap exceeds 6000s")
     ap.add_argument("--clf-pooled", default="cat", choices=list(CLF_FAMILIES))
     ap.add_argument("--clf-nolobt", default="cat", choices=list(CLF_FAMILIES))
+    ap.add_argument("--clf-seeds", type=int, default=N_SEEDS, metavar="N",
+                    help="seeds averaged in each tail classifier (seeds 0..N-1, so N > 5 keeps the "
+                         f"shipped {N_SEEDS} and adds more). Pure variance reduction: p's seed-to-seed "
+                         "swing is large on the few hundred tail positives")
     ap.add_argument("--day-late", action=argparse.BooleanOptionalAction, default=False,
                     help="mix a normal-taxi-plus-one-day value into the tail of candidate rows")
     ap.add_argument("--day-late-step", action=argparse.BooleanOptionalAction, default=False,
@@ -925,8 +929,9 @@ def apply_model_args(args):
     global LGB_MU_ROUNDS, LGB_LINEAR_TREE
     LGB_MU_ROUNDS = getattr(args, "lgb_rounds", LGB_MU_ROUNDS)
     LGB_LINEAR_TREE = getattr(args, "lgb_linear_tree", False)
-    global SCHEDMIX_INBOUND
+    global SCHEDMIX_INBOUND, N_SEEDS
     SCHEDMIX_INBOUND = getattr(args, "schedmix_inbound", False)
+    N_SEEDS = getattr(args, "clf_seeds", N_SEEDS)
     if getattr(args, "pa_cat_iterations", None):
         import per_airport  # per_airport imports model, so not at module level
         per_airport.CAT_ITERATIONS = args.pa_cat_iterations

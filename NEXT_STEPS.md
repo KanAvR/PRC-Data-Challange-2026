@@ -882,6 +882,31 @@ by point estimate. LIRF-candidate AUC 0.880->0.887, 0.857->0.889,
 Extremely concentrated: top 10 rows carry more than the net on every split.
 Qualifies under the partial-success rule; submit once, no live tuning.
 
+**B29 own trace says the taxi exceeded 6000s: nothing to add (2026-10-07).**
+`mu` never sees a label above 6000, so a row whose trace leaves the stand
+earlier than that could only be followed by the tail side. On `climb_lgb`'s
+four splits (`output/diag/trace_long.py`): 11 rows with `adsb_leave_stand` >
+6000, 6 with labels > 6000; current SSE 32M against 392M for predicting the
+trace value (tows and mis-segmented traces: EGLL 12,593s stand exit, label
+2,583). `adsb_push` > 6000: 197 rows, 5 tails; `adsb_first_seen` > 6000:
+24,104 rows (parked aircraft seen hours ahead), 31 tails. The LOBT bound and the
+specialist already carry the genuine long waits (EGLL 11,452 predicted 10,844).
+
+**B28 why `--lirf-schedmix` reversed live (v36): no shift visible without
+labels; closed (2026-10-07).** Label-free on the ranking side
+(`output/diag/schedmix_shift.py`, `v36_decomp.py`). 82% of v36's squared change
+against v35 is at LIRF, 72% of that in July 2026 rows with no trace, mostly
+gap_SCHED 3000-6000s (131M of 333M). LIRF trace coverage by month: 2025 Jan-Apr
+0%, May 22%, Jun-Dec 58-96%; **2026 Jan 86%, Jul 0.3%**, so July 2026 looks like
+Jan-Apr 2025, a regime the fit already holds. The copy classifier refitted out
+of month (2025 minus Jan/Jul, no te_* columns) is calibrated on Jan/Jul 2025
+(mean p 0.227 vs copy rate 0.223; 0.163 vs 0.161), and its 2026 mean p on
+delayed rows (gs > 1800) matches the same month of 2025 within 0.01 (Jan
+0.085 vs 0.085, Jul 0.079 vs 0.072). Dropping every ADS-B column moves p by
+< 0.007. The classifier sees no covariate shift; what changed, if anything, is
+the 2026 copy rate itself, which only labels could show. Closed with the rest of
+the LIRF copy line.
+
 **B27 out-of-fold residual corrector (outgoing-boat's step 4): closed before
 building (2026-10-07).** Leave-one-split-out LightGBM on saved out-of-sample
 residuals (features: the five timestamp gaps + airport, optionally `mu`),

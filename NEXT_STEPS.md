@@ -857,6 +857,20 @@ June/December 2025 (June artefacts with the aircraft on stand hours before
 SCHED), and every variant's RMSE effect sits inside the +/-2 per-split noise
 of a few hundred heavy-tailed rows. Not a large lever; all three flags off.
 
+**B25 `--clf-copy-p`: partial success, built (2026-10-07).** `copyp.py`: a
+LightGBM fitted on delayed normal rows (gap_SCHED > 1800s, label within 60s of
+gap_SCHED) on the columns unmatched rows also have, without gap_SCHED itself
+(the habit, not the delay), out of month on fit rows; its probability is one
+more column for the no-LOBT tail classifier. ~20k copies teach the ~900 LIRF
+tail candidates. `validate.py --reuse-mu climb_lgb --clf-copy-p --no-adsb-pos
+--proxy --tag clfcopy --compare clfinb` (control = `--clf-inbound`, v33's
+classifier): robust holdout -0.38, inner -1.89, dec_jun -0.69, mar_sep -0.93,
+**pooled robust -0.95 (CI -2.12..+0.22), better in 95%**; better on all four
+by point estimate. LIRF-candidate AUC 0.880->0.887, 0.857->0.889,
+**0.789->0.816 (dec_jun, where the -air variant failed)**, 0.893->0.904.
+Extremely concentrated: top 10 rows carry more than the net on every split.
+Qualifies under the partial-success rule; submit once, no live tuning.
+
 **B24 other copied-timestamp classes: none left to mix (2026-10-07).** On
 `climb_lgb` normal rows (four splits), labels within 30s of a timestamp gap
 against a shifted-gap control (+/-120, 180s): AOBT_3 10.4% of rows but only

@@ -872,6 +872,13 @@ by point estimate. LIRF-candidate AUC 0.880->0.887, 0.857->0.889,
 Extremely concentrated: top 10 rows carry more than the net on every split.
 Qualifies under the partial-success rule; submit once, no live tuning.
 
+**B26 `--schedmix-inbound`: negative (2026-10-07).** The LIRF copy classifier
+inside `--lirf-schedmix` also given inbound_after_sched. Against `lirfmix_lgb`
+(pinned `--lgb-rounds 900 --no-clf-inbound --no-adsb-pos`): pooled robust
++0.11 (CI -0.03..+0.25), dec_jun +0.31 significant, normal rows +0.07 / +0.03 /
++0.23 / +0.06. As B17 found, late inbounds explain the tail copies, not the
+normal-band ones. Off.
+
 **B24 other copied-timestamp classes: none left to mix (2026-10-07).** On
 `climb_lgb` normal rows (four splits), labels within 30s of a timestamp gap
 against a shifted-gap control (+/-120, 180s): AOBT_3 10.4% of rows but only

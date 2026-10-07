@@ -136,7 +136,9 @@ Flags that stay off by default are kept as the record of measured negatives:
 | v30 | v28 + OOF-equivalent target-encoding count basis | 236.7134 |
 | v31 | v30 + climb-out callsign names the airframe (`--adsb-climb-id`) | 235.9474 |
 | v32 | v31 + CatBoost 10,000 / LightGBM 1,200 for the 12-month fit | 235.5782 |
-| **v33** | **v32 + late-inbound signal in the no-flight-plan tail classifier** | **233.3269** |
+| v33 | v32 + late-inbound signal in the no-flight-plan tail classifier | 233.3269 |
+| v34 | v33 + the airframe's own trace arrival in that classifier (rejected) | 235.4040 |
+| **v35** | **v33 + where each departure's trace starts on the airport** | **233.1341** |
 
 Offline gains do not always carry over:
 
@@ -190,9 +192,10 @@ predictions as `<tag>_unmasked`. Judge encoding and key changes on both.
 ## Run
 
 ```bash
-# Reproduce v33: train on all twelve months and score the ranking set (several
-# hours; fetch the ADS-B days first, see Setup). The ADS-B trace features, their
-# neighbour/surface columns and the climb-out match, the late-inbound tail
+# Reproduce v35: train on all twelve months and score the ranking set (several
+# hours; fetch the ADS-B days first, see Setup). --no-adsb-pos gives v33.
+# The ADS-B trace features, their neighbour/surface columns, the trace start
+# position and the climb-out match, the late-inbound tail
 # classifier, the tail cap, the flight backoff/dropout, 10,000 CatBoost
 # iterations and 1,200 LightGBM rounds are defaults. v33 was built from v32's
 # mu with --reuse-mu-parts (exact: it reproduces v32 with 0 rows different).
@@ -200,7 +203,7 @@ predictions as `<tag>_unmasked`. Judge encoding and key changes on both.
 # v31, and --no-adsb-climb-id as well for v30. Earlier versions are recorded in
 # NEXT_STEPS.md and in --help.
 .venv/bin/python src/predict.py --mu lgb cat cat_note cat_ctr1 pa --proxy \
-    --out output/submitting_v33.parquet
+    --out output/submitting_v35.parquet
 
 # Tail-only change: reuse a finished build's mu and retrain only the tail models
 # (minutes). Check it reproduces that build before shipping from it.

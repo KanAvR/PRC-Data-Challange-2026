@@ -25,7 +25,7 @@ class LgbRoundsTest(unittest.TestCase):
         args = self.parse([])
         self.assertEqual(model.LGB_MU_ROUNDS, 1200)
         self.assertEqual(model.CAT_MU_PARAMS["iterations"], 10000)
-        self.assertTrue(args.adsb_climb_id and args.clf_inbound)
+        self.assertTrue(args.adsb_climb_id and args.clf_inbound and args.adsb_pos)
 
     def test_flag_sets_rounds_used_by_train_mu(self):
         self.parse(["--lgb-rounds", "7"])

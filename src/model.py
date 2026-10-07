@@ -816,10 +816,11 @@ def add_model_args(ap):
                          "the airframe, whose ground points then need no callsign "
                          "(adsb._climb_matches; NEXT_STEPS.md, B8). v31: -0.77 live; "
                          "--no-adsb-climb-id reproduces v30")
-    ap.add_argument("--adsb-pos", action=argparse.BooleanOptionalAction, default=False,
+    ap.add_argument("--adsb-pos", action=argparse.BooleanOptionalAction, default=True,
                     help="with --adsb, also give mu where the trace's last ground segment starts "
                          "(metres from the airport reference) and its path length (adsb.POS_COLS). "
-                         "Built with --adsb; this flag only chooses whether the models see them")
+                         "Built with --adsb; this flag only chooses whether the models see them. "
+                         "v35: -0.19 live; --no-adsb-pos reproduces v33")
     ap.add_argument("--dest-proxy", action=argparse.BooleanOptionalAction, default=False,
                     help="use departures to the same destination from all ten airports "
                          "(features.DEST_COLS): their MVT-AOBT_3 / MVT-EOBT_1 gaps and counts "

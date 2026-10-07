@@ -44,7 +44,9 @@ record. Anything that ships lives in `src/`.
 | v30 | ours: v28 + OOF-equivalent target-encoding counts | 236.7134 |
 | v31 | ours: v30 + `--adsb-climb-id` (airframe named by the climb-out callsign) | 235.9474 |
 | v32 | ours: v31 + CatBoost 10000 / LightGBM 1200 for the 12-month fit | 235.5782 |
-| **v33** | **ours: v32 + `--clf-inbound` (late inbound -> LIRF schedule-copy tail; first partial-success submission)** | **233.3269** |
+| v33 | ours: v32 + `--clf-inbound` (late inbound -> LIRF schedule-copy tail; first partial-success submission) | 233.3269 |
+| v34 | ours: v33 + `--clf-inbound-air` (lost) | 235.4040 |
+| **v35** | **ours: v33 + `--adsb-pos` (where the trace starts)** | **233.1341** |
 
 **Team best is v30 (236.7134, 2026-09-30)**: `predict.py --mu lgb cat cat_note
 cat_ctr1 pa --proxy --adsb --adsb-nbr --te-count-oof-basis` at `832a01a`,
@@ -74,7 +76,7 @@ default afterwards); sha256 prefix `978eef415fb508ce`. Upload log:
 | v32 | `8720cc5` | v31's command `--cat-iterations 10000 --lgb-rounds 1200 --out output/submitting_v32_trees.parquet` | `d6500f2cd4cfac0f` | **235.5782** | **-0.3692 vs v31** (expected -0.2..-0.4; v25's tree step -0.37) |
 | v33 | `f6b8f3d` | v32's command `--clf-inbound --reuse-mu-parts output/submitting_v32_trees.parts.parquet --out output/submitting_v33_inbound.parquet` | `393a7d576b63f6ce` | **233.3269** | **-2.2513 vs v32** (offline pooled -0.89, holdout -3.26: ~2.5x) |
 | v34 | `1389b9c` | v33's defaults `--clf-inbound-air --reuse-mu-parts output/submitting_v32_trees.parts.parquet --out output/submitting_v35_inbair.parquet` (file named v35, uploaded as v34) | `80fa9189a6037418` | 235.4040 | **+2.0771 vs v33: lost**; dec_jun +5.71 offline was the real signal |
-| (v35 candidate) | `a1181f0` | v33's defaults `--adsb-pos`: full build (`--no-clf-inbound`, then the defaults changed) to `output/submitting_v34_pos.parquet`, then `--adsb-pos --reuse-mu-parts output/submitting_v34_pos.parts.parquet --out output/submitting_v35_pos_inbound.parquet` | `616a2b07268b8177` | -- | B20 (pooled robust -0.29); vs v33 only `mu` moves (p identical), mean |change| 11.5s, top 10 rows 1.0% |
+| v35 | `a1181f0` | v33's defaults `--adsb-pos`: full build (`--no-clf-inbound`, then the defaults changed) to `output/submitting_v34_pos.parquet`, then `--adsb-pos --reuse-mu-parts output/submitting_v34_pos.parts.parquet --out output/submitting_v35_pos_inbound.parquet` | `616a2b07268b8177` | **233.1341** | **-0.1928 vs v33** (offline pooled robust -0.29: ~0.66x); only `mu` moved, mean |change| 11.5s |
 
 
 **v32 (2026-10-06): 235.5782, -0.3692 against v31, team best.** v31 plus the Q5 final

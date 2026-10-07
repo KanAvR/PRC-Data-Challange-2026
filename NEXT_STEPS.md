@@ -872,6 +872,20 @@ by point estimate. LIRF-candidate AUC 0.880->0.887, 0.857->0.889,
 Extremely concentrated: top 10 rows carry more than the net on every split.
 Qualifies under the partial-success rule; submit once, no live tuning.
 
+**B27 out-of-fold residual corrector (outgoing-boat's step 4): closed before
+building (2026-10-07).** Leave-one-split-out LightGBM on saved out-of-sample
+residuals (features: the five timestamp gaps + airport, optionally `mu`),
+added at weight w. On `climb_lgb` it looked strong (normal rows -0.44..-2.58 at
+w 0.5), but that base lacks `--lirf-schedmix` and the corrector's top features
+were gap_SCHED and airport. On `lirfmix_lgb` (the v36 base), w 0.25: **without
+`mu`** -0.31 / -0.84 / -0.29 / -0.08 (inner mostly LTFM's snow episode,
+-4,116 MSE there); on the 0.25 lgb + 0.75 cat holdout blend **-0.15**. With
+`mu` as a feature -0.55 / -1.29 / -0.43 / -0.17 and blend -0.42, but then it
+is partly a correction by `mu` band, the category that reversed live
+(band calibration), and it would be fitted on LightGBM `mu` and applied to the
+five-member `mu`. What survives the safe form is below the bar for a day's
+build. Scratch test only; nothing in `src/`.
+
 **B26 `--schedmix-inbound`: negative (2026-10-07).** The LIRF copy classifier
 inside `--lirf-schedmix` also given inbound_after_sched. Against `lirfmix_lgb`
 (pinned `--lgb-rounds 900 --no-clf-inbound --no-adsb-pos`): pooled robust

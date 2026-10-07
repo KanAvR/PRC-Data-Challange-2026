@@ -159,6 +159,10 @@ def main():
             clf_train = train_data.assign(inbound_air_after_sched=meta["inbound_air_after_sched"].values)
             clf_rank = ranking_dep.assign(inbound_air_after_sched=inbound.air_arrival(
                 ranking_raw, "ranking").loc[dep_mask].values)
+        if args.clf_copy_p:
+            from copyp import add_copy_p
+            clf_train, clf_rank = clf_train.copy(), clf_rank.copy()
+            add_copy_p(clf_train, y_train, meta["month"].values, clf_rank)
         clf = train_tail_clf(clf_train, y_train, pooled=args.clf_pooled, no_lobt=args.clf_nolobt,
                              stakes=args.stakes, fit_pooled=not args.high_lobt, inbound=args.clf_inbound,
                              inbound_mono=args.clf_inbound_mono)

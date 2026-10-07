@@ -170,6 +170,10 @@ def run_split(name, X, y, meta, args, rates=None):
         # the airframe's trace arrival reaches the tail classifier only, never mu
         clf_tr = X_tr.assign(inbound_air_after_sched=meta.loc[tr, "inbound_air_after_sched"].values)
         clf_va = X_va.assign(inbound_air_after_sched=meta.loc[va, "inbound_air_after_sched"].values)
+    if args.clf_copy_p:
+        from copyp import add_copy_p
+        clf_tr, clf_va = clf_tr.copy(), clf_va.copy()
+        add_copy_p(clf_tr, y_tr, meta.loc[tr, "month"].values, clf_va)
     clf = train_tail_clf(clf_tr, y_tr, pooled=args.clf_pooled, no_lobt=args.clf_nolobt,
                          stakes=args.stakes, fit_pooled=not args.high_lobt, inbound=args.clf_inbound,
                          inbound_mono=args.clf_inbound_mono)

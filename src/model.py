@@ -715,7 +715,8 @@ def train_tail_clf(X, y, pooled="lgb", no_lobt="lgb", stakes=0.0, fit_pooled=Tru
     if inbound:
         X = with_inbound(X)
     extra = list(INBOUND_MONO) if (inbound and inbound_mono) else (INBOUND_COLS if inbound else [])
-    absent_cols = _usable(NO_LOBT_FEATURES + extra, X)
+    # copyp.COL is present only with --clf-copy-p
+    absent_cols = _usable(NO_LOBT_FEATURES + extra + ["p_sched_copy"], X)
     mono = INBOUND_MONO if (inbound and inbound_mono) else None
     absent = ~_has_lobt(X)
     if stakes:
@@ -846,6 +847,10 @@ def add_model_args(ap):
                          "the scheduled departure (model.INBOUND_COLS): late inbound aircraft make "
                          "LIRF record the scheduled time as block time. v33: -2.25 live; "
                          "--no-clf-inbound reproduces v32")
+    ap.add_argument("--clf-copy-p", action=argparse.BooleanOptionalAction, default=False,
+                    help="give the no-LOBT tail classifier the probability that the block time is "
+                         "copied from the schedule, learned out of month on delayed normal rows "
+                         "(copyp.py)")
     ap.add_argument("--clf-inbound-mono", action=argparse.BooleanOptionalAction, default=False,
                     help="with --clf-inbound, use only the 'after the scheduled departure' columns "
                          "and constrain p to rise with them (model.INBOUND_MONO)")

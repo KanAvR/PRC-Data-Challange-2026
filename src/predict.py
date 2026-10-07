@@ -36,6 +36,13 @@ def main():
                     help="take mu from a saved <out>.parts.parquet built with the same mu flags and "
                          "retrain only the tail models (minutes, not hours). Shown exact for v32: "
                          "reusing v32's parts with v32's command reproduces v32 with 0 rows different")
+    ap.add_argument("--reuse-family-parts", metavar="PARTS",
+                    help="with --reuse-families, take those mu families' predictions from the "
+                         "mu_<family> columns of a saved <out>.parts.parquet and train only the "
+                         "rest. The saved build must share every flag that reaches the reused "
+                         "families (e.g. retrain only pa after changing --pa-cat-iterations)")
+    ap.add_argument("--reuse-families", nargs="+", default=[], metavar="FAM",
+                    help="mu families to take from --reuse-family-parts")
     ap.add_argument("--timings", metavar="JSON",
                     help="write low-overhead wall/CPU/RSS timings after every pipeline stage")
     args = ap.parse_args()
@@ -137,8 +144,24 @@ def main():
         assert np.isfinite(mu_pred).all(), "saved parts do not cover every ranking DEP row"
         print(f"Reusing mu from {args.reuse_mu_parts}", flush=True)
     else:
+        reused = {}
+        if args.reuse_families:
+            if not args.reuse_family_parts:
+                raise SystemExit("--reuse-families needs --reuse-family-parts")
+            cols = [f"mu_{f}" for f in args.reuse_families]
+            saved = pd.read_parquet(args.reuse_family_parts, columns=["MVT_ID_mvt"] + cols)
+            saved = saved.set_index("MVT_ID_mvt").reindex(ranking_ids)
+            for fam, col in zip(args.reuse_families, cols):
+                if fam not in args.mu:
+                    raise SystemExit(f"--reuse-families {fam} is not in --mu")
+                reused[fam] = saved[col].to_numpy()
+                assert np.isfinite(reused[fam]).all(), f"saved {col} does not cover every ranking DEP row"
         mus = []
         for fam in args.mu:
+            if fam in reused:
+                print(f"Reusing mu family ({fam}) from {args.reuse_family_parts}", flush=True)
+                mus.append(reused[fam])
+                continue
             print(f"Training normal-regime regressor ({fam}) on all data...", flush=True)
             fit = trace_anchored(MU_FAMILIES[fam]) if args.adsb_anchor else MU_FAMILIES[fam]
             if args.lirf_schedmix:
@@ -217,6 +240,11 @@ def main():
             "lobt_bounds": bool(args.lobt_bounds), "high_lobt": bool(args.high_lobt),
             "high_lobt_pred": high_pred, "pred": preds,
         })
+        if not args.reuse_mu_parts:
+            # each family's own prediction, so a later build can retrain only the
+            # families a change reaches (--reuse-families)
+            for fam, m in zip(args.mu, mus):
+                parts[f"mu_{fam}"] = m
         parts_path = str(Path(args.out).with_suffix("")) + ".parts.parquet"
     with timings.stage("parts.parquet_write", path=parts_path, rows=len(parts)):
         parts.to_parquet(parts_path, index=False)

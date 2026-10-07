@@ -540,18 +540,22 @@ def trace_anchored(train_fn):
 # classifier on LIRF's normal rows gives p(copy), and LIRF rows are predicted as
 # p * gap_SCHED + (1 - p) * family. Other airports are unchanged in form.
 SCHEDMIX_AIRPORT = "LIRF"
+# --schedmix-inbound: the copy classifier also sees inbound_after_sched, the
+# late-inbound signal that won v33 for the tail (with_inbound)
+SCHEDMIX_INBOUND = False
 
 
 class _SchedMixed:
-    def __init__(self, model, clf):
-        self.model, self.clf = model, clf
+    def __init__(self, model, clf, inbound=False):
+        self.model, self.clf, self.inbound = model, clf, inbound
 
     def predict(self, X):
         base = np.asarray(self.model.predict(X), dtype=float)
         g = X["gap_SCHED_TIME_UTC_mvt"].to_numpy(dtype=float)
         sel = (X["ADEP_mvt"].astype(str).to_numpy() == SCHEDMIX_AIRPORT) & np.isfinite(g)
         if sel.any():
-            p = self.clf.predict(X.loc[sel])
+            Xs = with_inbound(X.loc[sel]) if self.inbound else X.loc[sel]
+            p = self.clf.predict(Xs)
             base = base.copy()
             base[sel] = p * np.clip(g[sel], 0, None) + (1 - p) * base[sel]
         return base
@@ -567,11 +571,13 @@ def lirf_schedmixed(train_fn, clf_rounds=400):
     def fit(X, y, **kw):
         copy = sched_copy_rows(X, y)
         lirf = (X["ADEP_mvt"].astype(str).to_numpy() == SCHEDMIX_AIRPORT) & (y <= TAIL_THR)
-        clf = lgb.train(SCHED_CLF_PARAMS, lgb.Dataset(X[lirf], label=copy[lirf].astype(int),
+        inbound = SCHEDMIX_INBOUND
+        Xc = with_inbound(X[lirf]) if inbound else X[lirf]
+        clf = lgb.train(SCHED_CLF_PARAMS, lgb.Dataset(Xc, label=copy[lirf].astype(int),
                                                        categorical_feature=CAT_COLS),
                         num_boost_round=clf_rounds)
         y_fit = np.where(copy, TAIL_THR + 1.0, y)
-        return _SchedMixed(train_fn(X, y_fit, **kw), clf)
+        return _SchedMixed(train_fn(X, y_fit, **kw), clf, inbound)
     return fit
 
 
@@ -791,6 +797,9 @@ def add_model_args(ap):
                     help="every mu family: at LIRF, mix gap_SCHED (block time copied from the "
                          "schedule) with a regressor fitted without those copies, weighted by a "
                          "classifier's p (model.lirf_schedmixed)")
+    ap.add_argument("--schedmix-inbound", action=argparse.BooleanOptionalAction, default=False,
+                    help="with --lirf-schedmix, the copy classifier also sees inbound_after_sched "
+                         "(how late the stand's previous arrival blocked in, against the schedule)")
     ap.add_argument("--pa-cat-iterations", type=int, default=None, metavar="N",
                     help="iterations for the per-airport CatBoost (default: "
                          "per_airport.CAT_ITERATIONS, 2000; never swept, lead N3b)")
@@ -916,6 +925,8 @@ def apply_model_args(args):
     global LGB_MU_ROUNDS, LGB_LINEAR_TREE
     LGB_MU_ROUNDS = getattr(args, "lgb_rounds", LGB_MU_ROUNDS)
     LGB_LINEAR_TREE = getattr(args, "lgb_linear_tree", False)
+    global SCHEDMIX_INBOUND
+    SCHEDMIX_INBOUND = getattr(args, "schedmix_inbound", False)
     if getattr(args, "pa_cat_iterations", None):
         import per_airport  # per_airport imports model, so not at module level
         per_airport.CAT_ITERATIONS = args.pa_cat_iterations

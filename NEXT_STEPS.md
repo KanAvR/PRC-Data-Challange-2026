@@ -78,6 +78,7 @@ default afterwards); sha256 prefix `978eef415fb508ce`. Upload log:
 | v34 | `1389b9c` | v33's defaults `--clf-inbound-air --reuse-mu-parts output/submitting_v32_trees.parts.parquet --out output/submitting_v35_inbair.parquet` (file named v35, uploaded as v34) | `80fa9189a6037418` | 235.4040 | **+2.0771 vs v33: lost**; dec_jun +5.71 offline was the real signal |
 | v35 | `a1181f0` | v33's defaults `--adsb-pos`: full build (`--no-clf-inbound`, then the defaults changed) to `output/submitting_v34_pos.parquet`, then `--adsb-pos --reuse-mu-parts output/submitting_v34_pos.parts.parquet --out output/submitting_v35_pos_inbound.parquet` | `616a2b07268b8177` | **233.1341** | **-0.1928 vs v33** (offline pooled robust -0.29: ~0.66x); only `mu` moved, mean |change| 11.5s |
 | (v36 candidate) | `9edb571` | v35's defaults (`--adsb-pos` explicit, default since) `--lirf-schedmix --pa-cat-iterations 5000 --out output/submitting_v36_pos_lirfmix.parquet` | `ed8cfc66cda3aef9` | -- | B21 + B22; vs v35 only `mu` moves: LIRF mean |change| 49.5s (others 5-10s), top 10 rows 10% |
+| (v37 candidates) | `0c3a1bd` | `--clf-copy-p --reuse-mu-parts <base>.parts.parquet`: on v35 -> `submitting_v37_copyp_on35`, on v36 -> `submitting_v37_copyp_on36` | `a33414725867d149` / `f7ff757736169c6b` | -- | B25; only p moves, 30-31 rows > 1000s (balanced up/down), top 10 rows ~45%; upload the one on the better live base, once |
 
 
 **v32 (2026-10-06): 235.5782, -0.3692 against v31, team best.** v31 plus the Q5 final

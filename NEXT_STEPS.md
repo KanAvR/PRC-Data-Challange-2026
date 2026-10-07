@@ -854,6 +854,16 @@ June/December 2025 (June artefacts with the aircraft on stand hours before
 SCHED), and every variant's RMSE effect sits inside the +/-2 per-split noise
 of a few hundred heavy-tailed rows. Not a large lever; all three flags off.
 
+**B24 other copied-timestamp classes: none left to mix (2026-10-07).** On
+`climb_lgb` normal rows (four splits), labels within 30s of a timestamp gap
+against a shifted-gap control (+/-120, 180s): AOBT_3 10.4% of rows but only
+3.6% of SSE at `mu` RMSE 113 (`mu` already gets them). LOBT and SCHED copies
+exceed the control only at LIRF (17.5% / 17.7% vs 3.3% / 2.4%; the same rows:
+90% of LIRF's LOBT copies are SCHED copies, the rest 0.9% of LIRF SSE) and
+LEBL (7.3% / 5.9% vs 4.4% / 3.7%). LEBL is too small an excess: the
+all-airport schedmix screen made LEBL worse on all four splits (+120..+384
+normal-row MSE). `--lirf-schedmix` covers the one real class.
+
 **B23 `--lgb-linear-tree`: negative (2026-10-07).** LightGBM `linear_tree`
 (linear_lambda 1.0, output clipped to [0, 7200]) for the `lgb` member, idea from
 public READMEs (local gains on weaker bases). `validate.py --mu lgb

@@ -903,8 +903,12 @@ zero; **pooled robust -1.37 (CI -1.83..-0.92)**, all rows -0.92 (CI
 -1.44..-0.40); normal rows -1.31 / -1.24 / -2.58 / -2.29. LIRF normal-row MSE
 -6,263 / -7,247 / -11,014 / -9,638; other airports -3..-133 (dropping LIRF's
 copies from the shared fit does not hurt them). ~7k more rows better than
-worse per split; top 25 rows carry 48-56% of the net (inner 87%). Next full
-build (v36), started after v35's live score so it includes `--adsb-pos` only
+worse per split; top 25 rows carry 48-56% of the net (inner 87%). **It
+carries into CatBoost** (`--mu cat --lirf-schedmix --cat-iterations 6000
+--lgb-rounds 900 --no-clf-inbound --splits holdout`, against `climb_cat_ho`):
+robust -0.71 (CI -1.32..-0.07), normal rows -0.71 (`mu` alone -0.89), LIRF
+normal-row MSE -2,918 (LightGBM's -6,263: CatBoost was already better there).
+Next full build (v36), started after v35's live score so it includes `--adsb-pos` only
 if that won.
 
 **B18 day-level bias seen through the stand exits: negative (2026-10-06).**

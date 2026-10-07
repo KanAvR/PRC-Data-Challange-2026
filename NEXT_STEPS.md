@@ -882,6 +882,13 @@ by point estimate. LIRF-candidate AUC 0.880->0.887, 0.857->0.889,
 Extremely concentrated: top 10 rows carry more than the net on every split.
 Qualifies under the partial-success rule; submit once, no live tuning.
 
+**B33 per-airport LightGBM rounds: 900 stays (2026-10-08).** Never swept.
+`output/diag/pa_rounds.py`, one LightGBM per airport at v35 features, scored at
+several counts, inner (8 months): pooled normal-row RMSE 300: 206.53, **600:
+205.15**, 900: 205.22, 1200: 205.38, 2500: 205.79; every airport within ~0.5 of
+its best at 900. The 12-month optimum sits higher than 8 months', so 900 is on
+the plateau; -0.07 for one half of `pa`. Holdout not run.
+
 **B32 untraced summer LIRF (July 2026): a real cost, partly fixable
 (2026-10-08).** July 2026 LIRF has a trace on 0.3% of departures; summer 2025
 LIRF on 87-96%, and no split scores untraced summer LIRF. Gate

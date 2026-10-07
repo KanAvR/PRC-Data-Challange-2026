@@ -882,6 +882,15 @@ by point estimate. LIRF-candidate AUC 0.880->0.887, 0.857->0.889,
 Extremely concentrated: top 10 rows carry more than the net on every split.
 Qualifies under the partial-success rule; submit once, no live tuning.
 
+**B31 `--te-airport-prior` re-screened on the trace features: negative
+(2026-10-08).** Every encoding shrunk toward its airport's mean (aimed at 2026's
+unseen stands, EDDM 4.6%); pre-ADS-B it was -0.11 not established.
+`validate.py --mu lgb --proxy --te-airport-prior --lgb-rounds 900
+--no-clf-inbound --no-adsb-pos --tag apprior_lgb --compare climb_lgb`: robust
+holdout **+0.21**, inner **+0.48** (both significant), dec_jun -0.19, mar_sep
+-0.11; **pooled robust +0.09 (CI -0.06..+0.28)**; normal rows +0.26 / +0.39 /
+-0.10 / -0.08. Off.
+
 **B30 `--clf-seeds 25`: negative (2026-10-08).** The tail classifiers average
 5 seeds; 25 should only reduce variance. `validate.py --reuse-mu climb_lgb
 --no-adsb-pos --proxy --clf-seeds 25 --tag clfseed25 --compare clfinb` (the

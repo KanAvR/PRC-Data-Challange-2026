@@ -882,6 +882,15 @@ by point estimate. LIRF-candidate AUC 0.880->0.887, 0.857->0.889,
 Extremely concentrated: top 10 rows carry more than the net on every split.
 Qualifies under the partial-success rule; submit once, no live tuning.
 
+**B30 `--clf-seeds 25`: negative (2026-10-08).** The tail classifiers average
+5 seeds; 25 should only reduce variance. `validate.py --reuse-mu climb_lgb
+--no-adsb-pos --proxy --clf-seeds 25 --tag clfseed25 --compare clfinb` (the
+5-seed control `clfseed5` reproduces `clfinb` to +0.00 on every split): robust
+holdout +0.43, inner +0.13, dec_jun -0.19, mar_sep +0.52; **pooled robust +0.21
+(CI -0.16..+0.60)**, worse on three of four. A smoother p on a few hundred
+positives is not a better p here; `CLF_BOOST` was set on the 5-seed spread, and
+retuning it would be fitting tail rows. Flag kept, default 5.
+
 **B29 own trace says the taxi exceeded 6000s: nothing to add (2026-10-07).**
 `mu` never sees a label above 6000, so a row whose trace leaves the stand
 earlier than that could only be followed by the tail side. On `climb_lgb`'s

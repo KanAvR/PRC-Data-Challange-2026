@@ -28,8 +28,11 @@ from features import CAT_COLS
 from model import CAT_MU_PARAMS, MU_PARAMS, TAIL_THR
 
 # Mid-plateau values, not grid edges: clip 100-200s with weight 0.4-0.6 all land
-# within 0.06 of each other, so neither constant is delicate.
-PA_WEIGHT = 0.5
+# within 0.06 of each other, so neither constant is delicate. Live on v39's families
+# (a blend-only change of at most weight x clip per row): w 0.4 232.8913, 0.5
+# 232.9112, 0.6 233.0082; a quadratic on MSE puts the optimum near 0.42, so 0.4
+# since v41. --pa-weight 0.5 reproduces v39 and earlier.
+PA_WEIGHT = 0.4
 PA_CLIP = 150.0  # seconds; the per-airport model may only nudge the global one
 # 2000 until v35; 5000 (B22) took v38 live, -0.08. --pa-cat-iterations 2000 reproduces v35
 CAT_ITERATIONS = 5000

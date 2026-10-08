@@ -142,7 +142,9 @@ Flags that stay off by default are kept as the record of measured negatives:
 | v36 | v35 + a LIRF schedule-copy mixture in `mu`, and per-airport CatBoost 5,000 (rejected) | 233.5389 |
 | v37 | v35 + a schedule-copy probability in the tail classifier (rejected) | 233.4404 |
 | v38 | v35 + per-airport CatBoost at 5,000 iterations | 233.0553 |
-| **v39** | **v38 + `cat_ctr1` at 8,000 iterations** | **232.9112** |
+| v39 | v38 + `cat_ctr1` at 8,000 iterations | 232.9112 |
+| v40 | v39 with the per-airport blend weight at 0.6 (rejected) | 233.0082 |
+| **v41** | **v39 with the per-airport blend weight at 0.4** | **232.8913** |
 
 Offline gains do not always carry over:
 
@@ -196,9 +198,11 @@ predictions as `<tag>_unmasked`. Judge encoding and key changes on both.
 ## Run
 
 ```bash
-# Reproduce v39: train on all twelve months and score the ranking set (several
-# hours; fetch the ADS-B days first, see Setup). --ctr1-iterations 3500 gives
-# v38; add --pa-cat-iterations 2000 for v35, and --no-adsb-pos as well for v33.
+# Reproduce v41: train on all twelve months and score the ranking set (several
+# hours; fetch the ADS-B days first, see Setup). --pa-weight 0.5 gives v39; add
+# --ctr1-iterations 3500 for v38, --pa-cat-iterations 2000 as well for v35, and
+# --no-adsb-pos as well for v33. v39-v41 were built with --reuse-families from
+# the previous build's per-family parts (shown exact: 0 rows different).
 # The ADS-B trace features, their neighbour/surface columns, the trace start
 # position and the climb-out match, the late-inbound tail
 # classifier, the tail cap, the flight backoff/dropout, 10,000 CatBoost
@@ -208,7 +212,7 @@ predictions as `<tag>_unmasked`. Judge encoding and key changes on both.
 # v31, and --no-adsb-climb-id as well for v30. Earlier versions are recorded in
 # NEXT_STEPS.md and in --help.
 .venv/bin/python src/predict.py --mu lgb cat cat_note cat_ctr1 pa --proxy \
-    --out output/submitting_v39.parquet
+    --out output/submitting_v41.parquet
 
 # Tail-only change: reuse a finished build's mu and retrain only the tail models
 # (minutes). Check it reproduces that build before shipping from it.

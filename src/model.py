@@ -368,7 +368,9 @@ CAT_MU_PARAMS = dict(
 # 6000 with 10), and the submission fits on 12, so --cat-iterations defaults to
 # this. Swept 2026-09-24; v25 took it live, -0.37. With the trace features
 # holdout still fell at 10000 (Q5); v32 took 10000 live, -0.37 with LightGBM 1200.
-CAT_FULL_FIT_ITERATIONS = 10000
+# Q5's holdout curve was still falling at 10000; v42 took 14000 live, -0.13.
+# --cat-iterations 10000 reproduces v32-v41
+CAT_FULL_FIT_ITERATIONS = 14000
 
 XGB_MU_PARAMS = dict(
     objective="reg:squarederror", eval_metric="rmse", tree_method="hist",
@@ -795,8 +797,8 @@ def add_model_args(ap):
                     help="iterations for the cat and cat_note families (cat_ctr1 and the per-airport "
                          "CatBoost set their own). The best count grows with training size: ~4000 "
                          "at 8 months, still falling at 6000 with 10. v25 (6000): -0.37 live; "
-                         "v32 (10000): -0.37 live. --cat-iterations 6000 reproduces v25-v31, "
-                         "3000 reproduces v24")
+                         "v32 (10000): -0.37 live; v42 (14000): -0.13 live. --cat-iterations 10000 "
+                         "reproduces v32-v41, 6000 v25-v31, 3000 v24")
     ap.add_argument("--lgb-rounds", type=int, default=LGB_MU_ROUNDS, metavar="N",
                     help="boosting rounds for the lgb mu family (the per-airport family sets its "
                          "own). 900 was tuned before the trace features; Q5 puts the optimum on a "

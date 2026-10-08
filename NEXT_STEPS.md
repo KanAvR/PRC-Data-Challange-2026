@@ -882,6 +882,23 @@ by point estimate. LIRF-candidate AUC 0.880->0.887, 0.857->0.889,
 Extremely concentrated: top 10 rows carry more than the net on every split.
 Qualifies under the partial-success rule; submit once, no live tuning.
 
+**B34 `--adsb-day-dropout 0.2`: negative masked and unmasked (2026-10-08).**
+Training rows of a hashed 19% of airport-days blanked as untraced
+(`adsb.blank_untraced`), so the families see untraced days outside winter LIRF.
+`validate.py --mu lgb --proxy --mask-adsb-lirf` (summer LIRF blanked at predict
+time; saves TAG and TAG_unmasked), arm `adsbdrop_lgb` against `adsbmask_ctrl`.
+Masked (2026-like): robust holdout +0.36, inner +0.01, dec_jun +0.39, mar_sep
++0.36, **pooled +0.28 (CI +0.11..+0.46)**; unmasked: +0.25 / +0.11 / +0.61 /
++0.38, **pooled +0.34 (CI +0.18..+0.50)**. The target rows do not improve
+either: masked summer LIRF 572.2 vs 570.4 (holdout), 513.3 vs 513.2, 452.2 vs
+454.4, 430.1 vs 431.1. Hiding a fifth of the traces costs the traced rows more
+than it teaches the untraced regime. The masking cost itself (control, normal
+rows): holdout +1.71, inner +1.11, dec_jun +1.09, mar_sep +0.07 split RMSE: that
+is what July 2026 LIRF costs against a traced July, and it is information, not
+a fixable misfit. Routing untraced airport-days to a no-trace twin of every
+family would double each fit; not worth it on B32's -199 / -25 MSE (LightGBM
+only). Flag and harness kept; dropout off.
+
 **B33 per-airport LightGBM rounds: 900 stays (2026-10-08).** Never swept.
 `output/diag/pa_rounds.py`, one LightGBM per airport at v35 features, scored at
 several counts, inner (8 months): pooled normal-row RMSE 300: 206.53, **600:

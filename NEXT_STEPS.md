@@ -894,6 +894,17 @@ by point estimate. LIRF-candidate AUC 0.880->0.887, 0.857->0.889,
 Extremely concentrated: top 10 rows carry more than the net on every split.
 Qualifies under the partial-success rule; submit once, no live tuning.
 
+**B40 the arrival habit for LIRF's normal-band copies: adds nothing over the
+operator (2026-10-08).** Among LIRF's 60,099 delayed normal-band departures of
+2025 (gap_SCHED > 1800, 99% with a plan), 8% are schedule copies, and the
+operator's arrival-copy share alone has AUC 0.742 (copy rate 3-4% below 0.1,
+64% above 0.3; `output/diag/normalband_habit.py`). Screens against `pos_lgb`
+(`--lgb-rounds 900 --no-clf-inbound`): `--mu-arr-habit` (a `mu` input) pooled
+robust +0.04, inner +0.42 significant; `--mu-arr-habit --lirf-schedmix` pooled
+robust **-1.38**, the same as `--lirf-schedmix` alone (-1.37, B21): the copy
+classifier already sees the operator. No new information, and schedmix itself
+lost live (v36). Closed.
+
 **B39 `--clf-service --svc-midnight-gate`: wins the four-split screen
 (2026-10-08).** Ungated, `--clf-service` raised LIRF-candidate AUC on all four
 splits (0.880->0.908, 0.857->0.894, 0.789->0.845, 0.893->0.910) and improved

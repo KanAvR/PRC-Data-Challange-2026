@@ -9,7 +9,7 @@ import model  # noqa: E402
 
 class Ctr1IterationsTest(unittest.TestCase):
     def tearDown(self):
-        model.CAT_CTR1_PARAMS["iterations"] = 3500
+        model.CAT_CTR1_PARAMS["iterations"] = 8000
 
     def parse(self, argv):
         ap = argparse.ArgumentParser()
@@ -18,13 +18,13 @@ class Ctr1IterationsTest(unittest.TestCase):
         model.apply_model_args(args)
         return args
 
-    def test_default_reproduces_3500(self):
+    def test_default_is_v39s_8000(self):
         self.parse([])
-        self.assertEqual(model.CAT_CTR1_PARAMS["iterations"], 3500)
+        self.assertEqual(model.CAT_CTR1_PARAMS["iterations"], 8000)
 
     def test_flag_sets_ctr1_only(self):
-        self.parse(["--ctr1-iterations", "8000", "--cat-iterations", "10000"])
-        self.assertEqual(model.CAT_CTR1_PARAMS["iterations"], 8000)
+        self.parse(["--ctr1-iterations", "3500", "--cat-iterations", "10000"])
+        self.assertEqual(model.CAT_CTR1_PARAMS["iterations"], 3500)
         self.assertEqual(model.CAT_MU_PARAMS["iterations"], 10000)
 
 

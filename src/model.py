@@ -458,7 +458,9 @@ def train_mu_cat_note(X, y):
 # Single-feature CTRs at depth 10: 3.6x faster per iteration than the default and
 # the most different of the tuned CatBoosts. On the inner split it bottoms out at
 # 3000-4500 iterations and overfits after.
-CAT_CTR1_PARAMS = dict(max_ctr_complexity=1, depth=10, iterations=3500)
+# iterations: 3500 until v38; 8000 (NEXT_STEPS.md, B35) took v39 live, -0.14.
+# --ctr1-iterations 3500 reproduces v38 and earlier
+CAT_CTR1_PARAMS = dict(max_ctr_complexity=1, depth=10, iterations=8000)
 
 
 def train_mu_cat_ctr1(X, y):
@@ -907,7 +909,8 @@ def add_model_args(ap):
     ap.add_argument("--clf-nolobt", default="cat", choices=list(CLF_FAMILIES))
     ap.add_argument("--ctr1-iterations", type=int, default=CAT_CTR1_PARAMS["iterations"], metavar="N",
                     help="iterations for the cat_ctr1 family (3500 was set on inner, 8 months, before "
-                         "the traces; holdout with 10 months still falls at 7000: NEXT_STEPS.md, B35)")
+                         "the traces; holdout with 10 months still falls at 7000: NEXT_STEPS.md, B35). "
+                         "8000 since v39 (-0.14 live); 3500 reproduces v38 and earlier")
     ap.add_argument("--adsb-day-dropout", type=float, default=0.0, metavar="FRAC",
                     help="with --adsb, blank every adsb_* column on a hashed FRAC of airport-days "
                          "of the TRAINING rows (adsb.blank_untraced), so every family learns the "

@@ -1,4 +1,4 @@
-# PRC Data Challenge 2026 — Taxi-Out Time Prediction
+﻿# PRC Data Challenge 2026 â€” Taxi-Out Time Prediction
 
 Predict `TAXITIME_SEC_mvt` for departures at ten European airports using 2025
 training data. The ranking set is 344,841 departures from January and July 2026,
@@ -99,9 +99,9 @@ applies two corrections keyed on the flight plan's LOBT.
   this mixture only where that estimate exceeds 6,000 s. Everywhere else the
   prediction is `mu`.
 - **LOBT bounds (`--lobt-bounds`).** Predictions for rows with a matched LOBT
-  are projected onto the movement-to-LOBT gap ±3,660 s, intersected with
+  are projected onto the movement-to-LOBT gap Â±3,660 s, intersected with
   nonnegative times. All 2,062,448 matched training labels lie within
-  ±3,606 s. This is an observed property of the data, not a guarantee, and
+  Â±3,606 s. This is an observed property of the data, not a guarantee, and
   training fails loudly if new data violates it.
 - **Long-taxi specialist (`--high-lobt`).** A small LightGBM learns
   `target - gap_LOBT` on matched gaps above 3,000 s, extreme labels included.
@@ -122,7 +122,7 @@ Flags that stay off by default are kept as the record of measured negatives:
 | v8 | weather + four-member `mu` | 275.97 |
 | v9 | + LOBT bounds + long-taxi specialist | 269.41 |
 | v14 | + per-airport blend | 268.41 |
-| v16 | + target-encoding shrinkage 30 → 10 | 267.78 |
+| v16 | + target-encoding shrinkage 30 â†’ 10 | 267.78 |
 | v20 | + neighbour taxi-proxy features | 265.219 |
 | v21 | v20 + out-of-fold band calibration of `mu` (rejected) | 265.864 |
 | v22 | v20 + cap on the tail hedge | 264.749 |
@@ -141,11 +141,12 @@ Flags that stay off by default are kept as the record of measured negatives:
 | v35 | v33 + where each departure's trace starts on the airport | 233.1341 |
 | v36 | v35 + a LIRF schedule-copy mixture in `mu`, and per-airport CatBoost 5,000 (rejected) | 233.5389 |
 | v37 | v35 + a schedule-copy probability in the tail classifier (rejected) | 233.4404 |
-| **v38** | **v35 + per-airport CatBoost at 5,000 iterations** | **233.0553** |
+| v38 | v35 + per-airport CatBoost at 5,000 iterations | 233.0553 |
+| **v39** | **v38 + `cat_ctr1` at 8,000 iterations** | **232.9112** |
 
 Offline gains do not always carry over:
 
-- The v16 → v20 proxy features kept about 81% of their offline gain live; the
+- The v16 â†’ v20 proxy features kept about 81% of their offline gain live; the
   v24 flight encoding kept about 100%, measured on the 2026-like masked
   validation.
 - A richer feature set for the tail classifiers won offline and lost about 25
@@ -195,9 +196,9 @@ predictions as `<tag>_unmasked`. Judge encoding and key changes on both.
 ## Run
 
 ```bash
-# Reproduce v38: train on all twelve months and score the ranking set (several
-# hours; fetch the ADS-B days first, see Setup). --pa-cat-iterations 2000 gives
-# v35; add --no-adsb-pos as well for v33.
+# Reproduce v39: train on all twelve months and score the ranking set (several
+# hours; fetch the ADS-B days first, see Setup). --ctr1-iterations 3500 gives
+# v38; add --pa-cat-iterations 2000 for v35, and --no-adsb-pos as well for v33.
 # The ADS-B trace features, their neighbour/surface columns, the trace start
 # position and the climb-out match, the late-inbound tail
 # classifier, the tail cap, the flight backoff/dropout, 10,000 CatBoost
@@ -207,7 +208,7 @@ predictions as `<tag>_unmasked`. Judge encoding and key changes on both.
 # v31, and --no-adsb-climb-id as well for v30. Earlier versions are recorded in
 # NEXT_STEPS.md and in --help.
 .venv/bin/python src/predict.py --mu lgb cat cat_note cat_ctr1 pa --proxy \
-    --out output/submitting_v38.parquet
+    --out output/submitting_v39.parquet
 
 # Tail-only change: reuse a finished build's mu and retrain only the tail models
 # (minutes). Check it reproduces that build before shipping from it.

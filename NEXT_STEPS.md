@@ -894,6 +894,22 @@ by point estimate. LIRF-candidate AUC 0.880->0.887, 0.857->0.889,
 Extremely concentrated: top 10 rows carry more than the net on every split.
 Qualifies under the partial-success rule; submit once, no live tuning.
 
+**B41 `--day-late-cross`: not established (2026-10-08).** The day-late
+component (value DAY + 960) only on no-LOBT candidates (gap_SCHED 14-30h) that
+leave after local midnight, its rate fitted on those rows (2025: 18 of 19
+in-window tail candidates cross; all 11 day-late rows do). Against `clfinb`:
+robust holdout -3.53 (CI -9.70..+0.29), inner **+1.41 (CI +0.00..+4.40)**,
+dec_jun -0.61, mar_sep -2.16 (CI -18.35..+11.63); **pooled robust -1.23 (CI
+-5.37..+2.24)**; normal rows 0.00. A partial success on paper (point estimate
+negative, three of four better), but it rests on ~11 rows across eight months,
+and the day-late step (v23) lost 0.62 live. Lowest priority; not on a slot
+before the operation-type line is settled.
+
+**Gated `--clf-arr-habit --svc-midnight-gate` (`clfarr_g`) also wins**: robust
+holdout -2.61, inner -1.27, dec_jun -1.80 (significant), mar_sep -0.49;
+**pooled robust -1.59 (CI -2.63..-0.62)**; normal rows -6.43 / -1.58 / -0.16 /
+-0.20. Under the upload order fixed above it is only a fallback if v43 loses.
+
 **B40 the arrival habit for LIRF's normal-band copies: adds nothing over the
 operator (2026-10-08).** Among LIRF's 60,099 delayed normal-band departures of
 2025 (gap_SCHED > 1800, 99% with a plan), 8% are schedule copies, and the

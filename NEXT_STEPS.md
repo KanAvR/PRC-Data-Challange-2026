@@ -910,6 +910,23 @@ no live tuning). Ungated `--clf-arr-habit`: +0.24 pooled (same day-late
 pattern; excluding day-late better on three splits); `--clf-service
 --clf-arr-habit`: +1.78 (day-late +2,005M on holdout; excluding them better on
 all four).
+Honesty on the number: the gate was added after the ungated arms lost on the
+day-late rows of these same splits, so -1.74 is not a clean held-out estimate
+and its size is likely optimistic. What justifies the gate is a label fact
+(12/12 day-late rows cross local midnight, 0/760 non-crossing candidates are
+day-late), not the screen. Precedent: v37 (`--clf-copy-p`) was also better on
+all four splits with the top 10 rows above the net, and lost +0.31 live; v43
+has the same concentration profile, only a better interval.
+
+**Order for the concentrated LIRF-classifier variants (fixed 2026-10-08, before
+the gated `--clf-arr-habit` arms finished).** These variants move the same ~20-25
+LIRF candidates, so uploading several and keeping the best would select on those
+rows' labels. v43 (`--clf-service --svc-midnight-gate`) goes first. **If it wins,
+the line stops**: no arr-habit variant is uploaded to see whether it beats it.
+**If it loses**, exactly one other variant may follow: whichever gated arm
+(`clfarr_g`, `clfsvcarr_g`) passes the full four-split bar (pooled robust CI
+below zero, no split significantly worse), the better pooled robust point
+estimate if both do; if neither does, none.
 
 **B38 non-LIRF no-flight-plan tail, and long trace exits in 2026: no action
 (2026-10-08).** The 95 non-LIRF no-LOBT tail rows of 2025 are not GA: 91 IFR

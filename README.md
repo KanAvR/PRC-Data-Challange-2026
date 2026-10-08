@@ -1,4 +1,4 @@
-﻿# PRC Data Challenge 2026 â€” Taxi-Out Time Prediction
+# PRC Data Challenge 2026 — Taxi-Out Time Prediction
 
 Predict `TAXITIME_SEC_mvt` for departures at ten European airports using 2025
 training data. The ranking set is 344,841 departures from January and July 2026,
@@ -99,9 +99,9 @@ applies two corrections keyed on the flight plan's LOBT.
   this mixture only where that estimate exceeds 6,000 s. Everywhere else the
   prediction is `mu`.
 - **LOBT bounds (`--lobt-bounds`).** Predictions for rows with a matched LOBT
-  are projected onto the movement-to-LOBT gap Â±3,660 s, intersected with
+  are projected onto the movement-to-LOBT gap ±3,660 s, intersected with
   nonnegative times. All 2,062,448 matched training labels lie within
-  Â±3,606 s. This is an observed property of the data, not a guarantee, and
+  ±3,606 s. This is an observed property of the data, not a guarantee, and
   training fails loudly if new data violates it.
 - **Long-taxi specialist (`--high-lobt`).** A small LightGBM learns
   `target - gap_LOBT` on matched gaps above 3,000 s, extreme labels included.
@@ -122,7 +122,7 @@ Flags that stay off by default are kept as the record of measured negatives:
 | v8 | weather + four-member `mu` | 275.97 |
 | v9 | + LOBT bounds + long-taxi specialist | 269.41 |
 | v14 | + per-airport blend | 268.41 |
-| v16 | + target-encoding shrinkage 30 â†’ 10 | 267.78 |
+| v16 | + target-encoding shrinkage 30 → 10 | 267.78 |
 | v20 | + neighbour taxi-proxy features | 265.219 |
 | v21 | v20 + out-of-fold band calibration of `mu` (rejected) | 265.864 |
 | v22 | v20 + cap on the tail hedge | 264.749 |
@@ -146,7 +146,7 @@ Flags that stay off by default are kept as the record of measured negatives:
 
 Offline gains do not always carry over:
 
-- The v16 â†’ v20 proxy features kept about 81% of their offline gain live; the
+- The v16 → v20 proxy features kept about 81% of their offline gain live; the
   v24 flight encoding kept about 100%, measured on the 2026-like masked
   validation.
 - A richer feature set for the tail classifiers won offline and lost about 25

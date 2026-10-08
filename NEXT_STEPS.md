@@ -93,6 +93,7 @@ default afterwards); sha256 prefix `978eef415fb508ce`. Upload log:
 | v34 | `1389b9c` | v33's defaults `--clf-inbound-air --reuse-mu-parts output/submitting_v32_trees.parts.parquet --out output/submitting_v35_inbair.parquet` (file named v35, uploaded as v34) | `80fa9189a6037418` | 235.4040 | **+2.0771 vs v33: lost**; dec_jun +5.71 offline was the real signal |
 | v35 | `a1181f0` | v33's defaults `--adsb-pos`: full build (`--no-clf-inbound`, then the defaults changed) to `output/submitting_v34_pos.parquet`, then `--adsb-pos --reuse-mu-parts output/submitting_v34_pos.parts.parquet --out output/submitting_v35_pos_inbound.parquet` | `616a2b07268b8177` | **233.1341** | **-0.1928 vs v33** (offline pooled robust -0.29: ~0.66x); only `mu` moved, mean |change| 11.5s |
 | v36 | `9edb571` | v35's defaults (`--adsb-pos` explicit, default since) `--lirf-schedmix --pa-cat-iterations 5000 --out output/submitting_v36_pos_lirfmix.parquet` | `ed8cfc66cda3aef9` | 233.5389 | **+0.4048 vs v35: lost**; B21 + B22 bundled, so not attributable (B22 alone offline -0.14); vs v35 only `mu` moves: LIRF mean |change| 49.5s (others 5-10s), top 10 rows 10% |
+| (v43 candidate) | `ad91107` | v42's defaults `--clf-service --svc-midnight-gate --reuse-family-parts output/submitting_v42_cat14k.parts.parquet --reuse-families lgb cat cat_note cat_ctr1 pa --out output/submitting_v43_svcgate.parquet` (tail only) | `7ab3336495a4d7a7` | -- | B39 (four-split win, pooled robust -1.74); `mu` identical; p unchanged on the 175 midnight-crossing candidates; LIRF candidates mean p 0.551 -> 0.574, 22 rows move > 0.2 (18 up); top 10 rows 67%: concentrated, submit once |
 | v42 | `8c62345` | v41's defaults `--cat-iterations 14000`: `cat`/`cat_note` retrained on v39's parts (`--reuse-families lgb cat_ctr1 pa`, `output/submitting_v40_cat14k`), then re-blended at `pa` weight 0.4 with every family reused -> `output/submitting_v42_cat14k.parquet` | `0f7717a3b9ee27b2` | **232.7616** | **-0.1297 vs v41, team best**; Q5's holdout curve still falling at 10000; 14000 is now the default (`--cat-iterations 10000` reproduces v41). Only `cat`/`cat_note` move: mean |change| 1.9s, top 10 rows 1.0% |
 | v41 | `482bc8b` | as v40 with `--pa-weight 0.4 --out output/submitting_v41_paw04.parquet` | `19fcb4659d88ec9c` | **232.8913** | **-0.0199 vs v39, team best**; with v40 and v39 a quadratic on MSE puts the optimum near w 0.42 (0.002 better): the weight search stops; 0.4 is now the default (`--pa-weight 0.5` reproduces v39) |
 | v40 | `482bc8b` | v39's command `--pa-weight 0.6 --reuse-family-parts output/submitting_v39_ctr1_8k.parts.parquet --reuse-families lgb cat cat_note cat_ctr1 pa --out output/submitting_v40_paw06.parquet` (blend only) | `22fa6b0b16a7aa59` | 233.0082 | **+0.0970 vs v39: lost**; broad (max |change| 15s, top 10 rows 0.0%), so the weight may be tuned live; B19's "stronger `pa` wants more weight" does not hold for v39 |
@@ -891,6 +892,24 @@ by point estimate. LIRF-candidate AUC 0.880->0.887, 0.857->0.889,
 **0.789->0.816 (dec_jun, where the -air variant failed)**, 0.893->0.904.
 Extremely concentrated: top 10 rows carry more than the net on every split.
 Qualifies under the partial-success rule; submit once, no live tuning.
+
+**B39 `--clf-service --svc-midnight-gate`: wins the four-split screen
+(2026-10-08).** Ungated, `--clf-service` raised LIRF-candidate AUC on all four
+splits (0.880->0.908, 0.857->0.894, 0.789->0.845, 0.893->0.910) and improved
+normal rows on all four, but lost overall (pooled robust +0.61): 11 day-late rows
+(holdout +1,004M on one) read as normal, since they come from regular carriers.
+**Every 2025 day-late row crosses local midnight** (scheduled on one local date,
+left after midnight: the record kept the scheduled date with the actual time);
+0 of 760 non-crossing LIRF candidates are day-late. With the gate (crossing rows
+keep the shipped classifier's p, bit-identical), against `clfinb`: robust
+holdout **-2.99 (CI -5.58..-0.78)**, inner **-2.13 (-4.16..-0.43)**, dec_jun
+-1.53, mar_sep -0.16; **pooled robust -1.74 (CI -2.87..-0.73), wins**; normal
+rows -2.73 / -2.06 / -0.31 / -0.55. Rows moving > 1e6 SSE: better 85/45/45/28,
+worse 33/18/20/20; top 10 rows 78-121% of the net (tail-typical: submit once,
+no live tuning). Ungated `--clf-arr-habit`: +0.24 pooled (same day-late
+pattern; excluding day-late better on three splits); `--clf-service
+--clf-arr-habit`: +1.78 (day-late +2,005M on holdout; excluding them better on
+all four).
 
 **B38 non-LIRF no-flight-plan tail, and long trace exits in 2026: no action
 (2026-10-08).** The 95 non-LIRF no-LOBT tail rows of 2025 are not GA: 91 IFR

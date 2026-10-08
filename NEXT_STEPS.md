@@ -892,6 +892,21 @@ by point estimate. LIRF-candidate AUC 0.880->0.887, 0.857->0.889,
 Extremely concentrated: top 10 rows carry more than the net on every split.
 Qualifies under the partial-success rule; submit once, no live tuning.
 
+**B38 non-LIRF no-flight-plan tail, and long trace exits in 2026: no action
+(2026-10-08).** The 95 non-LIRF no-LOBT tail rows of 2025 are not GA: 91 IFR
+airline flights with an aircraft type (THY, BAW, AAL, DAL), LTFM 56 (largely the
+February snow episode), EGLL 20; labels mostly 6,000-7,500s against predictions
+~2,200 (12.8e9 SSE in validation, as large as the LIRF candidate pool). Genuine
+long waits on flights whose plan did not match; LTFM has no ground traces and
+episode features extrapolate badly (section 5). On ranking, 38 rows have a trace
+stand exit > 6000s, **33 at EHAM in January 2026** (its de-icing episode), about
+half without a LOBT, predicted ~3,000-3,700s. But 2025 says long exits are
+unreliable: within 300s of the label on 90-93% of exits up to 3,500s, 84% at
+3,500-4,500s, 53% at 4,500-5,500s, 17-25% beyond (tows; label far below the exit).
+A probability-weighted move toward the trace (q ~ 1/3) is worth ~-0.09 on ~15
+rows: concentrated and unvalidatable. `output/diag/nonlirf_tail.py`,
+`trace_long.py`.
+
 **B37 per-airport CatBoost beyond 5000: no (2026-10-08).**
 `output/diag/pa_cat_rounds.py holdout LIRF LTFM LFPG EGLL` (one model per airport
 to 9000, alone, normal rows): pooled 2000: 255.30, 3500: 255.61, 5000: 256.05,

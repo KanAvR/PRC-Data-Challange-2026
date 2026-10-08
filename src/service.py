@@ -65,6 +65,33 @@ def service_features(raw):
     return out
 
 
+# --svc-midnight-gate: day-late labels (86,400 s + a normal taxi: the record kept the
+# scheduled local date with the actual time of day) need the flight to leave on a
+# later local date than scheduled. 2025 LIRF candidates: 12 of 12 day-late rows
+# cross local midnight, 0 of 760 non-crossing candidates are day-late. The
+# operation-type inputs separate copies from normal off-blocks but read day-late
+# rows (regular carriers) as normal, so crossing rows keep the shipped classifier.
+GATE_COL = "svc_cross_midnight"
+
+
+def cross_midnight(raw):
+    """1.0 where a departure's local take-off date is after its local scheduled date."""
+    from features import AIRPORT_TZ
+    out = pd.Series(np.nan, index=raw.index, name=GATE_COL)
+    dep = (raw["PHASE_mvt"] == "DEP").values
+    d = raw.loc[dep]
+    res = np.zeros(len(d))
+    apt = d["ADEP_mvt"].astype(str).values
+    for code, tz in AIRPORT_TZ.items():
+        sel = apt == code
+        if sel.any():
+            s = d["SCHED_TIME_UTC_mvt"].iloc[sel].dt.tz_convert(tz).dt.normalize()
+            m = d["MVT_TIME_UTC_mvt"].iloc[sel].dt.tz_convert(tz).dt.normalize()
+            res[sel] = (m.dt.tz_localize(None) > s.dt.tz_localize(None)).astype(float).values
+    out.loc[dep] = res
+    return out
+
+
 def _operator(flight):
     return pd.Series([s[:3] if isinstance(s, str) and len(s) >= 3 else "" for s in flight])
 

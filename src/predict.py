@@ -198,13 +198,18 @@ def main():
             ah = service.arrival_habit(ranking_raw).loc[dep_mask]
             clf_train = clf_train.assign(**{c: meta[c].values for c in service.ARR_COLS})
             clf_rank = clf_rank.assign(**{c: ah[c].values for c in service.ARR_COLS})
+        if args.svc_midnight_gate:
+            import service
+            clf_train = clf_train.assign(**{service.GATE_COL: meta[service.GATE_COL].values})
+            clf_rank = clf_rank.assign(**{service.GATE_COL: service.cross_midnight(ranking_raw)
+                                          .loc[dep_mask].values})
         if args.clf_copy_p:
             from copyp import add_copy_p
             clf_train, clf_rank = clf_train.copy(), clf_rank.copy()
             add_copy_p(clf_train, y_train, meta["month"].values, clf_rank)
         clf = train_tail_clf(clf_train, y_train, pooled=args.clf_pooled, no_lobt=args.clf_nolobt,
                              stakes=args.stakes, fit_pooled=not args.high_lobt, inbound=args.clf_inbound,
-                             inbound_mono=args.clf_inbound_mono)
+                             inbound_mono=args.clf_inbound_mono, midnight_gate=args.svc_midnight_gate)
 
     print("Predicting on ranking DEP rows...")
     with timings.stage("tail_classifier.predict"):

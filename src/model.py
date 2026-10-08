@@ -718,7 +718,7 @@ INBOUND_MONO = {"inbound_after_sched": 1, "inbound_air_after_sched": 1}
 
 
 def train_tail_clf(X, y, pooled="lgb", no_lobt="lgb", stakes=0.0, fit_pooled=True, inbound=False,
-                   inbound_mono=False):
+                   inbound_mono=False, midnight_gate=False):
     label = (y > TAIL_THR).astype(int)
     pooled_cols = _usable(TAIL_FEATURES, X)
     if inbound:
@@ -738,7 +738,7 @@ def train_tail_clf(X, y, pooled="lgb", no_lobt="lgb", stakes=0.0, fit_pooled=Tru
         w = np.ones(len(X))
         sel_pooled, sel_absent = np.ones(len(X), bool), absent
     weight = (lambda sel: w[sel]) if stakes else (lambda sel: None)
-    return {
+    out = {
         "pooled": (CLF_FAMILIES[pooled](X[sel_pooled], label[sel_pooled], pooled_cols,
                                         weight(sel_pooled)) if fit_pooled else [],
                    pooled_cols, pooled),
@@ -747,6 +747,13 @@ def train_tail_clf(X, y, pooled="lgb", no_lobt="lgb", stakes=0.0, fit_pooled=Tru
         "q_day": fit_day_late_rate(X, y),
         "q_day_steps": fit_day_late_steps(X, y),
     }
+    if midnight_gate:
+        # --svc-midnight-gate: the classifier without the operation-type inputs, for
+        # rows that leave after local midnight (service.GATE_COL)
+        base_cols = [c for c in absent_cols if c not in SERVICE_COLS + ARR_COLS]
+        out["no_lobt_base"] = (CLF_FAMILIES[no_lobt](X[sel_absent], label[sel_absent], base_cols,
+                                                     weight(sel_absent), monotone=mono), base_cols, no_lobt)
+    return out
 
 
 def add_model_args(ap):
@@ -872,6 +879,11 @@ def add_model_args(ap):
                          "(service.ARR_COLS): the share of the operator's and of the day's arrivals at "
                          "the airport logged with block == scheduled time. Arrival block times are "
                          "provided on ranking rows (NEXT_STEPS.md, B36)")
+    ap.add_argument("--svc-midnight-gate", action=argparse.BooleanOptionalAction, default=False,
+                    help="with --clf-service / --clf-arr-habit, use them only where the departure "
+                         "leaves on its scheduled local date; rows crossing local midnight (the only "
+                         "ones that can carry a day-late label) keep the shipped classifier "
+                         "(service.GATE_COL)")
     ap.add_argument("--clf-copy-p", action=argparse.BooleanOptionalAction, default=False,
                     help="give the no-LOBT tail classifier the probability that the block time is "
                          "copied from the schedule, learned out of month on delayed normal rows "
@@ -1021,6 +1033,13 @@ def predict_tail_proba(models, X):
             continue
         p = np.mean([b.predict(X.loc[sel, cols]) for b in boosters], axis=0)
         out[sel] = np.clip(p * CLF_BOOST[family], 0.0, 1.0)
+    if "no_lobt_base" in models:
+        from service import GATE_COL
+        gate = ~mask & (X[GATE_COL].to_numpy(dtype=float) == 1.0)
+        if gate.any():
+            boosters, cols, family = models["no_lobt_base"]
+            p = np.mean([b.predict(X.loc[gate, cols]) for b in boosters], axis=0)
+            out[gate] = np.clip(p * CLF_BOOST[family], 0.0, 1.0)
     return out
 
 

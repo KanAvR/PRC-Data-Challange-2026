@@ -196,9 +196,13 @@ def run_split(name, X, y, meta, args, rates=None):
         import service
         clf_tr = clf_tr.assign(**{c: meta.loc[tr, c].values for c in service.ARR_COLS})
         clf_va = clf_va.assign(**{c: meta.loc[va, c].values for c in service.ARR_COLS})
+    if args.svc_midnight_gate:
+        import service
+        clf_tr = clf_tr.assign(**{service.GATE_COL: meta.loc[tr, service.GATE_COL].values})
+        clf_va = clf_va.assign(**{service.GATE_COL: meta.loc[va, service.GATE_COL].values})
     clf = train_tail_clf(clf_tr, y_tr, pooled=args.clf_pooled, no_lobt=args.clf_nolobt,
                          stakes=args.stakes, fit_pooled=not args.high_lobt, inbound=args.clf_inbound,
-                         inbound_mono=args.clf_inbound_mono)
+                         inbound_mono=args.clf_inbound_mono, midnight_gate=args.svc_midnight_gate)
     p = predict_tail_proba(clf, clf_va)
     v = analytic_tail_value(X_va)
     # always saved, so blend.py can switch the day-late component on or off

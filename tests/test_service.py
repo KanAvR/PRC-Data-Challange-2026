@@ -57,5 +57,21 @@ class ArrivalHabitTest(unittest.TestCase):
         self.assertTrue(np.isnan(f.iloc[0]["svc_op_arr_copy"]))   # ARR rows stay empty
 
 
+class CrossMidnightTest(unittest.TestCase):
+    def test_local_dates(self):
+        from service import cross_midnight
+        s = pd.Timestamp("2025-07-01 21:30", tz="UTC")             # 23:30 in Rome
+        df = pd.DataFrame({
+            "PHASE_mvt": ["DEP", "DEP", "ARR"],
+            "ADEP_mvt": ["LIRF", "LIRF", "EGLL"],
+            "SCHED_TIME_UTC_mvt": [s, s, s],
+            "MVT_TIME_UTC_mvt": [s + pd.Timedelta(hours=1), s + pd.Timedelta(minutes=20), s],
+        })
+        c = cross_midnight(df)
+        self.assertEqual(c.iloc[0], 1.0)   # 00:30 local next day
+        self.assertEqual(c.iloc[1], 0.0)   # 23:50 local same day
+        self.assertTrue(np.isnan(c.iloc[2]))
+
+
 if __name__ == "__main__":
     unittest.main()

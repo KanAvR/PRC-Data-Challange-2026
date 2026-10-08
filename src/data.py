@@ -86,6 +86,9 @@ def load_training(adsb=False, timings=None, climb=False, climb_nbr_clean=False, 
                 ah = _service.arrival_habit(df).loc[dep]
                 for c in _service.ARR_COLS:
                     metas[-1][c] = ah[c].values
+            if service or arr_habit:
+                import service as _service
+                metas[-1][_service.GATE_COL] = _service.cross_midnight(df).loc[dep].values
     with measure("training.concat_and_filter"):
         X = pd.concat(xs, ignore_index=True)
         y = pd.concat(ys, ignore_index=True).values

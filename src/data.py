@@ -31,7 +31,7 @@ def month_of(path):
 
 
 def load_training(adsb=False, timings=None, climb=False, climb_nbr_clean=False, inbound_air=False,
-                  service=False, arr_habit=False):
+                  service=False, arr_habit=False, mu_arr_habit=False):
     """Features, target and per-row metadata for every training DEP row.
 
     adsb=True appends each departure's own-trace columns (adsb.ADSB_COLS);
@@ -58,6 +58,10 @@ def load_training(adsb=False, timings=None, climb=False, climb_nbr_clean=False, 
                     from climbnbr import clean_neighbours
                     af = clean_neighbours(df, af)
                 feats = feats.join(af)
+        if mu_arr_habit:
+            # --mu-arr-habit: a model input for every family (service.ARR_COLS)
+            import service as _service
+            feats = feats.join(_service.arrival_habit(df))
         with measure(f"{prefix}.extract"):
             xs.append(feats.loc[dep])
             ys.append(df.loc[dep, "TAXITIME_SEC_mvt"].astype(float))

@@ -720,15 +720,17 @@ INBOUND_MONO = {"inbound_after_sched": 1, "inbound_air_after_sched": 1}
 
 
 def train_tail_clf(X, y, pooled="lgb", no_lobt="lgb", stakes=0.0, fit_pooled=True, inbound=False,
-                   inbound_mono=False, midnight_gate=False):
+                   inbound_mono=False, midnight_gate=False, service=False, arr_habit=False):
     label = (y > TAIL_THR).astype(int)
     pooled_cols = _usable(TAIL_FEATURES, X)
     if inbound:
         X = with_inbound(X)
     extra = list(INBOUND_MONO) if (inbound and inbound_mono) else (INBOUND_COLS if inbound else [])
-    # copyp.COL is present only with --clf-copy-p, service.COLS only with --clf-service
+    # copyp.COL is present only with --clf-copy-p. The operation-type columns are
+    # named explicitly: with --mu-arr-habit the ARR_COLS sit in X for mu as well
     from service import ARR_COLS, COLS as SERVICE_COLS
-    absent_cols = _usable(NO_LOBT_FEATURES + extra + ["p_sched_copy"] + SERVICE_COLS + ARR_COLS, X)
+    svc = (SERVICE_COLS if service else []) + (ARR_COLS if arr_habit else [])
+    absent_cols = _usable(NO_LOBT_FEATURES + extra + ["p_sched_copy"] + svc, X)
     mono = INBOUND_MONO if (inbound and inbound_mono) else None
     absent = ~_has_lobt(X)
     if stakes:
@@ -881,6 +883,12 @@ def add_model_args(ap):
                          "(service.ARR_COLS): the share of the operator's and of the day's arrivals at "
                          "the airport logged with block == scheduled time. Arrival block times are "
                          "provided on ranking rows (NEXT_STEPS.md, B36)")
+    ap.add_argument("--mu-arr-habit", action=argparse.BooleanOptionalAction, default=False,
+                    help="give every mu family the schedule-copy habit seen on arrivals "
+                         "(service.ARR_COLS). At LIRF, delayed departures in the normal band are "
+                         "copies 3-4%% of the time for operators whose arrivals are rarely logged at "
+                         "the scheduled time and 64%% above a 0.3 share (NEXT_STEPS.md, B40); with "
+                         "--lirf-schedmix its copy classifier sees it too")
     ap.add_argument("--svc-midnight-gate", action=argparse.BooleanOptionalAction, default=False,
                     help="with --clf-service / --clf-arr-habit, use them only where the departure "
                          "leaves on its scheduled local date; rows crossing local midnight (the only "

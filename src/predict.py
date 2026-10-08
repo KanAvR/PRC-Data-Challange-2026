@@ -53,7 +53,8 @@ def main():
     train_data, y_train, meta = load_training(adsb=args.adsb, timings=timings, climb=args.adsb_climb_id,
                                               climb_nbr_clean=args.adsb_climb_nbr_clean,
                                               inbound_air=args.clf_inbound and args.clf_inbound_air,
-                                              service=args.clf_service, arr_habit=args.clf_arr_habit)
+                                              service=args.clf_service, arr_habit=args.clf_arr_habit,
+                                              mu_arr_habit=args.mu_arr_habit)
     with timings.stage("training.select_features"):
         if not args.proxy:
             train_data = drop_proxy(train_data)
@@ -98,6 +99,9 @@ def main():
                 from climbnbr import clean_neighbours
                 ranking_adsb = clean_neighbours(ranking_raw, ranking_adsb)
             ranking_feats = ranking_feats.join(ranking_adsb)
+    if args.mu_arr_habit:
+        import service
+        ranking_feats = ranking_feats.join(service.arrival_habit(ranking_raw))
     with timings.stage("ranking.select_features"):
         ranking_dep = ranking_feats.loc[dep_mask].copy()
         if not args.proxy:
@@ -209,7 +213,8 @@ def main():
             add_copy_p(clf_train, y_train, meta["month"].values, clf_rank)
         clf = train_tail_clf(clf_train, y_train, pooled=args.clf_pooled, no_lobt=args.clf_nolobt,
                              stakes=args.stakes, fit_pooled=not args.high_lobt, inbound=args.clf_inbound,
-                             inbound_mono=args.clf_inbound_mono, midnight_gate=args.svc_midnight_gate)
+                             inbound_mono=args.clf_inbound_mono, midnight_gate=args.svc_midnight_gate,
+                             service=args.clf_service, arr_habit=args.clf_arr_habit)
 
     print("Predicting on ranking DEP rows...")
     with timings.stage("tail_classifier.predict"):

@@ -24,11 +24,12 @@ GROUND_WINDOW = (-4 * 3600, 120)   # fallback: ground points with the callsign
 ARR_WINDOW = (-14 * 3600, -1200)   # the airframe's last airborne point here, before take-off
 
 
-def _cache_key(days):
+def _cache_key(days, raw):
     src = pathlib.Path(__file__).read_bytes()
     for d in days:
         p = adsb.ADSB_DIR / f"{d}.parquet"
         src += f"{d}|{p.stat().st_size if p.exists() else -1}".encode()
+    src += adsb.raw_fingerprint(raw)  # same rows in the same order, or rebuild
     return hashlib.sha256(src.replace(b"\r\n", b"\n")).hexdigest()[:16]
 
 
@@ -71,7 +72,7 @@ def air_arrival(raw, tag):
     dep["day"] = t.dt.strftime("%Y-%m-%d")
     days = sorted(dep["day"].unique())
     prev = {d: (pd.Timestamp(d) - pd.Timedelta(days=1)).strftime("%Y-%m-%d") for d in days}
-    cache = adsb.CACHE_DIR / f"{tag}.inbound.{_cache_key(sorted(set(days) | set(prev.values())))}.parquet"
+    cache = adsb.CACHE_DIR / f"{tag}.inbound.{_cache_key(sorted(set(days) | set(prev.values())), raw)}.parquet"
     if cache.exists():
         return pd.read_parquet(cache)[COL].reindex(raw.index)
     parts = []

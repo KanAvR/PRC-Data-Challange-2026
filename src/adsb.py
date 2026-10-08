@@ -637,12 +637,25 @@ def day_dropout_rows(airport, date, frac):
     return (h < frac * 10000)[codes]
 
 
-def _cache_key(days_needed):
+def raw_fingerprint(raw):
+    """Which rows, in which order: cached features are reindexed onto raw by row
+    position, so a dataset update that keeps the file name must change the key."""
+    if "MVT_ID_mvt" in raw.columns:
+        ids = pd.to_numeric(raw["MVT_ID_mvt"], errors="coerce").to_numpy(dtype="float64")
+    else:
+        t = pd.to_datetime(raw["MVT_TIME_UTC_mvt"], utc=True)
+        ids = (t - pd.Timestamp("1970-01-01", tz="UTC")).dt.total_seconds().to_numpy(dtype="float64")
+    return f"{len(raw)}|{hashlib.sha256(np.nan_to_num(ids, nan=-1.0).tobytes()).hexdigest()[:16]}".encode()
+
+
+def _cache_key(days_needed, raw=None):
     import aptdat
     src = pathlib.Path(__file__).read_bytes() + pathlib.Path(aptdat.__file__).read_bytes()
     for d in days_needed:
         p = ADSB_DIR / f"{d}.parquet"
         src += f"{d}|{p.stat().st_size if p.exists() else -1}".encode()
+    if raw is not None:
+        src += raw_fingerprint(raw)
     return hashlib.sha256(src.replace(b"\r\n", b"\n")).hexdigest()[:16]
 
 
@@ -659,7 +672,7 @@ def dep_features(raw, tag, climb=False):
     dep["day"] = t.dt.strftime("%Y-%m-%d")
     days = sorted(dep["day"].unique())
     prev = {d: (pd.Timestamp(d) - pd.Timedelta(days=1)).strftime("%Y-%m-%d") for d in days}
-    key = _cache_key(sorted(set(days) | set(prev.values())))
+    key = _cache_key(sorted(set(days) | set(prev.values())), raw)
     cache = CACHE_DIR / f"{tag}{'.climb' if climb else ''}.{key}.parquet"
     if cache.exists():
         return pd.read_parquet(cache).reindex(raw.index)

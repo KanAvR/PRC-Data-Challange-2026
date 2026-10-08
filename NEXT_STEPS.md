@@ -909,6 +909,14 @@ before the operation-type line is settled.
 holdout -2.61, inner -1.27, dec_jun -1.80 (significant), mar_sep -0.49;
 **pooled robust -1.59 (CI -2.63..-0.62)**; normal rows -6.43 / -1.58 / -0.16 /
 -0.20. Under the upload order fixed above it is only a fallback if v43 loses.
+**Gated `--clf-service --clf-arr-habit --svc-midnight-gate` (`clfsvcarr_g`) wins
+by more**: robust holdout **-5.08 (CI -9.40..-1.28)**, inner **-2.60
+(-4.78..-0.47)**, dec_jun **-3.28 (-5.86..-1.45)**, mar_sep -0.74 (-2.44..+0.92);
+**pooled robust -3.01 (CI -4.51..-1.69)**; normal rows -7.23 / -2.97 / -0.75 /
+-0.98. Choosing it over v43 on this 2025 evidence (before any live score of
+either) is selection on validation, not on live labels; the same caveat applies
+(the gate was found on these splits). Not yet built (the user asked for no new
+jobs pending a dataset update); the upload choice is the user's.
 
 **B40 the arrival habit for LIRF's normal-band copies: adds nothing over the
 operator (2026-10-08).** Among LIRF's 60,099 delayed normal-band departures of

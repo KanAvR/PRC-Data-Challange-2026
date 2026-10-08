@@ -31,7 +31,8 @@ from model import CAT_MU_PARAMS, MU_PARAMS, TAIL_THR
 # within 0.06 of each other, so neither constant is delicate.
 PA_WEIGHT = 0.5
 PA_CLIP = 150.0  # seconds; the per-airport model may only nudge the global one
-CAT_ITERATIONS = 2000
+# 2000 until v35; 5000 (B22) took v38 live, -0.08. --pa-cat-iterations 2000 reproduces v35
+CAT_ITERATIONS = 5000
 LGB_ROUNDS = 900
 MIN_ROWS = 20000  # below this, fall back to the global model for that airport
 

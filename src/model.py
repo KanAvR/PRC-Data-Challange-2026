@@ -802,7 +802,8 @@ def add_model_args(ap):
                          "(how late the stand's previous arrival blocked in, against the schedule)")
     ap.add_argument("--pa-cat-iterations", type=int, default=None, metavar="N",
                     help="iterations for the per-airport CatBoost (default: "
-                         "per_airport.CAT_ITERATIONS, 2000; never swept, lead N3b)")
+                         "per_airport.CAT_ITERATIONS, 5000 since v38: -0.08 live; 2000 reproduces v35 "
+                         "and earlier)")
     ap.add_argument("--episode", action=argparse.BooleanOptionalAction, default=False,
                     help="use the long-taxi episode features (features.EPISODE_COLS): matched "
                          "neighbours' uncapped LOBT gaps. Built unconditionally like --proxy")

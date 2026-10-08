@@ -890,6 +890,14 @@ by point estimate. LIRF-candidate AUC 0.880->0.887, 0.857->0.889,
 Extremely concentrated: top 10 rows carry more than the net on every split.
 Qualifies under the partial-success rule; submit once, no live tuning.
 
+**B37 per-airport CatBoost beyond 5000: no (2026-10-08).**
+`output/diag/pa_cat_rounds.py holdout LIRF LTFM LFPG EGLL` (one model per airport
+to 9000, alone, normal rows): pooled 2000: 255.30, 3500: 255.61, 5000: 256.05,
+6500: 256.48, 9000: 256.98; LIRF, LTFM, LFPG worse at every step past 2000, EGLL
+flat. Alone, the per-airport CatBoost is past its optimum at 5000; v38's live
+-0.08 came through the clipped blend (or the other six airports), not from a
+better per-airport model. Do not raise it further.
+
 **B36 why LIRF copies the schedule into block time: the kind of operation
 (2026-10-08).** The LIRF no-LOBT tail candidates (gap_SCHED > 6000s) carry about a
 fifth of all squared error and sit near p 0.55. 2025: 913 candidates, 535 copies

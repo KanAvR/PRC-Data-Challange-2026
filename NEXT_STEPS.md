@@ -89,6 +89,7 @@ default afterwards); sha256 prefix `978eef415fb508ce`. Upload log:
 | v34 | `1389b9c` | v33's defaults `--clf-inbound-air --reuse-mu-parts output/submitting_v32_trees.parts.parquet --out output/submitting_v35_inbair.parquet` (file named v35, uploaded as v34) | `80fa9189a6037418` | 235.4040 | **+2.0771 vs v33: lost**; dec_jun +5.71 offline was the real signal |
 | v35 | `a1181f0` | v33's defaults `--adsb-pos`: full build (`--no-clf-inbound`, then the defaults changed) to `output/submitting_v34_pos.parquet`, then `--adsb-pos --reuse-mu-parts output/submitting_v34_pos.parts.parquet --out output/submitting_v35_pos_inbound.parquet` | `616a2b07268b8177` | **233.1341** | **-0.1928 vs v33** (offline pooled robust -0.29: ~0.66x); only `mu` moved, mean |change| 11.5s |
 | v36 | `9edb571` | v35's defaults (`--adsb-pos` explicit, default since) `--lirf-schedmix --pa-cat-iterations 5000 --out output/submitting_v36_pos_lirfmix.parquet` | `ed8cfc66cda3aef9` | 233.5389 | **+0.4048 vs v35: lost**; B21 + B22 bundled, so not attributable (B22 alone offline -0.14); vs v35 only `mu` moves: LIRF mean |change| 49.5s (others 5-10s), top 10 rows 10% |
+| v39 | `0f476c5` | v38's command `--pa-cat-iterations 5000 --ctr1-iterations 8000 --reuse-family-parts output/submitting_v38_pa5k.parts.parquet --reuse-families lgb cat cat_note pa --out output/submitting_v39_ctr1_8k.parquet` (only `cat_ctr1` retrained; reuse shown exact) | `632585f875daa7e5` | pending | B35; vs v38 only `cat_ctr1` moves: mean |change| 1.9s, max 71s, top 10 rows 0.9% |
 | v38 | `d4e93d7` | v35's defaults `--pa-cat-iterations 5000 --out output/submitting_v38_pa5k.parquet` (full build; parts carry each family's `mu`) | `62ab274ae06d123a` | **233.0553** | **-0.0788 vs v35, team best**; `pa` at 5000 is now the default (`--pa-cat-iterations 2000` reproduces v35). B22 alone (offline -0.14/-0.16 normal rows): ~0.5x; vs v35 only `mu` moves: 338k rows, mean |change| 3.8s, max 78s, top 10 rows 0.4% (broad) |
 | v37 | `0c3a1bd` | `--clf-copy-p --reuse-mu-parts output/submitting_v35_pos_inbound.parts.parquet --out output/submitting_v37_copyp_on35.parquet` | `a33414725867d149` | 233.4404 | **+0.3063 vs v35: lost** (offline pooled robust -0.95); B25; only p moves, 30 rows > 1000s, top 10 rows ~45%: concentrated, no per-row inference, no adjusted copy. The on-v36 twin (`f7ff757736169c6b`) was not uploaded |
 
@@ -883,6 +884,15 @@ by point estimate. LIRF-candidate AUC 0.880->0.887, 0.857->0.889,
 **0.789->0.816 (dec_jun, where the -air variant failed)**, 0.893->0.904.
 Extremely concentrated: top 10 rows carry more than the net on every split.
 Qualifies under the partial-success rule; submit once, no live tuning.
+
+**`predict.py --reuse-families` is exact (2026-10-08).** Reusing `lgb cat
+cat_note cat_ctr1` from v38's parts and retraining only `pa` (5000) reproduced
+v38's file bit-for-bit (sha256 `62ab274ae06d123a`, 0 rows different); the
+v39 build, retraining only `cat_ctr1`, reproduced v38's p, v and specialist
+predictions exactly. (The check was meant to rebuild v35 with `pa` at 2000;
+`per_airport` is imported lazily, so it read the 5000 default committed after the
+process started. It proves the same thing.) Builds from v38 onward write each
+family's `mu` to the parts file.
 
 **B35 `cat_ctr1` iterations (N3b, 2026-10-08): under-trained, like `cat` was.**
 `output/diag/ctr1_rounds.py holdout` (10 training months, v35 features, one

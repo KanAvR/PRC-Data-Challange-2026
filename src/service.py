@@ -16,6 +16,17 @@ the same way on ranking.parquet; they reach the no-LOBT tail classifier only.
 import numpy as np
 import pandas as pd
 
+# --clf-arr-habit: the same recording habit seen on arrivals. Arrival block times
+# are provided on ranking rows too; the share of an operator's arrivals at the
+# airport logged with block == scheduled time (within 60s) tracks the copy rate
+# of its no-LOBT departure candidates (2025 LIRF: share > 0.4 -> 100% copies,
+# 0.05-0.1 -> 34%), and so does the day's share. Shrunk toward the airport's share.
+# (no arrival count: a training file holds one month, ranking.parquet two, so a
+# count would not mean the same thing on both sides)
+ARR_COLS = ["svc_op_arr_copy", "svc_day_arr_copy"]
+ARR_PRIOR_N = 20
+COPY_S = 60
+
 COLS = ["svc_domestic", "svc_ades_country", "svc_n_same_flight_24h", "svc_cs_long_prefix",
         "svc_cs_alpha_suffix"]
 CAT = ["svc_ades_country"]
@@ -51,4 +62,35 @@ def service_features(raw):
     out.loc[dep, "svc_n_same_flight_24h"] = n
     out["svc_ades_country"] = pd.Series(np.where(dep, None, None), index=raw.index, dtype=object)
     out.loc[dep, "svc_ades_country"] = ades.values
+    return out
+
+
+def _operator(flight):
+    return pd.Series([s[:3] if isinstance(s, str) and len(s) >= 3 else "" for s in flight])
+
+
+def arrival_habit(raw):
+    """ARR_COLS for every row of a raw frame, from the frame's own arrivals; NaN on ARR rows."""
+    out = pd.DataFrame(np.nan, index=raw.index, columns=ARR_COLS)
+    arr = raw[raw["PHASE_mvt"] == "ARR"]
+    a = pd.DataFrame({
+        "apt": arr["ADES_mvt"].astype(str).values,
+        "op": _operator(arr["FLIGHT_mvt"]).values,
+        "day": arr["BLOCK_TIME_UTC_mvt"].dt.strftime("%Y-%m-%d").values,
+        "eq": ((arr["BLOCK_TIME_UTC_mvt"] - arr["SCHED_TIME_UTC_mvt"]).dt.total_seconds().abs()
+               <= COPY_S).astype(float).values,
+    })
+    apt_rate = a.groupby("apt")["eq"].mean()
+    op = a.groupby(["apt", "op"])["eq"].agg(["sum", "size"])
+    day = a.groupby(["apt", "day"])["eq"].mean()
+    dep = (raw["PHASE_mvt"] == "DEP").values
+    d = raw.loc[dep]
+    apt = d["ADEP_mvt"].astype(str).values
+    k = pd.MultiIndex.from_arrays([apt, _operator(d["FLIGHT_mvt"]).values])
+    s = op["sum"].reindex(k).fillna(0).values
+    n = op["size"].reindex(k).fillna(0).values
+    prior = apt_rate.reindex(apt).fillna(a["eq"].mean() if len(a) else 0.0).values
+    out.loc[dep, "svc_op_arr_copy"] = (s + ARR_PRIOR_N * prior) / (n + ARR_PRIOR_N)
+    kd = pd.MultiIndex.from_arrays([apt, d["MVT_TIME_UTC_mvt"].dt.strftime("%Y-%m-%d").values])
+    out.loc[dep, "svc_day_arr_copy"] = day.reindex(kd).values
     return out

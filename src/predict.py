@@ -53,7 +53,7 @@ def main():
     train_data, y_train, meta = load_training(adsb=args.adsb, timings=timings, climb=args.adsb_climb_id,
                                               climb_nbr_clean=args.adsb_climb_nbr_clean,
                                               inbound_air=args.clf_inbound and args.clf_inbound_air,
-                                              service=args.clf_service)
+                                              service=args.clf_service, arr_habit=args.clf_arr_habit)
     with timings.stage("training.select_features"):
         if not args.proxy:
             train_data = drop_proxy(train_data)
@@ -193,6 +193,11 @@ def main():
             sf = service.service_features(ranking_raw).loc[dep_mask]
             clf_train = clf_train.assign(**{c: meta[c].values for c in service.COLS})
             clf_rank = clf_rank.assign(**{c: sf[c].values for c in service.COLS})
+        if args.clf_arr_habit:
+            import service
+            ah = service.arrival_habit(ranking_raw).loc[dep_mask]
+            clf_train = clf_train.assign(**{c: meta[c].values for c in service.ARR_COLS})
+            clf_rank = clf_rank.assign(**{c: ah[c].values for c in service.ARR_COLS})
         if args.clf_copy_p:
             from copyp import add_copy_p
             clf_train, clf_rank = clf_train.copy(), clf_rank.copy()

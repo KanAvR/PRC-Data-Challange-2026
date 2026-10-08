@@ -725,8 +725,8 @@ def train_tail_clf(X, y, pooled="lgb", no_lobt="lgb", stakes=0.0, fit_pooled=Tru
         X = with_inbound(X)
     extra = list(INBOUND_MONO) if (inbound and inbound_mono) else (INBOUND_COLS if inbound else [])
     # copyp.COL is present only with --clf-copy-p, service.COLS only with --clf-service
-    from service import COLS as SERVICE_COLS
-    absent_cols = _usable(NO_LOBT_FEATURES + extra + ["p_sched_copy"] + SERVICE_COLS, X)
+    from service import ARR_COLS, COLS as SERVICE_COLS
+    absent_cols = _usable(NO_LOBT_FEATURES + extra + ["p_sched_copy"] + SERVICE_COLS + ARR_COLS, X)
     mono = INBOUND_MONO if (inbound and inbound_mono) else None
     absent = ~_has_lobt(X)
     if stakes:
@@ -867,6 +867,11 @@ def add_model_args(ap):
                          "of the same flight number leave within 24h, callsign shape. LIRF copies the "
                          "schedule into block time on ad-hoc and charter operations, rarely on daily "
                          "scheduled services (NEXT_STEPS.md, B36)")
+    ap.add_argument("--clf-arr-habit", action=argparse.BooleanOptionalAction, default=False,
+                    help="give the no-LOBT tail classifier the schedule-copy habit seen on arrivals "
+                         "(service.ARR_COLS): the share of the operator's and of the day's arrivals at "
+                         "the airport logged with block == scheduled time. Arrival block times are "
+                         "provided on ranking rows (NEXT_STEPS.md, B36)")
     ap.add_argument("--clf-copy-p", action=argparse.BooleanOptionalAction, default=False,
                     help="give the no-LOBT tail classifier the probability that the block time is "
                          "copied from the schedule, learned out of month on delayed normal rows "

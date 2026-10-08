@@ -36,5 +36,26 @@ class ServiceFeaturesTest(unittest.TestCase):
         self.assertTrue(np.isnan(f.loc[3, "svc_domestic"]))          # ARR rows stay empty
 
 
+class ArrivalHabitTest(unittest.TestCase):
+    def test_operator_and_day_shares(self):
+        t = pd.Timestamp("2025-07-01 10:00", tz="UTC")
+        rows = []
+        for i in range(10):   # ISR arrivals: all block == sched; ITY: none
+            rows.append(("ARR", "LLBG", "LIRF", f"ISR{i}", t, t, t))
+            rows.append(("ARR", "LIMC", "LIRF", f"ITY{i}", t, t + pd.Timedelta(minutes=5), t))
+        rows.append(("DEP", "LIRF", "LLBG", "ISR99", t, None, t + pd.Timedelta(hours=3)))
+        rows.append(("DEP", "LIRF", "LIMC", "ITY99", t, None, t + pd.Timedelta(hours=3)))
+        df = pd.DataFrame(rows, columns=["PHASE_mvt", "ADEP_mvt", "ADES_mvt", "FLIGHT_mvt",
+                                         "SCHED_TIME_UTC_mvt", "BLOCK_TIME_UTC_mvt", "MVT_TIME_UTC_mvt"])
+        from service import ARR_COLS, ARR_PRIOR_N, arrival_habit
+        f = arrival_habit(df)
+        self.assertEqual(list(f.columns), ARR_COLS)
+        isr, ity = f.iloc[-2], f.iloc[-1]
+        self.assertAlmostEqual(isr["svc_op_arr_copy"], (10 + ARR_PRIOR_N * 0.5) / (10 + ARR_PRIOR_N))
+        self.assertAlmostEqual(ity["svc_op_arr_copy"], (0 + ARR_PRIOR_N * 0.5) / (10 + ARR_PRIOR_N))
+        self.assertAlmostEqual(isr["svc_day_arr_copy"], 0.5)
+        self.assertTrue(np.isnan(f.iloc[0]["svc_op_arr_copy"]))   # ARR rows stay empty
+
+
 if __name__ == "__main__":
     unittest.main()

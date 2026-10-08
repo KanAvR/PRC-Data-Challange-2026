@@ -890,6 +890,30 @@ by point estimate. LIRF-candidate AUC 0.880->0.887, 0.857->0.889,
 Extremely concentrated: top 10 rows carry more than the net on every split.
 Qualifies under the partial-success rule; submit once, no live tuning.
 
+**B36 why LIRF copies the schedule into block time: the kind of operation
+(2026-10-08).** The LIRF no-LOBT tail candidates (gap_SCHED > 6000s) carry about a
+fifth of all squared error and sit near p 0.55. 2025: 913 candidates, 535 copies
+(|y - gap_SCHED| <= 60s), 360 normal, 12 day-late; every one lacks an aircraft
+type and a FLIGHT_ID. Real-world reading: the airport record keeps the scheduled
+time when no actual off-block reaches it, which happens on operations recorded
+outside the integrated process. Copy rate (base 0.60) by
+(`output/diag/lirf_tail_forensics.py`, `lirf_arr_habit.py`):
+- operator: ITY 0.05-0.19, EJU/EZY 0.11-0.19, RYR 0.41-0.44, KLM 0.0; charter /
+  ACMI operators ISR, TWB, LAV, TKJ, KMM, MSC, ETH ~1.0;
+- domestic destination 0.90 vs 0.55; flight number departing again within 24h
+  (a regular service) 0.41 vs 0.77; corrupted callsign (4+ letter prefix) 0.86;
+- **the same habit on arrivals**: 12.1% of LIRF arrivals have block == sched.
+  By the operator's arrival copy share: <= 0.02: 0.91 (n=11), 0.05-0.1: 0.34
+  (256), 0.1-0.2: 0.50 (246), 0.2-0.4: 0.68 (174), > 0.4: **1.00 (168)**; by the
+  day's arrival share, quintiles 0.50 -> 0.77. Arrival block times are provided
+  ranking columns; the operator share on LIRF departures is 0.108/0.101 (Jan/Jul
+  2025) and 0.109/0.119 (Jan/Jul 2026): the habit persists.
+Leave-one-month-out AUC within the candidates (LightGBM, 5 seeds): base inputs
+0.747, + destination country 0.822, + regularity 0.807, + all three
+**0.856**, stable by half-year (0.836 / 0.861); mixture SSE 13.9e9 -> 10.6e9.
+Flags `--clf-service` (destination, regularity, callsign shape; `service.COLS`)
+and `--clf-arr-habit` (`service.ARR_COLS`), classifier-only, screened below.
+
 **`predict.py --reuse-families` is exact (2026-10-08).** Reusing `lgb cat
 cat_note cat_ctr1` from v38's parts and retraining only `pa` (5000) reproduced
 v38's file bit-for-bit (sha256 `62ab274ae06d123a`, 0 rows different); the

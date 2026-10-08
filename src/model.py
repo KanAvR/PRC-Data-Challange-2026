@@ -904,6 +904,9 @@ def add_model_args(ap):
                     help="use a residual specialist when the matched LOBT gap exceeds 6000s")
     ap.add_argument("--clf-pooled", default="cat", choices=list(CLF_FAMILIES))
     ap.add_argument("--clf-nolobt", default="cat", choices=list(CLF_FAMILIES))
+    ap.add_argument("--ctr1-iterations", type=int, default=CAT_CTR1_PARAMS["iterations"], metavar="N",
+                    help="iterations for the cat_ctr1 family (3500 was set on inner, 8 months, before "
+                         "the traces; holdout with 10 months still falls at 7000: NEXT_STEPS.md, B35)")
     ap.add_argument("--adsb-day-dropout", type=float, default=0.0, metavar="FRAC",
                     help="with --adsb, blank every adsb_* column on a hashed FRAC of airport-days "
                          "of the TRAINING rows (adsb.blank_untraced), so every family learns the "
@@ -931,6 +934,7 @@ def add_model_args(ap):
 def apply_model_args(args):
     """Module-level settings that add_model_args exposes. Call once after parsing."""
     CAT_MU_PARAMS["iterations"] = args.cat_iterations
+    CAT_CTR1_PARAMS["iterations"] = getattr(args, "ctr1_iterations", CAT_CTR1_PARAMS["iterations"])
     global LGB_MU_ROUNDS, LGB_LINEAR_TREE
     LGB_MU_ROUNDS = getattr(args, "lgb_rounds", LGB_MU_ROUNDS)
     LGB_LINEAR_TREE = getattr(args, "lgb_linear_tree", False)

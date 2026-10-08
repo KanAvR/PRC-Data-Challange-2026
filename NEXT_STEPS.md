@@ -882,6 +882,15 @@ by point estimate. LIRF-candidate AUC 0.880->0.887, 0.857->0.889,
 Extremely concentrated: top 10 rows carry more than the net on every split.
 Qualifies under the partial-success rule; submit once, no live tuning.
 
+**B35 `cat_ctr1` iterations (N3b, 2026-10-08): under-trained, like `cat` was.**
+`output/diag/ctr1_rounds.py holdout` (10 training months, v35 features, one
+depth-10 model scored at several counts), normal-row RMSE: 2000: 200.20, 3000:
+199.29, **3500 (shipped): 199.02**, 4000: 198.80, 5000: 198.51, 6000: 198.32,
+7000: 198.21, still falling (-0.82 for the member). The 12-month fit wants at
+least as many: 8000 chosen from the trend (as v32 took 10000 for `cat`), built by
+retraining only `cat_ctr1` (`--reuse-families`). N3's `cat` -1.13 became -0.37
+live over two families; this is one family at ~1/8 of `mu`.
+
 **B34 `--adsb-day-dropout 0.2`: negative masked and unmasked (2026-10-08).**
 Training rows of a hashed 19% of airport-days blanked as untraced
 (`adsb.blank_untraced`), so the families see untraced days outside winter LIRF.

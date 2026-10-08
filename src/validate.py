@@ -196,7 +196,7 @@ def run_split(name, X, y, meta, args, rates=None):
         import service
         clf_tr = clf_tr.assign(**{c: meta.loc[tr, c].values for c in service.ARR_COLS})
         clf_va = clf_va.assign(**{c: meta.loc[va, c].values for c in service.ARR_COLS})
-    if args.svc_midnight_gate:
+    if args.svc_midnight_gate or args.day_late_cross:
         import service
         clf_tr = clf_tr.assign(**{service.GATE_COL: meta.loc[tr, service.GATE_COL].values})
         clf_va = clf_va.assign(**{service.GATE_COL: meta.loc[va, service.GATE_COL].values})
@@ -209,7 +209,7 @@ def run_split(name, X, y, meta, args, rates=None):
     # always saved, so blend.py can switch the day-late component on or off
     q_day = day_late_weight(clf, X_va)
     q_day_step = day_late_step_weight(clf, X_va)
-    tail_kw = tail_options(args, clf, X_va)
+    tail_kw = tail_options(args, clf, clf_va)  # clf_va: X_va plus any classifier-only columns
     high_pred = np.full(len(X_va), np.nan)
     high = X_va["gap_LOBT_flt"].values > APPLY_GAP_SEC
     if args.high_lobt:
@@ -372,7 +372,8 @@ def main():
                                climb_nbr_clean=args.adsb_climb_nbr_clean,
                                inbound_air=args.clf_inbound and args.clf_inbound_air,
                                service=args.clf_service, arr_habit=args.clf_arr_habit,
-                               mu_arr_habit=args.mu_arr_habit)
+                               mu_arr_habit=args.mu_arr_habit,
+                               gate=args.svc_midnight_gate or args.day_late_cross)
     if not args.proxy:
         X = drop_proxy(X)
     if not args.arvt:

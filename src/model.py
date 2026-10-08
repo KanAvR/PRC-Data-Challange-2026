@@ -79,15 +79,26 @@ def day_late_candidates(X):
     return (~_has_lobt(X)) & (gs > DAY_WINDOW[0]) & (gs < DAY_WINDOW[1])
 
 
+# --day-late-cross: a day-late label (the scheduled local date kept with the
+# actual time of day) needs the flight to leave after local midnight; 2025: 11
+# of 11 in-window day-late rows cross, 0 non-crossing (NEXT_STEPS.md, B41). With
+# the gate column present, candidates are restricted to crossing rows.
+def _crossing(X):
+    from service import GATE_COL
+    if GATE_COL not in X.columns:
+        return np.ones(len(X), bool)
+    return X[GATE_COL].to_numpy(dtype=float) == 1.0
+
+
 def fit_day_late_rate(X, y):
     """P(day-late | tail, candidate), Laplace-smoothed: only ~30 rows inform it."""
-    cand_tail = day_late_candidates(X) & (y > TAIL_THR)
+    cand_tail = day_late_candidates(X) & _crossing(X) & (y > TAIL_THR)
     n_day = int(((y >= DAY) & (y < DAY + TAIL_THR) & cand_tail).sum())
     return (n_day + 1) / (int(cand_tail.sum()) + 2)
 
 
 def day_late_weight(models, X):
-    return np.where(day_late_candidates(X), models["q_day"], 0.0)
+    return np.where(day_late_candidates(X) & _crossing(X), models["q_day"], 0.0)
 
 
 # Day-late labels sit at DAY + 770..1,990s in 2025 (median ~960) whatever mu
@@ -129,6 +140,11 @@ def tail_options(args, models, X):
     cap = bool(getattr(args, "tail_cap", False))
     if getattr(args, "day_late_step", False):
         return {"q_day": day_late_step_weight(models, X), "day_value": DAY + DAY_LATE_BASE, "cap": cap}
+    if getattr(args, "day_late_cross", False):
+        from service import GATE_COL
+        if GATE_COL not in X.columns:
+            raise SystemExit("--day-late-cross needs the gate column (service.GATE_COL) in X")
+        return {"q_day": day_late_weight(models, X), "day_value": DAY + DAY_LATE_BASE, "cap": cap}
     if getattr(args, "day_late", False):
         return {"q_day": day_late_weight(models, X), "cap": cap}
     return {"cap": cap}
@@ -955,6 +971,10 @@ def add_model_args(ap):
                     help="seeds averaged in each tail classifier (seeds 0..N-1, so N > 5 keeps the "
                          f"shipped {N_SEEDS} and adds more). Pure variance reduction: p's seed-to-seed "
                          "swing is large on the few hundred tail positives")
+    ap.add_argument("--day-late-cross", action=argparse.BooleanOptionalAction, default=False,
+                    help="day-late component (value DAY + DAY_LATE_BASE) only on candidates that leave "
+                         "after local midnight, its rate fitted on those rows: a day-late label is the "
+                         "scheduled local date kept with the actual time (NEXT_STEPS.md, B41)")
     ap.add_argument("--day-late", action=argparse.BooleanOptionalAction, default=False,
                     help="mix a normal-taxi-plus-one-day value into the tail of candidate rows")
     ap.add_argument("--day-late-step", action=argparse.BooleanOptionalAction, default=False,

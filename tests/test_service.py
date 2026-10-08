@@ -73,5 +73,20 @@ class CrossMidnightTest(unittest.TestCase):
         self.assertTrue(np.isnan(c.iloc[2]))
 
 
+class DayLateCrossTest(unittest.TestCase):
+    def test_rate_and_weight_only_on_crossing_rows(self):
+        import model
+        X = pd.DataFrame({"gap_SCHED_TIME_UTC_mvt": [60000.0] * 4, "gap_LOBT_flt": [np.nan] * 4,
+                          "svc_cross_midnight": [1.0, 1.0, 0.0, 0.0]})
+        y = np.array([87000.0, 60010.0, 60005.0, 87100.0])
+        # crossing tail candidates: rows 0 (day-late) and 1 -> (1 + 1) / (2 + 2)
+        self.assertAlmostEqual(model.fit_day_late_rate(X, y), 0.5)
+        w = model.day_late_weight({"q_day": 0.5}, X)
+        np.testing.assert_array_equal(w, [0.5, 0.5, 0.0, 0.0])
+        # without the gate column every in-window candidate counts, as before
+        Xn = X.drop(columns="svc_cross_midnight")
+        self.assertAlmostEqual(model.fit_day_late_rate(Xn, y), (2 + 1) / (4 + 2))
+
+
 if __name__ == "__main__":
     unittest.main()

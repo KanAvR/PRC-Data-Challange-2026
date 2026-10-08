@@ -31,7 +31,7 @@ def month_of(path):
 
 
 def load_training(adsb=False, timings=None, climb=False, climb_nbr_clean=False, inbound_air=False,
-                  service=False, arr_habit=False, mu_arr_habit=False):
+                  service=False, arr_habit=False, mu_arr_habit=False, gate=False):
     """Features, target and per-row metadata for every training DEP row.
 
     adsb=True appends each departure's own-trace columns (adsb.ADSB_COLS);
@@ -90,7 +90,7 @@ def load_training(adsb=False, timings=None, climb=False, climb_nbr_clean=False, 
                 ah = _service.arrival_habit(df).loc[dep]
                 for c in _service.ARR_COLS:
                     metas[-1][c] = ah[c].values
-            if service or arr_habit:
+            if service or arr_habit or gate:
                 import service as _service
                 metas[-1][_service.GATE_COL] = _service.cross_midnight(df).loc[dep].values
     with measure("training.concat_and_filter"):

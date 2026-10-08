@@ -54,7 +54,8 @@ def main():
                                               climb_nbr_clean=args.adsb_climb_nbr_clean,
                                               inbound_air=args.clf_inbound and args.clf_inbound_air,
                                               service=args.clf_service, arr_habit=args.clf_arr_habit,
-                                              mu_arr_habit=args.mu_arr_habit)
+                                              mu_arr_habit=args.mu_arr_habit,
+                                              gate=args.svc_midnight_gate or args.day_late_cross)
     with timings.stage("training.select_features"):
         if not args.proxy:
             train_data = drop_proxy(train_data)
@@ -202,7 +203,7 @@ def main():
             ah = service.arrival_habit(ranking_raw).loc[dep_mask]
             clf_train = clf_train.assign(**{c: meta[c].values for c in service.ARR_COLS})
             clf_rank = clf_rank.assign(**{c: ah[c].values for c in service.ARR_COLS})
-        if args.svc_midnight_gate:
+        if args.svc_midnight_gate or args.day_late_cross:
             import service
             clf_train = clf_train.assign(**{service.GATE_COL: meta[service.GATE_COL].values})
             clf_rank = clf_rank.assign(**{service.GATE_COL: service.cross_midnight(ranking_raw)
@@ -220,7 +221,7 @@ def main():
     with timings.stage("tail_classifier.predict"):
         p = predict_tail_proba(clf, clf_rank)
     with timings.stage("tail.combine_and_constrain"):
-        tail_kw = tail_options(args, clf, ranking_dep)
+        tail_kw = tail_options(args, clf, clf_rank)  # ranking_dep plus classifier-only columns
         q_day = tail_kw.get("q_day")
         v = analytic_tail_value(ranking_dep)
         gap_lobt = ranking_dep["gap_LOBT_flt"].values.astype(float)

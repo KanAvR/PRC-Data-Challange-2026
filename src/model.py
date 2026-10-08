@@ -383,7 +383,8 @@ XGB_ROUNDS = 1500
 
 
 def _as_catboost(X):
-    cats = [c for c in CAT_COLS if c in X.columns]
+    # service.CAT reaches only the tail classifier's frames (--clf-service)
+    cats = [c for c in CAT_COLS + ["svc_ades_country"] if c in X.columns]
     X = X.copy()
     for c in cats:
         X[c] = X[c].astype(str)
@@ -723,8 +724,9 @@ def train_tail_clf(X, y, pooled="lgb", no_lobt="lgb", stakes=0.0, fit_pooled=Tru
     if inbound:
         X = with_inbound(X)
     extra = list(INBOUND_MONO) if (inbound and inbound_mono) else (INBOUND_COLS if inbound else [])
-    # copyp.COL is present only with --clf-copy-p
-    absent_cols = _usable(NO_LOBT_FEATURES + extra + ["p_sched_copy"], X)
+    # copyp.COL is present only with --clf-copy-p, service.COLS only with --clf-service
+    from service import COLS as SERVICE_COLS
+    absent_cols = _usable(NO_LOBT_FEATURES + extra + ["p_sched_copy"] + SERVICE_COLS, X)
     mono = INBOUND_MONO if (inbound and inbound_mono) else None
     absent = ~_has_lobt(X)
     if stakes:
@@ -859,6 +861,12 @@ def add_model_args(ap):
                          "the scheduled departure (model.INBOUND_COLS): late inbound aircraft make "
                          "LIRF record the scheduled time as block time. v33: -2.25 live; "
                          "--no-clf-inbound reproduces v32")
+    ap.add_argument("--clf-service", action=argparse.BooleanOptionalAction, default=False,
+                    help="give the no-LOBT tail classifier what kind of operation the departure is "
+                         "(service.COLS): domestic leg and destination country, how many departures "
+                         "of the same flight number leave within 24h, callsign shape. LIRF copies the "
+                         "schedule into block time on ad-hoc and charter operations, rarely on daily "
+                         "scheduled services (NEXT_STEPS.md, B36)")
     ap.add_argument("--clf-copy-p", action=argparse.BooleanOptionalAction, default=False,
                     help="give the no-LOBT tail classifier the probability that the block time is "
                          "copied from the schedule, learned out of month on delayed normal rows "

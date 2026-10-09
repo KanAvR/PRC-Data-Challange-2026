@@ -145,7 +145,8 @@ Flags that stay off by default are kept as the record of measured negatives:
 | v39 | v38 + `cat_ctr1` at 8,000 iterations | 232.9112 |
 | v40 | v39 with the per-airport blend weight at 0.6 (rejected) | 233.0082 |
 | v41 | v39 with the per-airport blend weight at 0.4 | 232.8913 |
-| **v42** | **v41 + `cat`/`cat_note` at 14,000 iterations** | **232.7616** |
+| v42 | v41 + `cat`/`cat_note` at 14,000 iterations | 232.7616 |
+| **v43** | **v42 + what kind of operation a no-flight-plan LIRF departure is (destination, flight-number regularity, callsign shape, the operator's arrival record), gated to flights leaving on their scheduled local date** | **231.4523** |
 
 Offline gains do not always carry over:
 
@@ -199,9 +200,10 @@ predictions as `<tag>_unmasked`. Judge encoding and key changes on both.
 ## Run
 
 ```bash
-# Reproduce v42: train on all twelve months and score the ranking set (several
-# hours; fetch the ADS-B days first, see Setup). --cat-iterations 10000 gives
-# v41; add --pa-weight 0.5 for v39, --ctr1-iterations 3500 as well for v38,
+# Reproduce v43: train on all twelve months and score the ranking set (several
+# hours; fetch the ADS-B days first, see Setup). --no-clf-service
+# --no-clf-arr-habit --no-svc-midnight-gate gives v42; add --cat-iterations 10000
+# for v41; --pa-weight 0.5 as well for v39, --ctr1-iterations 3500 as well for v38,
 # --pa-cat-iterations 2000 as well for v35, and --no-adsb-pos as well for v33.
 # v39-v42 were built with --reuse-families from the previous build's per-family
 # parts (shown exact: 0 rows different).
@@ -214,7 +216,7 @@ predictions as `<tag>_unmasked`. Judge encoding and key changes on both.
 # v31, and --no-adsb-climb-id as well for v30. Earlier versions are recorded in
 # NEXT_STEPS.md and in --help.
 .venv/bin/python src/predict.py --mu lgb cat cat_note cat_ctr1 pa --proxy \
-    --out output/submitting_v42.parquet
+    --out output/submitting_v43.parquet
 
 # Tail-only change: reuse a finished build's mu and retrain only the tail models
 # (minutes). Check it reproduces that build before shipping from it.

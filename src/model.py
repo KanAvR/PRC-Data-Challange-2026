@@ -888,24 +888,28 @@ def add_model_args(ap):
                          "the scheduled departure (model.INBOUND_COLS): late inbound aircraft make "
                          "LIRF record the scheduled time as block time. v33: -2.25 live; "
                          "--no-clf-inbound reproduces v32")
-    ap.add_argument("--clf-service", action=argparse.BooleanOptionalAction, default=False,
+    # v43: --clf-service --clf-arr-habit --svc-midnight-gate together, -1.31 live; the
+    # three are defaults as a set (--clf-service without the gate lost offline).
+    # --no-clf-service --no-clf-arr-habit --no-svc-midnight-gate reproduces v42
+    ap.add_argument("--clf-service", action=argparse.BooleanOptionalAction, default=True,
                     help="give the no-LOBT tail classifier what kind of operation the departure is "
                          "(service.COLS): domestic leg and destination country, how many departures "
                          "of the same flight number leave within 24h, callsign shape. LIRF copies the "
                          "schedule into block time on ad-hoc and charter operations, rarely on daily "
-                         "scheduled services (NEXT_STEPS.md, B36)")
-    ap.add_argument("--clf-arr-habit", action=argparse.BooleanOptionalAction, default=False,
+                         "scheduled services (NEXT_STEPS.md, B36). Default since v43 (-1.31 live, "
+                         "with --clf-arr-habit and --svc-midnight-gate)")
+    ap.add_argument("--clf-arr-habit", action=argparse.BooleanOptionalAction, default=True,
                     help="give the no-LOBT tail classifier the schedule-copy habit seen on arrivals "
                          "(service.ARR_COLS): the share of the operator's and of the day's arrivals at "
                          "the airport logged with block == scheduled time. Arrival block times are "
-                         "provided on ranking rows (NEXT_STEPS.md, B36)")
+                         "provided on ranking rows (NEXT_STEPS.md, B36). Default since v43")
     ap.add_argument("--mu-arr-habit", action=argparse.BooleanOptionalAction, default=False,
                     help="give every mu family the schedule-copy habit seen on arrivals "
                          "(service.ARR_COLS). At LIRF, delayed departures in the normal band are "
                          "copies 3-4%% of the time for operators whose arrivals are rarely logged at "
                          "the scheduled time and 64%% above a 0.3 share (NEXT_STEPS.md, B40); with "
                          "--lirf-schedmix its copy classifier sees it too")
-    ap.add_argument("--svc-midnight-gate", action=argparse.BooleanOptionalAction, default=False,
+    ap.add_argument("--svc-midnight-gate", action=argparse.BooleanOptionalAction, default=True,
                     help="with --clf-service / --clf-arr-habit, use them only where the departure "
                          "leaves on its scheduled local date; rows crossing local midnight (the only "
                          "ones that can carry a day-late label) keep the shipped classifier "

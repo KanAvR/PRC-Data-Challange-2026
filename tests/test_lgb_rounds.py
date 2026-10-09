@@ -21,11 +21,13 @@ class LgbRoundsTest(unittest.TestCase):
         model.apply_model_args(args)
         return args
 
-    def test_defaults_follow_v33(self):
+    def test_defaults_follow_the_leaderboard(self):
         args = self.parse([])
         self.assertEqual(model.LGB_MU_ROUNDS, 1200)
-        self.assertEqual(model.CAT_MU_PARAMS["iterations"], 10000)
+        self.assertEqual(model.CAT_MU_PARAMS["iterations"], 14000)          # v42
+        self.assertEqual(model.CAT_CTR1_PARAMS["iterations"], 8000)         # v39
         self.assertTrue(args.adsb_climb_id and args.clf_inbound and args.adsb_pos)
+        self.assertTrue(args.clf_service and args.clf_arr_habit and args.svc_midnight_gate)  # v43
 
     def test_flag_sets_rounds_used_by_train_mu(self):
         self.parse(["--lgb-rounds", "7"])
@@ -64,11 +66,11 @@ class LgbRoundsTest(unittest.TestCase):
         import per_airport
         try:
             self.parse([])
+            self.assertEqual(per_airport.CAT_ITERATIONS, 5000)               # v38
+            self.parse(["--pa-cat-iterations", "2000"])
             self.assertEqual(per_airport.CAT_ITERATIONS, 2000)
-            self.parse(["--pa-cat-iterations", "5000"])
-            self.assertEqual(per_airport.CAT_ITERATIONS, 5000)
         finally:
-            per_airport.CAT_ITERATIONS = 2000
+            per_airport.CAT_ITERATIONS = 5000
 
 
 if __name__ == "__main__":

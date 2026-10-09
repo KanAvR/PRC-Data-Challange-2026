@@ -24,7 +24,7 @@ class LgbRoundsTest(unittest.TestCase):
     def test_defaults_follow_the_leaderboard(self):
         args = self.parse([])
         self.assertEqual(model.LGB_MU_ROUNDS, 1200)
-        self.assertEqual(model.CAT_MU_PARAMS["iterations"], 14000)          # v42
+        self.assertEqual(model.CAT_MU_PARAMS["iterations"], 18000)          # v45
         self.assertEqual(model.CAT_CTR1_PARAMS["iterations"], 12000)        # v44
         self.assertTrue(args.adsb_climb_id and args.clf_inbound and args.adsb_pos)
         self.assertTrue(args.clf_service and args.clf_arr_habit and args.svc_midnight_gate)  # v43

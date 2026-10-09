@@ -902,6 +902,24 @@ by point estimate. LIRF-candidate AUC 0.880->0.887, 0.857->0.889,
 Extremely concentrated: top 10 rows carry more than the net on every split.
 Qualifies under the partial-success rule; submit once, no live tuning.
 
+**B42 after v43, where the LIRF tail error sits; long waits elsewhere
+(2026-10-09).** On `clfsvcarr_g` (v43's classifier), LIRF no-LOBT candidates
+carry 10-41% of each split's squared error, by class: **day-late 10.2e9**,
+normal 4.6e9, copy 2.7e9 (`output/diag/lirf_residual.py`). The worst row
+(ITY332, scheduled 23:59 local, left 03:14) is day-late at gap_SCHED 3.2h, far
+outside the 14-30h window, predicted 6,145 against 87,168: one such row in the
+scored set is worth tens of RMSE points. Identifying them: arrivals carry no
+day-shifted records (0 of 2.08M arrival blocks a day early), and the stand's
+previous arrival logged at schedule has AUC 0.504 for copies (the habit is the
+operator's, not the turnaround's, `stand_prev_arr.py`). LIRF candidates by
+corrupted callsign x midnight crossing: normal callsign, no crossing 370 copy / 0
+day-late / 321 normal; crossing 53 / 3 / 21; corrupted, no crossing 57 / 0 / 12;
+corrupted and crossing 55 / **9** / 6. Manual entry explains part (corrupted
+crossing records are day-late 13%, normal ones 4%), but 12 day-late rows a year
+cannot set a rate safely. Non-LIRF no-LOBT candidates (7,261): 88 long waits, 54
+of them LTFM in February 2025; a neighbour long-taxi share > 5% lifts the rate
+only to 12% (`nonlirf_cands.py`): one episode, closed.
+
 **B41 `--day-late-cross`: not established (2026-10-08).** The day-late
 component (value DAY + 960) only on no-LOBT candidates (gap_SCHED 14-30h) that
 leave after local midnight, its rate fitted on those rows (2025: 18 of 19

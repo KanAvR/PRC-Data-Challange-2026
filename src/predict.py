@@ -43,6 +43,10 @@ def main():
                          "families (e.g. retrain only pa after changing --pa-cat-iterations)")
     ap.add_argument("--reuse-families", nargs="+", default=[], metavar="FAM",
                     help="mu families to take from --reuse-family-parts")
+    ap.add_argument("--reuse-family-from", action="append", default=[], metavar="FAM=PARTS",
+                    help="take one mu family from its own saved parts file (repeatable), so families "
+                         "from different builds combine without retraining; overrides "
+                         "--reuse-family-parts for that family")
     ap.add_argument("--timings", metavar="JSON",
                     help="write low-overhead wall/CPU/RSS timings after every pipeline stage")
     args = ap.parse_args()
@@ -167,10 +171,17 @@ def main():
                     raise SystemExit(f"--reuse-families {fam} is not in --mu")
                 reused[fam] = saved[col].to_numpy()
                 assert np.isfinite(reused[fam]).all(), f"saved {col} does not cover every ranking DEP row"
+        for spec in args.reuse_family_from:
+            fam, path = spec.split("=", 1)
+            if fam not in args.mu:
+                raise SystemExit(f"--reuse-family-from {fam} is not in --mu")
+            saved = pd.read_parquet(path, columns=["MVT_ID_mvt", f"mu_{fam}"])
+            reused[fam] = saved.set_index("MVT_ID_mvt")[f"mu_{fam}"].reindex(ranking_ids).to_numpy()
+            assert np.isfinite(reused[fam]).all(), f"{path} mu_{fam} does not cover every ranking DEP row"
         mus = []
         for fam in args.mu:
             if fam in reused:
-                print(f"Reusing mu family ({fam}) from {args.reuse_family_parts}", flush=True)
+                print(f"Reusing mu family ({fam}) from a saved build", flush=True)
                 mus.append(reused[fam])
                 continue
             print(f"Training normal-regime regressor ({fam}) on all data...", flush=True)

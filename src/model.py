@@ -477,9 +477,9 @@ def train_mu_cat_note(X, y):
 # Single-feature CTRs at depth 10: 3.6x faster per iteration than the default and
 # the most different of the tuned CatBoosts. On the inner split it bottoms out at
 # 3000-4500 iterations and overfits after.
-# iterations: 3500 until v38; 8000 (NEXT_STEPS.md, B35) took v39 live, -0.14.
-# --ctr1-iterations 3500 reproduces v38 and earlier
-CAT_CTR1_PARAMS = dict(max_ctr_complexity=1, depth=10, iterations=8000)
+# iterations: 3500 until v38; 8000 (NEXT_STEPS.md, B35) took v39 live, -0.14;
+# 12000 took v44, -0.04. --ctr1-iterations 8000 reproduces v39-v43, 3500 v38 and earlier
+CAT_CTR1_PARAMS = dict(max_ctr_complexity=1, depth=10, iterations=12000)
 
 
 def train_mu_cat_ctr1(X, y):

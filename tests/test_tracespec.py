@@ -54,6 +54,12 @@ class TraceTrustTest(unittest.TestCase):
         self.assertTrue(used[0])
         self.assertGreaterEqual(out[0], 9000.0 - LOBT_MARGIN_SEC - 1e-6)
 
+    def test_band_rows_below_the_specialist_only(self):
+        from tracespec import TRACE_BAND_GAP_SEC, band_rows
+        X = frame(["GOOD"] * 5, [4000.0] * 5,
+                  [np.nan, TRACE_BAND_GAP_SEC, TRACE_BAND_GAP_SEC + 1, 6000.0, 6001.0])
+        np.testing.assert_array_equal(band_rows(X, 6000.0), [False, False, True, True, False])
+
     def test_no_trace_columns_is_a_no_op(self):
         X = pd.DataFrame({"ADEP_mvt": ["GOOD"], "gap_LOBT_flt": [6500.0]})
         t = fit_trace_trust(X, np.array([4000.0]))

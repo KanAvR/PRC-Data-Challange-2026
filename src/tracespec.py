@@ -20,6 +20,15 @@ import pandas as pd
 from constraints import project_lobt
 
 EXIT_COL = "adsb_leave_stand"
+# --trace-band: the same override for matched rows just below the specialist,
+# gap_LOBT in (TRACE_BAND_GAP_SEC, APPLY_GAP_SEC]. What protects the specialist's
+# rows is the LOBT window: a tow shows a long exit before a short taxi (labels
+# 339-630s in B43's losses), and the window's floor gap_LOBT - 3660 rules those
+# out. At 4500 the floor is 840s. Four 2025 splits, gate and offset fitted on the
+# training months: better on all four at 4000, 4500 and 5000; at 3500 (floor
+# -160s) inner loses +0.28 to tows. 4500 sits inside that plateau, away from the
+# edge (NEXT_STEPS.md, B53).
+TRACE_BAND_GAP_SEC = 4500.0
 LONG_EXIT_SEC = 3600.0
 NORMAL_MAX_SEC = 6000.0
 TOL_SEC = 300.0
@@ -56,6 +65,12 @@ def fit_trace_trust(X, y):
     table = pd.Series(hit).groupby(apt[long_]).agg(["size", "mean"])
     reliable = table[(table["size"] >= MIN_ROWS) & (table["mean"] >= MIN_SHARE)].index.tolist()
     return TraceTrust(offset.to_dict(), reliable, table)
+
+
+def band_rows(X, apply_gap):
+    """Matched rows with TRACE_BAND_GAP_SEC < gap_LOBT <= apply_gap (below the specialist)."""
+    gap = X["gap_LOBT_flt"].to_numpy(dtype=float)
+    return (gap > TRACE_BAND_GAP_SEC) & (gap <= apply_gap)
 
 
 def apply_trace_spec(pred, X, trust, rows):

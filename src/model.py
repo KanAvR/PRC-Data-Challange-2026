@@ -985,6 +985,10 @@ def add_model_args(ap):
                          "trace's stand exit plus the airport's offset (LOBT-projected) at airports "
                          "whose long exits proved reliable in the training labels (tracespec.py; "
                          "NEXT_STEPS.md, B47)")
+    ap.add_argument("--trace-band", action=argparse.BooleanOptionalAction, default=False,
+                    help="with --trace-spec, the same override for matched rows just below the "
+                         "specialist (tracespec.TRACE_BAND_GAP_SEC < gap_LOBT <= 6000), where the "
+                         "LOBT window still rules out tows (NEXT_STEPS.md, B53)")
     ap.add_argument("--day-late", action=argparse.BooleanOptionalAction, default=False,
                     help="mix a normal-taxi-plus-one-day value into the tail of candidate rows")
     ap.add_argument("--day-late-step", action=argparse.BooleanOptionalAction, default=False,

@@ -224,6 +224,15 @@ def run_split(name, X, y, meta, args, rates=None):
                 print(f"  trace-spec: {int(n_tr.sum())} specialist rows follow the trace "
                       f"(trusted: {', '.join(trust.reliable) or 'none'})", flush=True)
 
+    band_pred = band_use = None
+    if args.trace_band:
+        if not args.trace_spec:
+            raise SystemExit("--trace-band extends --trace-spec; pass both")
+        from tracespec import apply_trace_spec, band_rows, fit_trace_trust
+        band_pred, band_use = apply_trace_spec(np.full(len(X_va), np.nan), X_va,
+                                               fit_trace_trust(X_tr, y_tr), band_rows(X_va, APPLY_GAP_SEC))
+        print(f"  trace-band: {int(band_use.sum())} rows below the specialist follow the trace", flush=True)
+
     def assemble(mu, mus):
         pred = combine(mu, p, v, **tail_kw)
         pred_unconstrained = pred.copy()
@@ -231,6 +240,8 @@ def run_split(name, X, y, meta, args, rates=None):
             pred = project_lobt(pred, X_va["gap_LOBT_flt"].values)
         if args.high_lobt and high.any():
             pred[high] = high_pred[high]
+        if band_use is not None:
+            pred[band_use] = band_pred[band_use]
         return pd.DataFrame({
             "MVT_ID_mvt": meta.loc[va, "MVT_ID_mvt"].values,
             "date": meta.loc[va, "date"].values, "ADEP_mvt": meta.loc[va, "ADEP_mvt"].values,

@@ -255,6 +255,13 @@ def main():
                     print(f"  trace-spec: {int(n_tr.sum())} specialist rows follow the trace "
                           f"(trusted: {', '.join(trust.reliable) or 'none'})", flush=True)
                 preds[high] = high_pred[high]
+    if args.trace_band:
+        if not args.trace_spec:
+            raise SystemExit("--trace-band extends --trace-spec; pass both")
+        from tracespec import apply_trace_spec, band_rows, fit_trace_trust
+        preds, band_use = apply_trace_spec(preds, ranking_dep, fit_trace_trust(train_data, y_train),
+                                           band_rows(ranking_dep, APPLY_GAP_SEC))
+        print(f"  trace-band: {int(band_use.sum())} rows below the specialist follow the trace", flush=True)
 
     with timings.stage("submission.assemble_and_validate"):
         pred_df = pd.DataFrame({"MVT_ID_mvt": ranking_ids, "TAXITIME_SEC_mvt": preds})

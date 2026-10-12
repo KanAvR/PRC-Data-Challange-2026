@@ -98,7 +98,9 @@ default afterwards); sha256 prefix `978eef415fb508ce`. Upload log:
 | v36 | `9edb571` | v35's defaults (`--adsb-pos` explicit, default since) `--lirf-schedmix --pa-cat-iterations 5000 --out output/submitting_v36_pos_lirfmix.parquet` | `ed8cfc66cda3aef9` | 233.5389 | **+0.4048 vs v35: lost**; B21 + B22 bundled, so not attributable (B22 alone offline -0.14); vs v35 only `mu` moves: LIRF mean |change| 49.5s (others 5-10s), top 10 rows 10% |
 | (candidate) | `edb1fd2` | v42's defaults `--cat-iterations 18000 --reuse-family-parts output/submitting_v42_cat14k.parts.parquet --reuse-families lgb cat_ctr1 pa --out output/submitting_cand_cat18k.parquet` | `f10ee8f969c910a8` | -- | trend bet past 14000 (v42 -0.13); only `cat`/`cat_note` move, mean |change| 1.6s, top 10 rows 1.0% |
 | (candidate) | `ad91107` | v42's defaults `--ctr1-iterations 12000 --reuse-family-parts output/submitting_v42_cat14k.parts.parquet --reuse-families lgb cat cat_note pa --out output/submitting_cand_ctr1_12k.parquet` | `4b031b8a97576dea` | -- | trend bet past B35's swept 7000 (as 14000 was for `cat`); only `cat_ctr1` moves, mean |change| 1.4s, top 10 rows 0.5% |
-| v46 | `fc7da6d` | v45's defaults `--day-late-cross --reuse-family-parts output/submitting_v45_cat18k_on44.parts.parquet --reuse-families lgb cat cat_note cat_ctr1 pa --out output/submitting_v46_dlcross.parquet` (tail only) | `244d82fd04f82f43` | pending | B41 partial success (pooled -1.23, CI crosses zero); 15 rows move, 3 material (LIRF, p 0.94-0.98, v 56-61k -> 72-75k with q 0.6): **concentrated, submitted once as validated, never re-tuned** |
+| v46 | `fc7da6d` | v45's defaults `--day-late-cross --reuse-family-parts output/submitting_v45_cat18k_on44.parts.parquet --reuse-families lgb cat cat_note cat_ctr1 pa --out output/submitting_v46_dlcross.parquet` (tail only) | `244d82fd04f82f43` | 231.8314 | **+0.4720 vs v45: lost**; `--day-late-cross` stays off (third day-late rule to lose live, after v23). B41 partial success (pooled -1.23, CI crosses zero); 15 rows move, 3 material (LIRF, p 0.94-0.98, v 56-61k -> 72-75k with q 0.6): **concentrated, submitted once as validated, never re-tuned; no per-row inference from the score** |
+| (candidate v48, after v47) | `7375ca3` (branch `explore/loss-targeting`) | v47's command `--trace-band --out output/submitting_v48_traceband.parquet` | `7f50f4ba1e43d521` | not uploaded | B53; `validate.py --reuse-mu clfsvcarr_g --trace-spec --trace-band --compare tspec`: holdout -0.03, inner -0.01, dec_jun -0.01 (CI below zero), mar_sep -0.03 (CI below zero); **pooled robust -0.02 (CI -0.05..+0.01), better in 93%: partial success** (better on all four splits). The 4500 threshold was placed inside a plateau found on these splits, so the estimate is somewhat flattered. Against v47 exactly 303 rows differ (EHAM 205, EDDM 82, EDDF 16), top 10 rows 45%. Live guess -0.1..-0.2. Upload only after v47's score; submit once |
+| (candidate v47) | `6cf9496` (branch `explore/loss-targeting`) | v45's defaults `--trace-spec --reuse-family-parts output/submitting_v45_cat18k_on44.parts.parquet --reuse-families lgb cat cat_note cat_ctr1 pa --out output/submitting_v47_tracespec.parquet` (tail and specialist retrained only) | `d966d6c9c6d44940` | not uploaded | B47; `validate.py --reuse-mu clfsvcarr_g --trace-spec --compare tspec_ctrl`: holdout -0.09 (robust -0.11, normal -0.12), inner 0 (no rows), dec_jun -0.01, mar_sep -0.04; **pooled robust -0.03 (CI -0.08..-0.00), wins**. Against v45 exactly 99 rows differ (EHAM 97, EDDF 2, all January; mean -642s at EHAM, max 2,159s), every other row bit-identical; top 10 rows 36% of the squared change. 2 of the 99 traces fall below the LOBT window and are clipped to its edge (EHAM, -1,906s and -1,679s), a case no 2025 trusted row showed. Live guess -0.35..-0.65. Submit once as validated; no live re-tuning |
 | v45 | `751fdb3` | v44's defaults `--cat-iterations 18000 --reuse-family-parts output/submitting_v44_ctr1_12k.parts.parquet --reuse-families lgb cat_ctr1 pa --reuse-family-from cat=output/submitting_cand_cat18k.parts.parquet --reuse-family-from cat_note=output/submitting_cand_cat18k.parts.parquet --out output/submitting_v45_cat18k_on44.parquet` | `effdf06034c3547d` | **231.3594** | **-0.0532 vs v44, team best**; 18000 is now the default (`--cat-iterations 14000` reproduces v44). Trend bet past 14000; only `cat`/`cat_note` move vs v44 (columns identical to the 18000 build's), mean |change| 1.6s, top 10 rows 1.0% |
 | v44 | `c43e9ac` | v43's defaults `--ctr1-iterations 12000 --reuse-family-parts output/submitting_cand_ctr1_12k.parts.parquet --reuse-families lgb cat cat_note cat_ctr1 pa --out output/submitting_v44_ctr1_12k.parquet` (`cat_ctr1` 12000 retrained on v42's parts; tail retrained with v43's defaults, p identical to v43) | `fb1ff3b25d979a5e` | **231.4126** | **-0.0397 vs v43, team best**; `cat_ctr1` 12000 is now the default (`--ctr1-iterations 8000` reproduces v43). Trend bet past B35's 7000; only `cat_ctr1` moves vs v43: mean |change| 1.4s, top 10 rows 0.5% |
 | v43 | `cfb844d` | v42's defaults `--clf-service --clf-arr-habit --svc-midnight-gate --reuse-family-parts output/submitting_v42_cat14k.parts.parquet --reuse-families lgb cat cat_note cat_ctr1 pa --out output/submitting_v43_svcarr_gate.parquet` (tail only) | `c0df01f1b46988ab` | **231.4523** | **-1.3093 vs v42, team best** (offline pooled robust -3.01: ~0.4x on the point estimate); the three flags are now defaults together. `clfsvcarr_g` (pooled robust -3.01, better on all four splits); supersedes the `--clf-service`-only build below, which is not uploaded. `mu` and specialist identical to v42; p unchanged on midnight-crossing candidates; LIRF candidates mean p 0.551 -> 0.584, 31 rows move > 0.2 (25 up); top 10 rows 56%: submit once, no live tuning |
@@ -901,6 +903,143 @@ by point estimate. LIRF-candidate AUC 0.880->0.887, 0.857->0.889,
 **0.789->0.816 (dec_jun, where the -air variant failed)**, 0.893->0.904.
 Extremely concentrated: top 10 rows carry more than the net on every split.
 Qualifies under the partial-success rule; submit once, no live tuning.
+
+**B43-B48 loss map after v45, and four leads closed (2026-10-12).** Decomposition
+on `clfsvcarr_g` (LightGBM `mu`, v43 tail, four splits, pooled 246.52;
+`output/diag/decomp_now.py`): normal rows 58.5% of squared error (LIRF 15.0%,
+LTFM 12.8%, LFPG 9.3%, EGLL 7.5%; gap_SCHED 3000-6000s alone 21.3%), day-late
+15 rows 20.5%, matched tail 7.7%, LIRF no-LOBT candidates 8.8%. On the ranking
+rows (`stake_v45.py`, no labels) the mixture's own expected tail error
+sum p(1-p)(v-mu)^2 is **23.2% of v45's live squared error, 17.4% on the 238 LIRF
+candidates**; rows with gap_SCHED 3000-6000s are 13.1% of ranking against 11.5%
+of validation, > 6000s 4.4% against 2.8%. Leaderboard (2026-10-12): humble-giraffe
+19th; leader 212.85, 15 teams under 225. The public submission history
+(`lb_jumps.py`) shows the top teams' one large step (-17..-25, 09-26..10-05, the
+size of our ADS-B steps) followed by ~10-15 steps of -2..-3.5 each over 50-130
+uploads; ours since ADS-B total -6.5. No shared single lever is visible.
+- **B43 long trace exits (`trace_vs_pred.py`, `trace_long2.py`,
+  `trace_long_val.py`).** In 2025 long stand exits are reliable at EHAM / EDDM /
+  EDDF (3600-6000s: 92% / 88% / 100% within 300s), not at EGLL or LSZH. On ranking,
+  v45 sits 378s below exit + offset on 227 EHAM January rows (de-icing, 4-6 Jan).
+  But in 2025 the labels also sit ~307s below exit + offset at those lengths, so
+  most of that gap is where labels lie. Moving rows with exit > 1800s at the five
+  reliable airports halfway to exit + offset (projected into the LOBT window):
+  pooled -0.10, better on all four splits, top 10 rows 21%; w 0.25-0.75 a plateau,
+  w 1.0 worse. Live guess -0.1..-0.2. Parked. **Strict re-test: negative.** With
+  the offset and the trust gate fitted on each split's training months only
+  (`trace_long_split.py`, gate as `tracespec.py`: EHAM, EDDF, EDDM), non-specialist
+  rows with exit > 1800s, w 0.5: holdout **+0.21**, inner +0.09, dec_jun -0.02,
+  mar_sep -0.14; top 10 rows 66-83% of each split's change; every (threshold,
+  weight) cell sums positive. The -0.10 above was flattered by offsets fitted on
+  the scored months. Closed.
+- **B44 EGLL trace offset: composition, not a model error (`egll_offset.py`,
+  `egll_ng.py`).** EGLL's label - stand exit is an airport convention (median
+  ~200-250s whatever the match type; EHAM ~7s). v45 predicts 2026 EGLL traced rows
+  ~100-170s lower against the exit than 2025 OOF did, but 2026 EGLL traces are
+  4x denser (median 104 ground points against 27) and in 2025 the offset falls
+  with density (mean 466s at <= 20 points, 244-257s above 100). Density-matched,
+  v45 is within ~15-50s of the 2025 relation: ~0.1 at most. Closed.
+- **B45 untraced July LIRF (`lirf_masked.py`, on `adsbmask_ctrl`).** Masking
+  LIRF's traces in the summer month costs +1.35 / +1.02 / +0.91 / +0.13 split RMSE,
+  almost all normal rows with gap_SCHED 900-6000s, and it is variance (masked bias
+  only +10..+25s above unmasked). July 2026 LIRF pays this live; B32's no-trace
+  model recovers 5-22% of it. No fix found beyond B32's.
+- **B46 recording fingerprints on LIRF candidates (`lirf_cand_fields.py`).**
+  Copy vs normal (2025, 535 / 360): take-off seconds, whole-minute take-off,
+  schedule minute, stand / runway / destination missing, callsign digits and
+  length all have AUC 0.50-0.58. Manual entry leaves no mark in the provided
+  timestamps. Closed.
+- **B47 `--trace-spec`: the specialist's rows follow the trace where long exits
+  proved reliable (2026-10-12).** The long-taxi specialist (gap_LOBT > 6000)
+  fits y - gap_LOBT on ~360 matched long-taxi rows a year, ~40 with a stand exit,
+  so it cannot learn that the exit is the answer. On those 40 (four splits, OOF,
+  `spec_trace.py`, `spec_trace2.py`) exit + the airport's median offset was within
+  300s of the label on every EHAM (23), EDDM (9) and EDDF (1) row: RMSE 58 / 50 /
+  30 against the specialist's 799 / 1074 / 1017. EGLL 442 vs 1328 (83%), the one
+  LIRF row 4202 (its labels are not the physical taxi). The EHAM rows are de-icing
+  days (2025-01-05, 01-18); the specialist, anchored on the LOBT window,
+  over-predicts them by 500-1300s. `tracespec.py` fits the per-airport offset
+  and a trust gate on the training labels (long exits 3600-6000s within 300s on
+  >= 80% of >= 5 rows): EHAM, EDDF on every split, EDDM on three (dec_jun 0.67),
+  EGLL 0.29-0.40 and LSZH 0.17-0.33 never. Exact post-hoc rescore with
+  split-fitted offset and gate (`spec_trace_split.py`): holdout -0.077 (28 rows),
+  inner 0 (none), dec_jun -0.007, mar_sep -0.031; never worse; w 0.5 < 0.75 < 1.0
+  on every split, so w = 1 (the trace replaces the specialist, LOBT-projected).
+  Why the mu-domain version (B43) fails and this does not: its losses are tows
+  (exit 7,596s, label 363), which a matched long LOBT gap rules out, and the
+  projection bounds any miss. On ranking 99 specialist rows move (EHAM January
+  2026 de-icing days 01-02..07, mean v45 5,328 against trace 4,687; rms change
+  ~1,050s; top 10 rows 36% of the squared change). Live guess -0.35..-0.65.
+- **B49 `--lirf-schedmix` in the 2026-like harness: still wins, so the untraced
+  July is not why v36 lost (2026-10-13).** `validate.py --mu lgb --proxy
+  --mask-adsb-lirf --lirf-schedmix --tag smask_mix --compare smask_ctrl` (fresh
+  control at today's defaults): robust holdout -0.73, inner -0.59, dec_jun -1.93,
+  mar_sep -1.82; **pooled robust -1.27 (CI -1.72..-0.86)**. On the masked summer
+  LIRF rows it gains nearly as much as on the same rows traced (normal-row SSE
+  holdout -73M vs -140M, inner -104M vs -127M, dec_jun -163M vs -192M, mar_sep
+  -153M vs -172M; `smask_compare.py`). B28's reading stands: what changed live,
+  if anything, is the 2026 copy rate, which only labels show. The flag stays off;
+  no adjusted copy goes on a slot.
+- **B50 the specialist's bias is per row, not per day (`spec_daybias.py`).** On
+  2025 de-icing days the traced specialist rows sit -559s (EHAM 01-05) and -386s
+  (01-18) below the trace, but the same days' untraced specialist rows have mean
+  error +289s and +20s; shifting them by the traced rows' bias costs +3.0M (8 rows).
+  Supports the per-row override of B47; no day-level correction. Closed.
+- **B51 the untraced specialist rows: nothing in the neighbours
+  (`spec_quality.py`, `spec_nbr.py`).** Four-split OOF on the 357 specialist rows:
+  the specialist's RMSE is 1,193, barely ahead of gap_LOBT - 1800 (1,361); the
+  label sits nearly uniformly in the LOBT window (y - gap_LOBT p10 -3,375, median
+  -1,501, p90 +1) and within 120s of gap_AOBT_3 on 5%. Unclipped same-time
+  neighbour measures (+/-30 min, same airport) are worse: neighbours' median
+  MVT - AOBT_3 2,483; neighbours' trace exit + offset 1,242 against 1,216 on the
+  untraced rows, correlation with the specialist's error -0.32 (n 54). A matched
+  long taxi is the aircraft's own hold, not the queue's. Closed.
+- **B52 which side of NM's off-block, and no clock at LTFM (`clock_classes.py`,
+  `ltfm_clocks.py`, `stand_follower.py`).** On normal rows, those whose label
+  exceeds MVT - AOBT_3 by > 60s (the airport's block before NM's off-block) carry
+  about half of all validation squared error (LIRF 18.7%, LTFM 11.6%, LFPG 9.4%,
+  EGLL 6.2%, LEBL 4.5%, LEMD 3.8% of the total) and are under-predicted by
+  60-230s; the other side is over-predicted by 20-160s. The model cannot tell the
+  sides apart. Two witnesses checked: (1) a later arrival blocking in on the same
+  stand before take-off bounds the taxi from below and holds on 99.4% of rows, but
+  is loose (median 400-1,000s of slack) and the model already respects it
+  (predictions below it on 0.5%; residual mean ~0 on those rows); (2) on delayed
+  rows (gap_SCHED > 1800) no clock other than LIRF's (and LEBL's small SCHED
+  excess, B24) holds labels above a +/-180s shifted control: LTFM AOBT_3 10.2% vs
+  9.8%, LOBT 7.5% vs 6.5%, SCHED 1.3% vs 1.4%. LTFM's delayed labels sit on no
+  provided timestamp. Closed.
+- **B53 `--trace-band`: the same override just below the specialist
+  (`spec_below.py`, `spec_below2.py`).** B43's mu-domain losses are tows: a long
+  exit before a short taxi (EDDF exit 12,883s, label 518; EHAM 7,596s, label 363;
+  the worst rows' labels 339-630s). On matched rows the LOBT window's floor
+  gap_LOBT - 3660 rules those labels out once it is high enough. Strict rescore
+  (gate and offset fitted per split on training months), trusted trace replacing
+  the prediction on non-specialist rows with gap_LOBT above G: G 5000 -0.008 /
+  -0.007 / -0.006 / -0.030; **4500 -0.029 / -0.006 / -0.014 / -0.034**; 4000
+  -0.035 / -0.014 / -0.024 / -0.045; 3500 +0.016 / **+0.279** / -0.033 / -0.045;
+  3000 +0.021 / +0.299 / -0.026 / -0.026 (holdout / inner / dec_jun / mar_sep).
+  Better on all four from 4000 to 6000, a cliff below 4000 (floor -160s at 3500).
+  4500 chosen inside the plateau, away from the edge (floor 840s, above every
+  tow label seen), not the best cell. On ranking 303 rows move (EHAM 205, EDDM 82,
+  EDDF 16; mean change +15s, sum of squares 52.9M, top 10 rows 45%). Flag
+  `--trace-band` (needs `--trace-spec`), `tracespec.TRACE_BAND_GAP_SEC`.
+  Separately: an in-domain trust gate (reliability measured on specialist rows
+  only) admits EGLL on thin counts (5 rows at 0.80) and drops EDDM; holdout -0.061
+  against the shipped gate's -0.077. Kept the shipped gate.
+- **B54 time-zone-shifted schedule copies: negligible (`tz_copy.py`).** Two LIRF
+  rows have label - gap_SCHED = 7,201s and 7,202s (a schedule copy shifted by
+  CEST); over all 2025 DEP rows +2h copies are 4 LIRF no-LOBT rows and ~20
+  elsewhere, against 30,000+ plain copies. The label = gap_SCHED - 3600 excess
+  (2-4x an off-hour control at every airport) is round-hour delays, carried by
+  gap_LOBT. Closed.
+- **B48 non-LIRF no-LOBT candidates with a stand exit (`cand_trace.py`).** In 2025
+  their labels sit at the exit on 96-100% of rows and never at the schedule copy,
+  but p is already ~0.004 there, so the realised mixture error is ~p^2 (v-mu)^2:
+  negligible (as B11). Closed.
+- **v45 vs trace level at well-covered airports (`trace_level.py`):** mean
+  pred - (exit + offset) in 2026 equals 2025's out-of-sample value at EHAM, EDDM,
+  LSZH, LEBL (labels are right-skewed against the median offset). No 2026 level
+  drift is visible through the traces.
 
 **B42 after v43, where the LIRF tail error sits; long waits elsewhere
 (2026-10-09).** On `clfsvcarr_g` (v43's classifier), LIRF no-LOBT candidates

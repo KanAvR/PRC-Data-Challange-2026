@@ -111,7 +111,10 @@ def _near(lat, lon):
     return None
 
 
-def _parse_trace(b):
+def _parse_trace(b, legacy_cut=False):
+    """Points near the airports. legacy_cut keeps airborne points up to MAX_ALT_FT
+    above sea level, the cut every cached 2025 and Jan/Jul 2026 day was extracted
+    with (before d0414cb); new days for the same models must match it."""
     import orjson
     try:
         b = gzip.decompress(b)
@@ -128,10 +131,10 @@ def _parse_trace(b):
         if lat is None or lon is None:
             continue
         ground = alt == "ground"
-        if not ground and (alt is None or alt > _ALT_CEIL):
+        if not ground and (alt is None or alt > (MAX_ALT_FT if legacy_cut else _ALT_CEIL)):
             continue
         a = _near(lat, lon)
-        if a is None or (not ground and alt > ELEV_FT[a] + MAX_ALT_FT):
+        if a is None or (not ground and not legacy_cut and alt > ELEV_FT[a] + MAX_ALT_FT):
             continue
         out.append((icao, reg, typ, cs, a, t0 + p[0], lat, lon,
                     -1 if ground else alt, p[4], p[5], p[6],
@@ -139,11 +142,11 @@ def _parse_trace(b):
     return out
 
 
-def _parse_many(bs):
+def _parse_many(bs, legacy_cut=False):
     out = []
     for b in bs:
         try:
-            out.extend(_parse_trace(b))
+            out.extend(_parse_trace(b, legacy_cut))
         except Exception:  # a malformed trace file is skipped, not fatal
             pass
     return out
@@ -212,7 +215,7 @@ class _Parts:
         return buf
 
 
-def extract_day(day, workers=6, out_dir=None):
+def extract_day(day, workers=6, out_dir=None, legacy_cut=False):
     """Stream one UTC day and write <out_dir or dataset/adsb>/<day>.parquet."""
     out_dir = pathlib.Path(out_dir) if out_dir else ADSB_DIR
     out = out_dir / f"{day}.parquet"
@@ -228,12 +231,12 @@ def extract_day(day, workers=6, out_dir=None):
             batch.append(tf.extractfile(m).read())
             n += 1
             if len(batch) >= 400:
-                futs.append(ex.submit(_parse_many, batch))
+                futs.append(ex.submit(_parse_many, batch, legacy_cut))
                 batch = []
                 while len(futs) > 24:
                     rows.extend(futs.pop(0).result())
         if batch:
-            futs.append(ex.submit(_parse_many, batch))
+            futs.append(ex.submit(_parse_many, batch, legacy_cut))
         for f in futs:
             rows.extend(f.result())
     if n == 0:
@@ -250,20 +253,21 @@ def extract_day(day, workers=6, out_dir=None):
     return f"{day}: traces {n} points {len(df)} {time.time() - t:.0f}s"
 
 
-def download(start, end, streams=4, reverse=False, out_dir=None):
+def download(start, end, streams=4, reverse=False, out_dir=None, legacy_cut=False):
     out_dir = pathlib.Path(out_dir) if out_dir else ADSB_DIR
     days = [d.strftime("%Y-%m-%d") for d in pd.date_range(start, end)]
     days = days[::-1] if reverse else days
     days = [d for d in days if not (out_dir / f"{d}.parquet").exists()]
-    print(f"{len(days)} days to fetch with {streams} streams into {out_dir}", flush=True)
+    print(f"{len(days)} days to fetch with {streams} streams into {out_dir}"
+          f"{' (legacy altitude cut)' if legacy_cut else ''}", flush=True)
     with ThreadPoolExecutor(max_workers=streams) as ex:
-        for msg in ex.map(lambda d: _safe_extract(d, out_dir), days):
+        for msg in ex.map(lambda d: _safe_extract(d, out_dir, legacy_cut), days):
             print(msg, flush=True)
 
 
-def _safe_extract(day, out_dir=None):
+def _safe_extract(day, out_dir=None, legacy_cut=False):
     try:
-        return extract_day(day, workers=max(2, 12 // 2), out_dir=out_dir)
+        return extract_day(day, workers=max(2, 12 // 2), out_dir=out_dir, legacy_cut=legacy_cut)
     except Exception as e:
         return f"{day}: FAILED {e}"
 
@@ -718,9 +722,13 @@ def main():
     d.add_argument("--streams", type=int, default=4)
     d.add_argument("--reverse", action="store_true", help="newest day first, to meet a forward stream")
     d.add_argument("--out-dir", help="write here instead of dataset/adsb (e.g. to test an extractor change)")
+    d.add_argument("--alt-cut", choices=["field", "legacy"], default="field",
+                   help="airborne points up to field elevation + MAX_ALT_FT (field), or up to "
+                        "MAX_ALT_FT above sea level (legacy): every cached day so far was extracted "
+                        "with legacy, so days added for the same models must use it too")
     a = ap.parse_args()
     if a.cmd == "download":
-        download(a.start, a.end, a.streams, a.reverse, a.out_dir)
+        download(a.start, a.end, a.streams, a.reverse, a.out_dir, a.alt_cut == "legacy")
 
 
 if __name__ == "__main__":

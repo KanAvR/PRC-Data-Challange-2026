@@ -217,6 +217,12 @@ def run_split(name, X, y, meta, args, rates=None):
         specialist = train_high_lobt(X_tr, y_tr)
         if high.any():
             high_pred[high] = specialist.predict(X_va.loc[high])
+            if args.trace_spec:
+                from tracespec import apply_trace_spec, fit_trace_trust
+                trust = fit_trace_trust(X_tr, y_tr)
+                high_pred, n_tr = apply_trace_spec(high_pred, X_va, trust, high)
+                print(f"  trace-spec: {int(n_tr.sum())} specialist rows follow the trace "
+                      f"(trusted: {', '.join(trust.reliable) or 'none'})", flush=True)
 
     def assemble(mu, mus):
         pred = combine(mu, p, v, **tail_kw)

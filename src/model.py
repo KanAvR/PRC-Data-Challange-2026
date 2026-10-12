@@ -980,6 +980,11 @@ def add_model_args(ap):
                     help="day-late component (value DAY + DAY_LATE_BASE) only on candidates that leave "
                          "after local midnight, its rate fitted on those rows: a day-late label is the "
                          "scheduled local date kept with the actual time (NEXT_STEPS.md, B41)")
+    ap.add_argument("--trace-spec", action=argparse.BooleanOptionalAction, default=False,
+                    help="in the long-taxi specialist's domain, replace its prediction by the own "
+                         "trace's stand exit plus the airport's offset (LOBT-projected) at airports "
+                         "whose long exits proved reliable in the training labels (tracespec.py; "
+                         "NEXT_STEPS.md, B47)")
     ap.add_argument("--day-late", action=argparse.BooleanOptionalAction, default=False,
                     help="mix a normal-taxi-plus-one-day value into the tail of candidate rows")
     ap.add_argument("--day-late-step", action=argparse.BooleanOptionalAction, default=False,

@@ -248,6 +248,12 @@ def main():
         if high.any():
             with timings.stage("long_taxi_specialist.predict", rows=int(high.sum())):
                 high_pred[high] = specialist.predict(ranking_dep.loc[high])
+                if args.trace_spec:
+                    from tracespec import apply_trace_spec, fit_trace_trust
+                    trust = fit_trace_trust(train_data, y_train)
+                    high_pred, n_tr = apply_trace_spec(high_pred, ranking_dep, trust, high)
+                    print(f"  trace-spec: {int(n_tr.sum())} specialist rows follow the trace "
+                          f"(trusted: {', '.join(trust.reliable) or 'none'})", flush=True)
                 preds[high] = high_pred[high]
 
     with timings.stage("submission.assemble_and_validate"):

@@ -1,6 +1,6 @@
 # Next steps: the experimental record
 
-Deadline: **2026-10-11 23:59:59 CET**. Scoring is RMSE over Jan and Jul 2026
+Deadline: **2026-10-14 12:00 CET (10:00 UTC)**, extended from 2026-10-11. Scoring is RMSE over Jan and Jul 2026
 departures at ten European airports, on a fixed 344,841-row set.
 **The final ranking takes your BEST submission**, so a worse upload costs
 nothing and the leaderboard is an exact, deterministic test. **Limit: 5
@@ -56,7 +56,16 @@ record. Anything that ships lives in `src/`.
 | v42 | ours: v41 + `cat`/`cat_note` 14000 | 232.7616 |
 | v43 | ours: v42 + LIRF operation-type tail classifier (destination, regularity, callsign, operator's arrival habit), midnight-gated | 231.4523 |
 | v44 | ours: v43 + `cat_ctr1` 12000 | 231.4126 |
-| **v45** | **ours: v44 + `cat`/`cat_note` 18000** | **231.3594** |
+| v45 | ours: v44 + `cat`/`cat_note` 18000 | 231.3594 |
+| v46 | v45 + `--day-late-cross` (lost) | 231.8314 |
+| v47 | ours: v45 + `--trace-spec` (specialist rows follow the own trace at EHAM/EDDF/EDDM) | 230.7769 |
+| **v48** | **ours: v47 + `--trace-band` (the same for matched rows with gap_LOBT 4500-6000)** | **230.5207** |
+
+**v47 and v48 (2026-10-13): both won, team best v48 230.5207** (-0.84 vs v45).
+The specialist and the band's matched long rows follow the own trace's stand exit
+at EHAM/EDDF/EDDM (B47, B53); both flags are now defaults, so `predict.py --mu
+lgb cat cat_note cat_ctr1 pa --proxy` reproduces v48. Both are concentrated on
+January de-icing days: submitted once each, never to be re-tuned live.
 
 **v36 and v37 (2026-10-07): both lost.** The LIRF schedule-copy line is now one
 live win (v33 `--clf-inbound`, -2.25) and three losses (v34 +2.08, v36 +0.40,
@@ -99,8 +108,8 @@ default afterwards); sha256 prefix `978eef415fb508ce`. Upload log:
 | (candidate) | `edb1fd2` | v42's defaults `--cat-iterations 18000 --reuse-family-parts output/submitting_v42_cat14k.parts.parquet --reuse-families lgb cat_ctr1 pa --out output/submitting_cand_cat18k.parquet` | `f10ee8f969c910a8` | -- | trend bet past 14000 (v42 -0.13); only `cat`/`cat_note` move, mean |change| 1.6s, top 10 rows 1.0% |
 | (candidate) | `ad91107` | v42's defaults `--ctr1-iterations 12000 --reuse-family-parts output/submitting_v42_cat14k.parts.parquet --reuse-families lgb cat cat_note pa --out output/submitting_cand_ctr1_12k.parquet` | `4b031b8a97576dea` | -- | trend bet past B35's swept 7000 (as 14000 was for `cat`); only `cat_ctr1` moves, mean |change| 1.4s, top 10 rows 0.5% |
 | v46 | `fc7da6d` | v45's defaults `--day-late-cross --reuse-family-parts output/submitting_v45_cat18k_on44.parts.parquet --reuse-families lgb cat cat_note cat_ctr1 pa --out output/submitting_v46_dlcross.parquet` (tail only) | `244d82fd04f82f43` | 231.8314 | **+0.4720 vs v45: lost**; `--day-late-cross` stays off (third day-late rule to lose live, after v23). B41 partial success (pooled -1.23, CI crosses zero); 15 rows move, 3 material (LIRF, p 0.94-0.98, v 56-61k -> 72-75k with q 0.6): **concentrated, submitted once as validated, never re-tuned; no per-row inference from the score** |
-| (candidate v48, after v47) | `7375ca3` (branch `explore/loss-targeting`) | v47's command `--trace-band --out output/submitting_v48_traceband.parquet` | `7f50f4ba1e43d521` | not uploaded | B53; `validate.py --reuse-mu clfsvcarr_g --trace-spec --trace-band --compare tspec`: holdout -0.03, inner -0.01, dec_jun -0.01 (CI below zero), mar_sep -0.03 (CI below zero); **pooled robust -0.02 (CI -0.05..+0.01), better in 93%: partial success** (better on all four splits). The 4500 threshold was placed inside a plateau found on these splits, so the estimate is somewhat flattered. Transfer to the ensemble checked: the same holdout rescore on CatBoost `mu` runs gives -0.055 (`climb_cat_ho`) and -0.034 (`v30_cat_ho`) against LightGBM's -0.029, and on the 303 ranking rows v45's ensemble sits only a little closer to the trace than `mu_lgb` (rms 418s vs 451s). If v47 loses, do not upload v48 (it contains v47's change; `--trace-band` requires `--trace-spec`). Against v47 exactly 303 rows differ (EHAM 205, EDDM 82, EDDF 16), top 10 rows 45%. Live guess -0.1..-0.2. Upload only after v47's score; submit once |
-| (candidate v47) | `6cf9496` (branch `explore/loss-targeting`) | v45's defaults `--trace-spec --reuse-family-parts output/submitting_v45_cat18k_on44.parts.parquet --reuse-families lgb cat cat_note cat_ctr1 pa --out output/submitting_v47_tracespec.parquet` (tail and specialist retrained only) | `d966d6c9c6d44940` | not uploaded | B47; `validate.py --reuse-mu clfsvcarr_g --trace-spec --compare tspec_ctrl`: holdout -0.09 (robust -0.11, normal -0.12), inner 0 (no rows), dec_jun -0.01, mar_sep -0.04; **pooled robust -0.03 (CI -0.08..-0.00), wins**. Against v45 exactly 99 rows differ (EHAM 97, EDDF 2, all January; mean -642s at EHAM, max 2,159s), every other row bit-identical; top 10 rows 36% of the squared change. 2 of the 99 traces fall below the LOBT window and are clipped to its edge (EHAM, -1,906s and -1,679s), a case no 2025 trusted row showed. Live guess -0.35..-0.65. Submit once as validated; no live re-tuning |
+| v48 | `7375ca3` (branch `explore/loss-targeting`) | v47's command `--trace-band --out output/submitting_v48_traceband.parquet` | `7f50f4ba1e43d521` | **230.5207** | **-0.2562 vs v47, team best** (uploaded 2026-10-13 right after v47, with the user's approval, before v47's score was read); `--trace-band` is now a default (`--no-trace-band` reproduces v47). Live -0.26 against the guess -0.1..-0.2 and offline pooled -0.02 (the robust pooled delta is diluted over all four splits' rows; the change sits on 303 ranking rows). Submitted once; not to be re-tuned live (top 10 rows 45%). Record as built: B53; `validate.py --reuse-mu clfsvcarr_g --trace-spec --trace-band --compare tspec`: holdout -0.03, inner -0.01, dec_jun -0.01 (CI below zero), mar_sep -0.03 (CI below zero); **pooled robust -0.02 (CI -0.05..+0.01), better in 93%: partial success** (better on all four splits). The 4500 threshold was placed inside a plateau found on these splits, so the estimate is somewhat flattered. Transfer to the ensemble checked: the same holdout rescore on CatBoost `mu` runs gives -0.055 (`climb_cat_ho`) and -0.034 (`v30_cat_ho`) against LightGBM's -0.029, and on the 303 ranking rows v45's ensemble sits only a little closer to the trace than `mu_lgb` (rms 418s vs 451s). Against v47 exactly 303 rows differ (EHAM 205, EDDM 82, EDDF 16), top 10 rows 45%. Live guess -0.1..-0.2 |
+| v47 | `6cf9496` (branch `explore/loss-targeting`) | v45's defaults `--trace-spec --reuse-family-parts output/submitting_v45_cat18k_on44.parts.parquet --reuse-families lgb cat cat_note cat_ctr1 pa --out output/submitting_v47_tracespec.parquet` (tail and specialist retrained only) | `d966d6c9c6d44940` | **230.7769** | **-0.5825 vs v45** (guess -0.35..-0.65); `--trace-spec` is now a default (`--no-trace-spec --no-trace-band` reproduces v45). Submitted once; not to be re-tuned live, no per-row inference from the score. Record as built: B47; `validate.py --reuse-mu clfsvcarr_g --trace-spec --compare tspec_ctrl`: holdout -0.09 (robust -0.11, normal -0.12), inner 0 (no rows), dec_jun -0.01, mar_sep -0.04; **pooled robust -0.03 (CI -0.08..-0.00), wins**. Against v45 exactly 99 rows differ (EHAM 97, EDDF 2, all January; mean -642s at EHAM, max 2,159s), every other row bit-identical; top 10 rows 36% of the squared change. 2 of the 99 traces fall below the LOBT window and are clipped to its edge (EHAM, -1,906s and -1,679s), a case no 2025 trusted row showed. |
 | v45 | `751fdb3` | v44's defaults `--cat-iterations 18000 --reuse-family-parts output/submitting_v44_ctr1_12k.parts.parquet --reuse-families lgb cat_ctr1 pa --reuse-family-from cat=output/submitting_cand_cat18k.parts.parquet --reuse-family-from cat_note=output/submitting_cand_cat18k.parts.parquet --out output/submitting_v45_cat18k_on44.parquet` | `effdf06034c3547d` | **231.3594** | **-0.0532 vs v44, team best**; 18000 is now the default (`--cat-iterations 14000` reproduces v44). Trend bet past 14000; only `cat`/`cat_note` move vs v44 (columns identical to the 18000 build's), mean |change| 1.6s, top 10 rows 1.0% |
 | v44 | `c43e9ac` | v43's defaults `--ctr1-iterations 12000 --reuse-family-parts output/submitting_cand_ctr1_12k.parts.parquet --reuse-families lgb cat cat_note cat_ctr1 pa --out output/submitting_v44_ctr1_12k.parquet` (`cat_ctr1` 12000 retrained on v42's parts; tail retrained with v43's defaults, p identical to v43) | `fb1ff3b25d979a5e` | **231.4126** | **-0.0397 vs v43, team best**; `cat_ctr1` 12000 is now the default (`--ctr1-iterations 8000` reproduces v43). Trend bet past B35's 7000; only `cat_ctr1` moves vs v43: mean |change| 1.4s, top 10 rows 0.5% |
 | v43 | `cfb844d` | v42's defaults `--clf-service --clf-arr-habit --svc-midnight-gate --reuse-family-parts output/submitting_v42_cat14k.parts.parquet --reuse-families lgb cat cat_note cat_ctr1 pa --out output/submitting_v43_svcarr_gate.parquet` (tail only) | `c0df01f1b46988ab` | **231.4523** | **-1.3093 vs v42, team best** (offline pooled robust -3.01: ~0.4x on the point estimate); the three flags are now defaults together. `clfsvcarr_g` (pooled robust -3.01, better on all four splits); supersedes the `--clf-service`-only build below, which is not uploaded. `mu` and specialist identical to v42; p unchanged on midnight-crossing candidates; LIRF candidates mean p 0.551 -> 0.584, 31 rows move > 0.2 (25 up); top 10 rows 56%: submit once, no live tuning |
@@ -970,6 +979,7 @@ uploads; ours since ADS-B total -6.5. No shared single lever is visible.
   projection bounds any miss. On ranking 99 specialist rows move (EHAM January
   2026 de-icing days 01-02..07, mean v45 5,328 against trace 4,687; rms change
   ~1,050s; top 10 rows 36% of the squared change). Live guess -0.35..-0.65.
+  **Live v47: 230.7769, -0.58 vs v45; now a default.**
 - **B49 `--lirf-schedmix` in the 2026-like harness: still wins, so the untraced
   July is not why v36 lost (2026-10-13).** `validate.py --mu lgb --proxy
   --mask-adsb-lirf --lirf-schedmix --tag smask_mix --compare smask_ctrl` (fresh
@@ -1025,7 +1035,10 @@ uploads; ours since ADS-B total -6.5. No shared single lever is visible.
   `--trace-band` (needs `--trace-spec`), `tracespec.TRACE_BAND_GAP_SEC`.
   Separately: an in-domain trust gate (reliability measured on specialist rows
   only) admits EGLL on thin counts (5 rows at 0.80) and drops EDDM; holdout -0.061
-  against the shipped gate's -0.077. Kept the shipped gate.
+  against the shipped gate's -0.077. Kept the shipped gate. **Live v48: 230.5207,
+  -0.26 vs v47; now a default.** The trace line (B47 + B53) is -0.84 live from
+  offline pooled -0.05: the gain sits on ~400 January rows, which the all-row
+  pooled delta dilutes.
 - **B54 time-zone-shifted schedule copies: negligible (`tz_copy.py`).** Two LIRF
   rows have label - gap_SCHED = 7,201s and 7,202s (a schedule copy shifted by
   CEST); over all 2025 DEP rows +2h copies are 4 LIRF no-LOBT rows and ~20

@@ -4,11 +4,12 @@ Predict `TAXITIME_SEC_mvt` for departures at ten European airports using 2025
 training data. The ranking set is 344,841 departures from January and July 2026,
 scored by RMSE.
 
-**Current best: 236.7134 RMSE (v30).** v30 is the v28 ADS-B recipe plus a
-consistent count basis for target encodings: prediction rows receive the mean
-per-level count visible to an out-of-fold training row, rather than the larger
-full-training count. The winning behavior is now the default, following the
-promotion rule in `AGENTS.md`; the command under **Run** reproduces the recipe.
+**Current best: 230.5207 RMSE (v48).** v48 adds to the five-family ensemble a
+rule for matched long taxis: where an airport's long stand exits proved reliable
+in the training labels (EHAM, EDDF, EDDM), the departure's own ADS-B stand exit
+plus the airport's offset replaces the prediction, kept inside the LOBT window.
+Every winning flag is now a default, following the promotion rule in
+`AGENTS.md`; the command under **Run** reproduces the recipe.
 
 Working rules for anyone, person or agent, changing this code or building a
 submission are in `AGENTS.md`. The experimental record, including what has
@@ -148,7 +149,10 @@ Flags that stay off by default are kept as the record of measured negatives:
 | v42 | v41 + `cat`/`cat_note` at 14,000 iterations | 232.7616 |
 | v43 | v42 + what kind of operation a no-flight-plan LIRF departure is (destination, flight-number regularity, callsign shape, the operator's arrival record), gated to flights leaving on their scheduled local date | 231.4523 |
 | v44 | v43 + `cat_ctr1` at 12,000 iterations | 231.4126 |
-| **v45** | **v44 + `cat`/`cat_note` at 18,000 iterations** | **231.3594** |
+| v45 | v44 + `cat`/`cat_note` at 18,000 iterations | 231.3594 |
+| v46 | v45 + a day-late component on candidates leaving after local midnight (rejected) | 231.8314 |
+| v47 | v45 + matched long taxis follow the departure's own trace stand exit at airports where long exits proved reliable (`--trace-spec`) | 230.7769 |
+| **v48** | **v47 + the same for matched rows with a LOBT gap of 4,500-6,000s (`--trace-band`)** | **230.5207** |
 
 Offline gains do not always carry over:
 
@@ -202,8 +206,11 @@ predictions as `<tag>_unmasked`. Judge encoding and key changes on both.
 ## Run
 
 ```bash
-# Reproduce v45: train on all twelve months and score the ranking set (several
-# hours; fetch the ADS-B days first, see Setup). --cat-iterations 14000 gives v44;
+# Reproduce v48: train on all twelve months and score the ranking set (several
+# hours; fetch the ADS-B days first, see Setup). --no-trace-band gives v47;
+# --no-trace-spec --no-trace-band gives v45; v47 and v48 were built from v45's
+# per-family parts with --reuse-family-parts (tail and specialist retrained).
+# From v45: --cat-iterations 14000 gives v44;
 # add --ctr1-iterations 8000 for v43; --no-clf-service --no-clf-arr-habit
 # --no-svc-midnight-gate as well for v42; --cat-iterations 10000 instead for v41; --pa-weight 0.5 as well for v39, --ctr1-iterations 3500 as well for v38,
 # --pa-cat-iterations 2000 as well for v35, and --no-adsb-pos as well for v33.
@@ -218,7 +225,7 @@ predictions as `<tag>_unmasked`. Judge encoding and key changes on both.
 # v31, and --no-adsb-climb-id as well for v30. Earlier versions are recorded in
 # NEXT_STEPS.md and in --help.
 .venv/bin/python src/predict.py --mu lgb cat cat_note cat_ctr1 pa --proxy \
-    --out output/submitting_v45.parquet
+    --out output/submitting_v48.parquet
 
 # Tail-only change: reuse a finished build's mu and retrain only the tail models
 # (minutes). Check it reproduces that build before shipping from it.

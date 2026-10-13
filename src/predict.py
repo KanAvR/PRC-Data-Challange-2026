@@ -257,7 +257,7 @@ def main():
                 preds[high] = high_pred[high]
     if args.trace_band:
         if not args.trace_spec:
-            raise SystemExit("--trace-band extends --trace-spec; pass both")
+            raise SystemExit("--trace-band extends --trace-spec; add --no-trace-band")
         from tracespec import apply_trace_spec, band_rows, fit_trace_trust
         preds, band_use = apply_trace_spec(preds, ranking_dep, fit_trace_trust(train_data, y_train),
                                            band_rows(ranking_dep, APPLY_GAP_SEC))

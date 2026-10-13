@@ -980,15 +980,17 @@ def add_model_args(ap):
                     help="day-late component (value DAY + DAY_LATE_BASE) only on candidates that leave "
                          "after local midnight, its rate fitted on those rows: a day-late label is the "
                          "scheduled local date kept with the actual time (NEXT_STEPS.md, B41)")
-    ap.add_argument("--trace-spec", action=argparse.BooleanOptionalAction, default=False,
+    ap.add_argument("--trace-spec", action=argparse.BooleanOptionalAction, default=True,
                     help="in the long-taxi specialist's domain, replace its prediction by the own "
                          "trace's stand exit plus the airport's offset (LOBT-projected) at airports "
                          "whose long exits proved reliable in the training labels (tracespec.py; "
-                         "NEXT_STEPS.md, B47)")
-    ap.add_argument("--trace-band", action=argparse.BooleanOptionalAction, default=False,
+                         "NEXT_STEPS.md, B47). v47: -0.58 live; --no-trace-spec --no-trace-band "
+                         "reproduces v45")
+    ap.add_argument("--trace-band", action=argparse.BooleanOptionalAction, default=True,
                     help="with --trace-spec, the same override for matched rows just below the "
                          "specialist (tracespec.TRACE_BAND_GAP_SEC < gap_LOBT <= 6000), where the "
-                         "LOBT window still rules out tows (NEXT_STEPS.md, B53)")
+                         "LOBT window still rules out tows (NEXT_STEPS.md, B53). v48: -0.26 live; "
+                         "--no-trace-band reproduces v47")
     ap.add_argument("--day-late", action=argparse.BooleanOptionalAction, default=False,
                     help="mix a normal-taxi-plus-one-day value into the tail of candidate rows")
     ap.add_argument("--day-late-step", action=argparse.BooleanOptionalAction, default=False,

@@ -227,7 +227,7 @@ def run_split(name, X, y, meta, args, rates=None):
     band_pred = band_use = None
     if args.trace_band:
         if not args.trace_spec:
-            raise SystemExit("--trace-band extends --trace-spec; pass both")
+            raise SystemExit("--trace-band extends --trace-spec; add --no-trace-band")
         from tracespec import apply_trace_spec, band_rows, fit_trace_trust
         band_pred, band_use = apply_trace_spec(np.full(len(X_va), np.nan), X_va,
                                                fit_trace_trust(X_tr, y_tr), band_rows(X_va, APPLY_GAP_SEC))

@@ -93,13 +93,20 @@ we assume all four months count.
   trace-feature cells over 4,602 departures. Four fetchers at once hit Windows
   `WinError 1450` (out of system resources) in the extraction pools; the
   forward fetchers re-did the failed days.
-- **2026-06-11 is degraded at the source.** Its `prod-0` release is 1.52 GB
-  (other days 2.8-3.9 GB) and holds 42,314 traces but only 43,729 points, about
-  one per aircraft. The `staging-0` release is the same (1.60 GB, 47,975
-  points). Only 35 of the 6,099 departures that day match a trace (0.6%,
-  against 65-66% on 06-10 and 06-12), with degenerate features, and
-  `adsb_cov_apt_day` is 0, so the model treats it as a day without coverage.
-  It was left as fetched; special-casing it would change the recipe.
+- **2026-06-11 has almost no surface positions at the source.** Its `prod-0`
+  release (1.52 GB against 2.8-3.9 GB for other days; the only other tags are
+  `staging-0` and `mlatonly-0`) holds full traces for fewer aircraft: 42,314
+  against 66,787 on 06-10, with a median of 486 points per trace against 744.
+  Near the ten airports it is the ground segment that is gone. Per 3,000 traces
+  it has 454 points below 40 kt, against 24,135 on 06-10, and only 38 of those
+  are flagged `ground` (06-10: 23,671). Airborne points above 120 kt are at 39%
+  of 06-10's count. So `adsb.extract_day` keeps 43,729 points. That count is
+  deterministic: a re-extraction with nothing else running gives the same
+  number, so this is not the `WinError 1450` episode. `staging-0` gives
+  47,975 points. Only 35 of the 6,099 departures that day match a trace
+  (0.6%, against 65-66% on 06-10 and 06-12), and those have degenerate
+  features. `adsb_cov_apt_day` is 0, so the model treats it as a day without
+  coverage. It was left as fetched; special-casing it would change the recipe.
 - **Runtime of the exact v48 recipe from scratch:** ~15.5-16h on 16 cores
   (`cat`+`cat_note` at 18000: 9.8h; `cat_ctr1` at 12000: 2.5h; `pa` at 5000:
   3.1h; LightGBM and the tail: ~10 min). v48 itself was assembled from reused

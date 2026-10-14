@@ -464,4 +464,8 @@ orjson; `torch` is needed only for the optional `--mu neural` member.
 | `AGENTS.md` | working rules for changing the code or building a submission |
 
 Flags that default to off are kept as the record of measured negatives;
-`predict.py --help` lists all options. Licensed under GPLv3.
+`predict.py --help` lists all options.
+
+## License
+
+This repository is licensed under [GPLv3](LICENSE).

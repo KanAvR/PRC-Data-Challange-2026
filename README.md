@@ -324,9 +324,7 @@ How each kind of change transferred, from the record above:
 
 To rebuild the final submission:
 
-1. Check out `main`. The file was built at commit `55a15ab`. Later commits
-   add `src/adsbfetch.py`, `src/subset_submission.py` and a test, and change
-   no code that the build runs.
+1. Check out `main`.
 2. Install the environment and fetch the data ([Setup](#setup)).
 3. Run the final submission command ([Commands](#commands)).
 4. Check the file against `dataset/final_submitting.parquet`: same columns,

@@ -1,195 +1,319 @@
-# Predicting taxi-out times at ten European airports
+# Taxi-out time prediction, PRC Data Challenge 2026
 
-Team **humble-giraffe**'s entry to the
-[PRC Data Challenge 2026](https://prc-data-challenge-2026.netlify.app/), run by
-EUROCONTROL's Performance Review Commission.
+Team humble-giraffe's code for the
+[PRC Data Challenge 2026](https://prc-data-challenge-2026.netlify.app/). The
+target is `TAXITIME_SEC_mvt`, the time from off-block to take-off, for
+departures at EDDF, EDDM, EGLL, EHAM, LEBL, LEMD, LFPG, LIRF, LSZH and LTFM.
+Models train on the twelve months of 2025. The leaderboard scores RMSE over
+344,841 departures from January and July 2026; the final ranking file adds
+February and June 2026, for 670,790 departures.
 
-**The task.** For each departure, predict the **taxi-out time**: the seconds
-from leaving the stand (off-block) to take-off. Ten airports: EDDF, EDDM, EGLL,
-EHAM, LEBL, LEMD, LFPG, LIRF, LSZH and LTFM. We train on all of 2025. The
-leaderboard scores 344,841 departures from January and July 2026 by root mean
-squared error (RMSE, in seconds). The final ranking adds February and June 2026,
-which makes 670,790 departures.
-
-**The result.** Our best leaderboard score is **230.52 RMSE (v48)**. We began at
-275.97 (v8). More than half of that gain came from one idea: using each
-flight's own public ADS-B track to see when it actually left its stand.
-
-| | file | rows | score |
-|---|---|---|---|
-| best leaderboard submission | v48 | 344,841 (Jan + Jul) | **230.5207** |
-| final submission, uploaded 2026-10-14 | `humble-giraffe_final.parquet` | 670,790 (Jan, Feb, Jun, Jul) | published after the deadline |
-| the final build's Jan + Jul rows | v49 | 344,841 | 232.665 |
-
-The final file uses the same model and data as v48, but with smaller CatBoost
-training budgets. Retraining at full size on the two new months took longer
-than the window allowed. Scoring its January and July rows as v49 measured the
-cost of the smaller budgets: **+2.14 RMSE**.
-
-## Contents
-
-- [How the prediction works](#how-the-prediction-works)
-- [What moved the score](#what-moved-the-score)
-- [What we learned about the data](#what-we-learned-about-the-data)
-- [Data sources and where we drew the line](#data-sources-and-where-we-drew-the-line)
-- [Reproducing the submissions](#reproducing-the-submissions)
-- [How changes were tested](#how-changes-were-tested)
-- [Repository layout](#repository-layout)
-
-## How the prediction works
-
-A taxi-out time is usually ten to twenty minutes. A small share are hours, or
-even a whole day: recording artefacts, aircraft held for a slot, or non-scheduled
-movements. RMSE punishes those few rows heavily. So the model has two parts:
-one for normal taxis and one for the tail. A few rules on top use what the
-flight plan and the radar track say must be true.
-
-**1. Features.** Each departure is described by:
-- **The schedule and flight plan.** Its time relative to the off-block times
-  given in the data (`AOBT_3`, `LOBT`, `EOBT`).
-- **What it is and where.** Airport, stand, runway, aircraft type, airline,
-  local time of day.
-- **Conditions.** Congestion (how many departures and arrivals are nearby in
-  time), and METAR weather.
-- **History.** How long similar flights have taken: out-of-fold *target
-  encodings* by stand, runway, route and flight number. Airlines reissue many
-  callsigns each season, so 37% of July 2026 flight numbers never appear in
-  2025. When a flight is unseen, the encoding falls back to the same airline's
-  flights on the same route and time slot.
-- **Neighbours.** How long departures in the surrounding 15 to 60 minutes
-  appear to be taking, from the gaps between their scheduled and actual times.
-- **The flight's own ADS-B track** (see below), and the tracks of the aircraft
-  around it.
-
-**2. The normal-taxi estimate.** This is an average of five model families,
-each trained on taxi times up to 6,000 s:
-- LightGBM.
-- Two CatBoost models, one with the target encodings and one without.
-- A deeper CatBoost that uses only single-feature category statistics.
-- A per-airport family: one LightGBM and one CatBoost per airport. It is held
-  to within 150 s of the global average and blended in at weight 0.4.
-
-**3. The tail.** A CatBoost classifier gives the probability that a departure
-is extreme, and a separate estimate gives how extreme. Only where that
-estimate exceeds 6,000 s does the prediction become a probability-weighted mix
-of the two. Departures without a flight plan get their own classifier. It
-looks for the patterns behind most real tail labels. One is a late inbound
-aircraft. Another is the kind of operation: domestic or not, how often the
-flight number repeats, and the callsign's shape.
-
-**4. Rules that use hard information.**
-- **The flight-plan window.** When a departure has a matched flight plan, the
-  prediction is kept within ±3,660 s of what the plan's off-block time implies.
-  All 2,062,448 matched training labels lie inside that window.
-- **Very long taxis.** Where the plan implies more than 6,000 s, a small
-  specialist model predicts the remainder.
-- **Trusting the track.** At EHAM, EDDF and EDDM, long stand exits seen in the
-  track proved reliable in 2025. There, a matched long taxi takes the track's
-  stand-exit time plus the airport's typical offset, kept within the window.
-- **A cap on day-late hedging.** The hedge towards a day-late label is
-  capped, so it never overshoots both possible answers.
-
-### The ADS-B track
-
-[adsb.lol](https://adsb.lol) publishes every day's raw aircraft positions as
-open data (ODbL). For each day we keep only points within 8 km of the ten
-airports and below 1,500 ft. That reduces about 3.5 GB to about 13 MB. Stand
-positions come from the X-Plane Scenery Gateway's `apt.dat` airport files.
-
-A departure is matched to a track by its take-off: the same airport, within
-three minutes, and usually the same callsign. When the take-off roll is not
-seen, the climb-out's callsign identifies the airframe instead. A matched
-track gives several readings:
-- when the aircraft left its stand and when it first moved;
-- when it was first seen on the ground, and where;
-- how far it taxied;
-- how many other aircraft were taxiing or holding at the time.
-
-Coverage depends on volunteer receivers. About 59% of the scored 2026
-departures match a track. LEMD, LFPG and LTFM show essentially no aircraft on
-the ground. Every row carries its airport's coverage that day (the share of
-departures matched), so the model can tell "not covered" from "not seen". We never copy a track's reading as the answer:
-the trace values are features the model learns how far to trust, airport by
-airport.
-
-## What moved the score
-
-| step | change | RMSE |
+| submission | rows | RMSE |
 |---|---|---:|
-| v8 | weather plus a four-model average | 275.97 |
-| v9 | flight-plan window and the long-taxi specialist | 269.41 |
-| v14 | per-airport models blended in | 268.41 |
-| v20 | neighbour taxi-time features | 265.22 |
-| v24 | flight-number fallback for renamed callsigns | 264.24 |
-| v25 | larger CatBoost models | 263.87 |
-| **v26** | **each departure's own ADS-B track** | **250.98** |
-| **v27** | **tracks matched by callsign when the take-off is not seen (coverage 29% → 59%)** | **237.87** |
-| v28 | neighbours' track-measured taxi times and surface traffic | 237.05 |
-| v31 | the climb-out identifies the airframe | 235.95 |
-| v33 | late-inbound aircraft in the no-flight-plan tail classifier | 233.33 |
-| v38–v42 | where the track starts, larger models, per-airport weight 0.4 | 232.76 |
-| v43 | the kind of operation, for no-flight-plan departures at LIRF | 231.45 |
-| v45 | larger CatBoost models again | 231.36 |
-| v47 | long taxis follow the track's stand exit at EHAM, EDDF, EDDM | 230.78 |
-| **v48** | **the same just below the long-taxi threshold** | **230.52** |
+| v48, best leaderboard submission | 344,841 (Jan, Jul) | 230.5207 |
+| `humble-giraffe_final.parquet` | 670,790 (Jan, Feb, Jun, Jul) | scored after the deadline |
+| v49, the final build's Jan and Jul rows | 344,841 | 232.665 |
 
-The three ADS-B steps (v26 to v28) gave 26.8 of the 45.4 points. Every
-version, including those that lost, is in `NEXT_STEPS.md` section 1, with its
-commit, command and file hash.
+The final file uses v48's flags and features with smaller CatBoost budgets,
+because a full-budget retrain on the new months did not fit before the
+deadline. v49 measures that cost on the leaderboard rows at +2.14.
 
-**Ideas that won offline and lost on the leaderboard.**
-- **More features for the tail classifiers:** lost about 25 points.
-- **Correcting the normal estimate by prediction band:** -0.44 offline, +0.6
-  live. 2026 has two to three times as many rows in the bands it corrected.
-- **Rules for "day-late" labels, which rest on a handful of 2025 rows:** lost
-  each time (v23 +0.62, v46 +0.47).
-- **The arriving aircraft's own track in the tail classifier:** +2.08 (v34).
-- **A neural network, seed averaging and fitted blend weights:** each was better
-  alone and made no difference inside the average.
+## Method overview
 
-`NEXT_STEPS.md` section 5 lists everything measured and not worth retrying.
+Each prediction is a mixture of a normal-regime estimate `mu` and a tail
+estimate, followed by corrections that use the flight plan's off-block time
+(`LOBT`) and the departure's own ADS-B track:
 
-## What we learned about the data
+1. Features from the provided columns, METAR weather, out-of-fold target
+   encodings, neighbouring departures' timing, and each departure's ADS-B
+   track from adsb.lol matched to its take-off.
+2. `mu`: the average of four global gradient-boosted models plus a
+   per-airport family, trained on labels up to 6,000 s.
+3. Tail: a CatBoost classifier gives the probability that a row's label exceeds
+   6,000 s, and the gap between take-off and the recorded schedule gives its
+   likely value.
+4. Corrections: predictions on rows with a matched flight plan are projected
+   into a window around `LOBT`; very long matched taxis go to a residual
+   specialist; and at three airports a long taxi follows the track's stand
+   exit.
 
-- **Some of the error cannot be removed with the provided data.** In 2025, 91
-  departures with no flight plan carried 13% of the error. Their labels
-  match no timestamp in the data. Eleven of them are about 24 hours: the
-  movement was logged a day after the off-block, so the label is a day plus a
-  normal taxi. The rest are non-scheduled movements (general aviation,
-  positioning, maintenance) that never enter the flight-plan system.
-- **LIRF often records the scheduled time as the off-block time on delayed
-  departures.** Those labels measure the delay, not the taxi. That makes LIRF
-  the hardest airport by far, and it is what the LIRF tail classifiers detect.
-- **2026 is not 2025.** It has more departures without a flight plan, three
-  times as many very long matched taxis, a snow episode at EHAM larger than
-  anything in 2025, and renamed callsigns. Validation was built to look like
-  that (see below).
-- **ADS-B coverage moves with the volunteer network.** EGLL was nearly dark in
-  2025 and well covered in July 2026. One day, 2026-06-11, has almost no
-  ground positions in adsb.lol's archive, so it behaves as a day without
-  coverage.
+Steps 2 and 3 meet in `combine()` (`src/model.py`):
+`pred = (1 - p) * mu + p * v`, where `v` falls back to `mu` unless it exceeds
+6,000 s.
 
-## Data sources and where we drew the line
+## Results by component
 
-| source | used for | licence |
+Every change below was submitted on its own on top of the previous best, so
+the live column is a leaderboard difference with everything else held fixed.
+The offline column is the pooled change on the four 2025 validation splits
+(see [Validation](#validation)), where one was recorded.
+
+| version | component | offline | live |
+|---|---|---:|---:|
+| v9 | LOBT window and long-taxi specialist | -3.22 (specialist) | -6.56 |
+| v14 | per-airport family blended into `mu` | -1.08 | -1.01 |
+| v16 | target-encoding shrinkage 30 to 10 | -0.22 | -0.63 |
+| v20 | neighbour proxy features | -3.20 | -2.56 |
+| v22 | cap on the day-late hedge | | -0.47 |
+| v24 | flight-number backoff and dropout | | -0.51 |
+| v25 | CatBoost 6,000 iterations | | -0.37 |
+| v26 | own ADS-B track, matched at take-off | -6.84 | -12.89 |
+| v27 | track matched by callsign when the take-off is unseen | -10.85 | -13.12 |
+| v28 | neighbours' track-measured taxi and surface counts | -0.24 | -0.82 |
+| v30 | out-of-fold count basis for the encodings | | -0.34 |
+| v31 | climb-out callsign identifies the airframe | -0.81 | -0.77 |
+| v32 | CatBoost 10,000 iterations, LightGBM 1,200 rounds | | -0.37 |
+| v33 | late inbound aircraft in the no-flight-plan tail classifier | -0.89 | -2.25 |
+| v35 | where the track's last ground segment starts | -0.29 | -0.19 |
+| v38 | per-airport CatBoost 5,000 iterations | -0.14 | -0.08 |
+| v39 | `cat_ctr1` 8,000 iterations | | -0.14 |
+| v41 | per-airport weight 0.5 to 0.4 | | -0.02 |
+| v42 | `cat`, `cat_note` 14,000 iterations | | -0.13 |
+| v43 | operation type for no-flight-plan departures (LIRF) | -3.01 | -1.31 |
+| v44 | `cat_ctr1` 12,000 iterations | | -0.04 |
+| v45 | `cat`, `cat_note` 18,000 iterations | | -0.05 |
+| v47 | long taxis follow the track's stand exit (EHAM, EDDF, EDDM) | -0.03 | -0.58 |
+| v48 | the same for matched gaps of 4,500 to 6,000 s | -0.02 | -0.26 |
+
+From v8 (275.97) to v48 (230.52) the leaderboard gained 45.4 points, and v26
+to v28 account for 26.8 of them. Each ADS-B step gained more live than
+offline (1.9x, 1.2x and 3.4x), which is the expected direction: the scored
+months have more track coverage than 2025. A stand exit is seen on 15.4% of
+2026 departures against about 10% in 2025, and EGLL went from almost no
+coverage in 2025 to 55% of departures in July 2026.
+
+Changes that lost live:
+
+| version | change | offline | live |
+|---|---|---:|---:|
+| v11 | `--stakes 25` once the specialist owned the matched rows | | +0.23 |
+| v21 | out-of-fold band calibration of `mu` | -0.44 | +0.65 |
+| v23 | day-late rate stepped by scheduled gap | | +0.62 |
+| v29 | trace-offset target encodings | | -0.002 (noise) |
+| v34 | the departing airframe's own arrival track in the tail classifier | | +2.08 |
+| v37 | schedule-copy probability in the tail classifier | -0.95 | +0.31 |
+| v40 | per-airport weight 0.6 | | +0.10 |
+| v46 | day-late component for departures after local midnight | -1.23 | +0.47 |
+
+An expanded feature set for the tail classifiers won offline and lost about
+25 points live. A neural member, seed averaging and fitted blend weights
+were each better than the existing members alone and made no difference
+inside the average. `NEXT_STEPS.md` section 5 lists every measured dead end.
+
+## Where the error is
+
+Measured on the four 2025 splits with the v14 recipe (pooled RMSE 264.39,
+before the proxy and ADS-B features):
+
+- 91 tail rows without a flight plan, whose labels match no available
+  timestamp within 600 s, carry 34.76 of the 264.39. Eleven of them are
+  day-late artefacts: the movement is logged 24 hours after the off-block, so
+  the label is 86,400 s plus a normal taxi. These 11 carry 18.0% of all
+  squared error. The other 80 are non-scheduled movements (general aviation,
+  positioning, maintenance) with no flight plan to match.
+- Once those 91 are set aside, normal rows (label up to 6,000 s) hold 92.8% of
+  the remaining squared error. Labels of 3,000 to 6,000 s are 0.38% of normal
+  rows and 19.5% of normal-row squared error, under-predicted by 1,163 s on
+  average. These aircraft push back and then wait for a slot, 20 to 50 minutes
+  before `AOBT_3`.
+- LIRF is 7.7% of normal rows and 21.5% of normal-row squared error. On
+  delayed departures it often records the scheduled time as the block time, so
+  the label is the delay rather than the taxi. That accounts for 41.9% of
+  LIRF's normal-row squared error, and it is what the v33 and v43 tail inputs
+  detect.
+
+2026 differs from 2025 in ways that matter here. Rows without a flight plan
+are 1.53% against 1.19%. Matched gaps above 6,000 s are 3.25 times as
+frequent, 141 of the 287 of them at EHAM. Snow rows are 2.6 times as frequent,
+including a January episode at EHAM larger than any in 2025. And 37% of July
+2026 flight numbers never appear in 2025, because airlines reissue
+alphanumeric callsigns each season.
+
+## Technical details
+
+### Features (`src/features.py`, `airline.py`, `weather.py`)
+
+The base features are the gaps from movement time to `AOBT_3`, `LOBT` and
+`EOBT`, airport, stand, runway, aircraft type, a standardised airline code,
+local time, congestion counts and METAR observations from the Iowa
+Environmental Mesonet. `featcache.py` caches the result, keyed on a hash of
+the feature sources and input files.
+
+The neighbour proxy (`--proxy`, 32 columns in `PROXY_COLS`) averages nearby
+departures' movement-to-`AOBT_3` and movement-to-`LOBT` gaps over 15, 30 and
+60 minutes before and after each row, for the whole airport and per runway. A
+row never sees itself or departures sharing its exact second. Offline the
+normal-row gain was larger than the all-row gain on both screened splits
+(-3.39 and -3.44 against -2.60 and -3.17).
+
+### Target encodings (`src/encode.py`)
+
+Six keys are encoded: stand and runway, stand, airline, aircraft type, flight
+number, and runway by hour. Encodings are fitted on normal rows only and
+computed out of fold by month, so a training row never sees its own month's
+labels. They shrink toward the global mean with `PRIOR_WEIGHT = 10`. A sweep
+found a plateau over 3 to 10, and removing the encodings costs 0.96. The
+count columns use the mean exposure of an out-of-fold training row,
+`N - sum_f(N_f^2) / N`, for prediction rows as well, so training and
+prediction see the same distribution (v30).
+
+An unseen flight number falls back to the same airline's flights on the same
+route and scheduled 30-minute slot, then to the route (`--te-flight-backoff`).
+In training, 20% of flight keys are hidden (`--te-flight-dropout 0.2`), so the
+models learn the regime that 2026's renamed callsigns create.
+
+### ADS-B matching and track features
+
+`src/adsb.py` reads adsb.lol's `globe_history` archive: one readsb tar per
+UTC day, about 3.5 GB, published as GitHub releases under ODbL. Extraction
+keeps points within 8 km of each airport's reference point that are on the
+ground or below 1,500 ft above sea level (`--alt-cut legacy`), about 13 MB a
+day. `src/aptdat.py` takes stand coordinates from each airport's X-Plane
+Scenery Gateway `apt.dat`; 96% of departure stands match.
+
+A departure is matched to the track whose take-off is at the same airport
+within 180 s of its movement time, with the callsign preferred (`MATCH_S`).
+When the take-off roll is not seen, ground points of the same callsign ending
+up to 120 s after the movement time are used (v27). When the ground points
+carry no callsign or the inbound flight's, the airborne climb-out's callsign
+identifies the airframe instead (v31). Matched coverage of the 2026 ranking
+rows went from 29.5% to 58.6% with the callsign fallback. LEMD, LFPG and LTFM
+show essentially no ground points.
+
+The features describe the track and how good it is:
+
+- `adsb_leave_stand`, `adsb_leave0`, `adsb_push`: stand-exit, first-movement
+  and pushback times, from the 60 m radius around the `apt.dat` stand
+  (`STAND_R_M`) and a 15 m displacement from the parked position (`MOVE_M`).
+  On 2025 probe days the last point within 60 m of the stand was within 60 s
+  of the label on 82-88% of EHAM rows and 84-88% of LSZH rows.
+- `adsb_first_seen`, `adsb_last_stop`, `adsb_n_ground`, `adsb_cadence`,
+  `adsb_max_gap`: when the track starts, where it last stood still, and how
+  dense it is.
+- `adsb_x0`, `adsb_y0`, `adsb_path_m` (v35): where the last ground segment
+  starts and how long it is, for tracks that begin mid-taxi.
+- `adsb_cov_apt_day`: the share of the airport's departures matched that day,
+  so the model can tell an uncovered airport from an unseen aircraft. An hour
+  with no points in the archive is marked unknown.
+- Neighbour and surface columns (v28): other departures' track-measured stand
+  exits, pushbacks and first-seen times in 15 and 30 minute windows, by
+  airport and runway, and the number of aircraft taxiing (3 to 50 kt) or
+  holding more than 80 m from any stand, in 10 and 20 minute windows.
+
+The track values are model inputs, and the models learn per airport how far
+to trust them. A track value replaces the prediction only in the track
+override described under Corrections, and only at airports where it proved
+reliable in training.
+
+### The `mu` ensemble (`src/model.py`, `per_airport.py`)
+
+Four global members are trained on labels up to 6,000 s (`TAIL_THR`):
+
+| member | model | budget |
 |---|---|---|
-| challenge files (`training_*`, `ranking`, `final_ranking`) | everything | challenge terms |
-| [adsb.lol `globe_history`](https://github.com/adsblol) | each flight's track and the surface traffic | ODbL |
-| [X-Plane Scenery Gateway](https://gateway.x-plane.com) `apt.dat` | stand positions | GPL v2 |
-| [Iowa Environmental Mesonet](https://mesonet.agron.iastate.edu) METAR archive | weather | free public archive |
+| `lgb` | LightGBM | 1,200 rounds |
+| `cat` | CatBoost with the target encodings | 18,000 iterations |
+| `cat_note` | CatBoost without the target encodings | 18,000 iterations |
+| `cat_ctr1` | CatBoost, depth 10, single-feature CTRs only | 12,000 iterations |
 
-External data is fetched at run time into the git-ignored `dataset/` and is not
-redistributed here.
+The per-airport family `pa` fits one LightGBM and one CatBoost (5,000
+iterations) per airport and averages them. It is clipped to within 150 s of
+the global average (`PA_CLIP`) and given weight 0.4 (`PA_WEIGHT`); the global
+members share the rest equally. The best CatBoost iteration count grows with
+the training size, so the budgets were set from validation curves that were
+still falling and then confirmed on the leaderboard (v25, v32, v42, v44, v45).
 
-We used independent observations of the flights themselves: the radar-style
-track of each departure. The challenge is framed as post-operations analysis,
-where that record exists. A track is a separate sensor watching the same
-event, and it feeds features the model learns to weigh. It is never copied in
-as the answer. We did **not** use anything derived from the labels. In
-particular we did not use PRU's published monthly taxi-out totals for the
-scored months, for training or for checking. We also used nothing that leaks
-from how the files were built, such as row order. The organisers were not
-asked about the ADS-B ruling. `AGENTS.md` sets out the full line we held to.
+### Tail mixture (`src/model.py`, `service.py`)
+
+A CatBoost classifier estimates `p`, the probability that the label exceeds
+6,000 s. Rows with a flight plan use a pooled model; rows without one use a
+dedicated model. The tail value `v` is the movement time minus `LOBT` where a
+plan exists, and minus the scheduled time otherwise (`analytic_tail_value`).
+That is the label exactly when the block time was recorded as the plan or the
+schedule.
+
+The no-flight-plan classifier gets two groups of inputs aimed at the LIRF
+schedule-copy mechanism:
+
+- The stand's previous arrival relative to the scheduled departure
+  (`--clf-inbound`, v33). A late inbound aircraft is what makes LIRF record
+  the schedule as the block time.
+- What kind of operation the departure is (`--clf-service`,
+  `--clf-arr-habit`, v43): domestic leg and destination country, how many
+  departures of the same flight number leave within 24 hours, the callsign's
+  shape, and the share of the operator's arrivals logged with block time equal
+  to scheduled time. It applies only to flights leaving on their scheduled
+  local date (`--svc-midnight-gate`).
+
+Tail values above 40,000 s are scaled by 1.08 to hedge toward a day-late
+label. Above about 81,000 s that lifts the prediction past both candidate
+labels, so the hedge is capped at `max(v, 86,400 + 960)` (`--tail-cap`, v22).
+
+### Corrections (`src/constraints.py`, `high_lobt.py`, `tracespec.py`)
+
+- LOBT window (`--lobt-bounds`). On rows with a matched flight plan the
+  prediction is projected onto `gap_LOBT ± 3,660 s` (`LOBT_MARGIN_SEC`),
+  intersected with non-negative times. All 2,062,448 matched training labels
+  lie within ±3,606 s. Training fails loudly if new data breaks that.
+- Long-taxi specialist (`--high-lobt`). A small LightGBM fits
+  `target - gap_LOBT` on matched rows with gaps above 3,000 s, extreme labels
+  included, and replaces the prediction where the gap exceeds 6,000 s.
+- Track override (`--trace-spec`, `--trace-band`). The specialist sees about
+  360 long matched rows a year, about 40 of them with a stand exit, so it
+  cannot learn that the exit is the answer. An airport is trusted when its
+  long stand exits (3,600 to 6,000 s) land within 300 s of the label on at
+  least 80% of at least 5 training rows. On 2025 that selects EHAM, EDDF and
+  EDDM. There, matched rows with a gap above 4,500 s and a track stand exit
+  take the exit plus the airport's median offset, projected into the LOBT
+  window. The window's
+  floor (`gap_LOBT - 3,660`) is what rules out tows, which show a long exit
+  before a short taxi. At 3,500 s the floor drops below zero and one split
+  loses 0.28 to tows; 4,500 sits inside the plateau found at 4,000 to 5,000.
+  On the 2025 splits the exit-based estimate had RMSE 58, 50 and 30 at EHAM,
+  EDDM and EDDF against the specialist's 799, 1,074 and 1,017. These are mostly
+  de-icing days, and EHAM had another in early January 2026.
+
+## Validation
+
+`src/validate.py` trains and scores four time splits of 2025:
+
+| split | scored months | trained on |
+|---|---|---|
+| holdout | Jan, Jul | the other 10 months |
+| inner | Feb, Aug | 8 months, excluding Jan and Jul |
+| dec_jun | Dec, Jun | 8 months, excluding Jan and Jul |
+| mar_sep | Mar, Sep | 8 months, excluding Jan and Jul |
+
+`--compare TAG` scores a run against a saved one with a paired day-level
+bootstrap, per split and pooled. It reports all rows; robust rows, which drop
+tail rows matching no timestamp; and normal rows. A change becomes a default
+when the pooled robust interval is below zero, no split is significantly
+worse, and it wins live.
+
+The `combine()` rule passes `mu` through on many tail rows, so a regressor
+that happens to sit higher on a few extreme rows can win the bootstrap
+without predicting anything better. This happened twice. One swap scored
+pooled robust -1.34, three rows carried 191M of its 225M holdout
+squared-error gain, and the real gain was 0.18. Changes to `mu` are therefore judged on the
+normal-row delta, and every candidate's concentration is checked (the share
+of squared change carried by its top 3, 10 and 25 rows).
+
+`--mask-flight` makes each split's summer month resemble July 2026 by
+encoding each airport's 2026 share of flight keys as unseen, and saves the
+same models' unmasked predictions as `<tag>_unmasked`. Encoding and key
+changes are judged on both. This harness predicted v24's live gain almost
+exactly.
+
+How each kind of change transferred, from the record above:
+
+| kind of change | offline to live |
+|---|---|
+| features and encodings in `mu` | 0.8x to 1x (v20, v24) |
+| a shared input every family reads (`PRIOR_WEIGHT`) | 2.8x |
+| bounded residual regression on matched rows (specialist) | about 2x |
+| an independent observation of each flight (ADS-B) | 1.9x |
+| post-hoc correction of `mu` by band | reversed |
+| tail-classifier feature expansion | lost about 25 points |
 
 ## Reproducing the submissions
 
@@ -200,157 +324,144 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-(On Windows, use `.venv\Scripts\python.exe`.)
-
-Put the challenge files in `dataset/`:
-- the twelve `training_*.parquet` files;
-- `ranking.parquet` and `submitting.parquet`;
-- for the final phase, `final_ranking.parquet` and `final_submitting.parquet`.
-
-Then fetch the external data:
+On Windows the interpreter is `.venv\Scripts\python.exe`. Put the twelve
+`training_*.parquet` files, `ranking.parquet`, `submitting.parquet`,
+`final_ranking.parquet` and `final_submitting.parquet` in `dataset/`, then
+fetch the external data:
 
 ```bash
-.venv/bin/python src/weather.py download      # METAR for the ten airports
-.venv/bin/python src/aptdat.py download       # stand positions, seconds
-
-# ADS-B: 2025 for training, then the scored months (and the day before each)
+.venv/bin/python src/weather.py download
+.venv/bin/python src/aptdat.py download
 .venv/bin/python src/adsbfetch.py --start 2024-12-31 --end 2025-12-31 --alt-cut legacy
 .venv/bin/python src/adsbfetch.py --start 2025-12-31 --end 2026-02-28 --alt-cut legacy
 .venv/bin/python src/adsbfetch.py --start 2026-05-31 --end 2026-07-31 --alt-cut legacy
 ```
 
-`--alt-cut legacy` matters. Every day behind our submissions was extracted with
-it, and the default (`field`) keeps a slightly different set of airborne
-points. `adsbfetch.py` downloads each day over many parallel connections,
-because GitHub's release host limits each connection to around 100 KB/s. It
-parses the same bytes with the same code as `src/adsb.py download`, which
-streams one connection per day. Run at most two fetchers at once. If a day
-fails, run the same command again: finished days are skipped.
+Each range starts a day early because a track can begin before midnight.
+`--alt-cut legacy` is needed to match the submissions: every day behind them
+was extracted with it, and the default (`field`) keeps airborne points up to
+1,500 ft above field elevation instead. GitHub's release host limits each
+connection to around 100 KB/s, so `adsbfetch.py` fetches each day over many
+parallel range requests and passes the local tar to the same parser as
+`adsb.py download`. Re-fetching 2026-01-31 gave the same 798,900 points and
+identical features on all 4,602 departures. Run at most two fetchers at once;
+four exhausted Windows system resources. A failed day is fetched again by
+rerunning the command, which skips finished days.
 
-### The commands
-
-The current defaults are v48's recipe:
+### Commands
 
 ```bash
-# v48, the best leaderboard submission (Jan + Jul)
+# v48 (the defaults)
 .venv/bin/python src/predict.py --mu lgb cat cat_note cat_ctr1 pa --proxy \
     --out output/submitting_v48.parquet
 
-# The final submission, as uploaded (commit 55a15ab): v48's recipe on the
-# final files, with smaller CatBoost budgets
+# the final submission, built at commit 55a15ab
 .venv/bin/python src/predict.py --mu lgb cat cat_note cat_ctr1 pa --proxy \
     --ranking dataset/final_ranking.parquet --template dataset/final_submitting.parquet \
     --fit-first --cat-iterations 2500 --ctr1-iterations 1600 --pa-cat-iterations 650 \
     --out output/final/final_fallback.parquet
 
-# A final-phase build's predictions for the leaderboard rows (how v49 was made)
+# v49: the final build's predictions for the leaderboard rows
 .venv/bin/python src/subset_submission.py --input output/final/final_fallback.parquet \
     --template dataset/submitting.parquet --out output/final/v49.parquet
 
+# tests
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-`--fit-first` only changes the order of work. It trains the models before
-computing the ranking file's track features, so training could start while
-the new months were still downloading. On the original ranking file it gives
-identical predictions. A full-budget build takes many hours on a CPU, mostly
-in the CatBoost families. `--mu lgb --clf-pooled lgb --clf-nolobt lgb --no-te`
-is a LightGBM-only run that takes minutes.
+`--fit-first` trains the models before building the ranking file's track
+features, which let training start while the new months were downloading. It
+changes only the order of work: on `ranking.parquet` it gave identical
+predictions and parts. `predict.py` reads the template only after predicting,
+so `subset_submission.py` gives exactly what a run with
+`--template dataset/submitting.parquet` would.
 
-Every submission is built from committed code in `src/` with one command, and
-recorded in `NEXT_STEPS.md` with its commit, command and sha256. Library
-versions are pinned in `requirements.txt`. Model seeds are not, so another
-machine may differ by a few seconds per row.
+A full-budget build takes many hours on a CPU, almost all of it in the
+CatBoost families. `--mu lgb --clf-pooled lgb --clf-nolobt lgb --no-te` is a
+LightGBM-only run that takes minutes.
 
 ### Earlier versions
 
-Each winning change became a default flag, and its `--no-...` form undoes it:
+Each winning flag became a default, and its `--no-` form turns it off. Read
+the table top to bottom: each row adds to the flags of the row above.
 
-| version | flags on top of the v48 command |
+| version | flags added to the v48 command |
 |---|---|
 | v47 | `--no-trace-band` |
-| v45 | `--no-trace-spec --no-trace-band` |
-| v44 | v45's flags `--cat-iterations 14000` |
-| v43 | v44's flags `--ctr1-iterations 8000` |
-| v42 | v43's flags `--no-clf-service --no-clf-arr-habit --no-svc-midnight-gate` |
-| v41 | v42's flags with `--cat-iterations 10000` |
-| v39 | v41's flags `--pa-weight 0.5` |
-| v38 | v39's flags `--ctr1-iterations 3500` |
-| v35 | v38's flags `--pa-cat-iterations 2000` |
-| v33 | v35's flags `--no-adsb-pos` |
-| v32 | v33's flags `--no-clf-inbound` |
-| v31 | v32's flags `--cat-iterations 6000 --lgb-rounds 900` |
-| v30 | v31's flags `--no-adsb-climb-id` |
+| v45 | `--no-trace-spec` |
+| v44 | `--cat-iterations 14000` |
+| v43 | `--ctr1-iterations 8000` |
+| v42 | `--no-clf-service --no-clf-arr-habit --no-svc-midnight-gate` |
+| v41 | `--cat-iterations 10000` (replacing 14000) |
+| v39 | `--pa-weight 0.5` |
+| v38 | `--ctr1-iterations 3500` (replacing 8000) |
+| v35 | `--pa-cat-iterations 2000` |
+| v33 | `--no-adsb-pos` |
+| v32 | `--no-clf-inbound` |
+| v31 | `--cat-iterations 6000 --lgb-rounds 900` |
+| v30 | `--no-adsb-climb-id` |
 
 Several of these were assembled from an earlier build's saved per-family
-predictions (`--reuse-family-parts`, `--reuse-mu-parts`). That reuse was
-checked to reproduce a from-scratch run exactly. `NEXT_STEPS.md` section 1
-has the exact command for each.
+predictions (`--reuse-family-parts`, `--reuse-mu-parts`), after checking that
+the reuse reproduces a from-scratch run with zero rows different.
+`NEXT_STEPS.md` section 1 gives each upload's commit, command and sha256.
+
+### Determinism
+
+Rerunning the v20 command gave a bit-identical file. Library versions are
+pinned in `requirements.txt`, but model seeds are not and the libraries use
+every core, so another machine may differ by a few seconds per row.
+
+The ADS-B archive is not uniform. 2025-06-11 holds only 5 hours, and those
+hours are marked unknown. On 2026-06-11 adsb.lol's release has full airborne
+tracks but almost no ground positions (454 points below 40 kt per 3,000
+traces against 24,135 the day before). Only 35 of that day's 6,099 departures
+match, so the model treats it as an uncovered day.
 
 ### Submitting
 
-Keep `accessKey` and `secretKey` in a local `credentials.json`:
+`submission.py` reads `accessKey` and `secretKey` from a local
+`credentials.json`.
 
 ```bash
-.venv/bin/python submission.py list                 # check which versions are taken
+.venv/bin/python submission.py list
 .venv/bin/python submission.py upload VERSION --file output/submitting_vN.parquet
 .venv/bin/python submission.py upload final --file output/final/final_fallback.parquet
 .venv/bin/python submission.py read VERSION
 ```
 
-Before uploading, check the file against its template: columns, dtypes, row
-order, and no NaN, infinite or negative values. The leaderboard allows five
-submissions a day, and the best one counts.
+Check each file against its template before uploading: columns, dtypes, row
+order, and no NaN, infinite or negative values.
 
-## How changes were tested
+## External data and software
 
-`src/validate.py` trains and scores four time splits of 2025, each scoring
-two months the model never saw:
-
-| split | scored months | trained on |
+| source | used for | licence |
 |---|---|---|
-| holdout | Jan + Jul | the other 10 months |
-| inner | Feb + Aug | 8 months, excluding Jan + Jul |
-| dec_jun | Dec + Jun | 8 months, excluding Jan + Jul |
-| mar_sep | Mar + Sep | 8 months, excluding Jan + Jul |
+| [adsb.lol `globe_history`](https://github.com/adsblol) | departure tracks and surface traffic | ODbL |
+| [X-Plane Scenery Gateway](https://gateway.x-plane.com) `apt.dat` | stand coordinates | GPL v2 |
+| [Iowa Environmental Mesonet](https://mesonet.agron.iastate.edu) ASOS archive | METAR weather | free public archive |
 
-`--compare` scores a run against a saved one with a paired, day-level
-bootstrap. A change counts when the pooled interval is below zero and no split
-is significantly worse. There are three guards against fooling ourselves:
-- **Check concentration.** A gain carried by a handful of extreme rows does
-  not transfer, so we check how much the top 10 rows carry.
-- **Score normal rows separately** for changes to the normal-taxi estimate.
-- **Make validation look like 2026.** `--mask-flight` hides each summer
-  month's flight numbers in the share that 2026 renamed.
-
-That harness predicted the flight-number fallback's live gain almost exactly.
-`NEXT_STEPS.md` section 3 records how each kind of change transferred to the
-leaderboard.
-
-```bash
-# Quick LightGBM screen, 2026-like and January-like from one training pass
-.venv/bin/python src/validate.py --mu lgb --proxy --mask-flight \
-    --tag mychange --compare mybaseline
-```
+External data is downloaded at run time into the git-ignored `dataset/` and
+is not redistributed. The models use LightGBM, CatBoost, pandas, NumPy and
+orjson; `torch` is needed only for the optional `--mu neural` member.
 
 ## Repository layout
 
-| path | what it holds |
+| path | contents |
 |---|---|
-| `src/predict.py`, `src/validate.py` | build a submission; score a change on the four splits |
-| `src/data.py`, `features.py`, `airline.py`, `weather.py`, `featcache.py` | loading, features, airline codes, weather, feature cache |
+| `src/predict.py` | builds a submission |
+| `src/validate.py` | four-split validation and paired bootstrap |
+| `src/data.py`, `features.py`, `featcache.py`, `airline.py`, `weather.py` | loading, features and their cache |
 | `src/encode.py` | out-of-fold target encodings |
-| `src/adsb.py`, `adsbfetch.py`, `aptdat.py` | ADS-B download, extraction and track features; stand positions |
-| `src/model.py`, `per_airport.py` | the model families, the tail mixture, shared options |
-| `src/constraints.py`, `high_lobt.py`, `tracespec.py` | flight-plan window, long-taxi specialist, track overrides |
-| `src/service.py`, `inbound.py` | operation type and late-inbound inputs for the tail classifiers |
-| `src/tail_submission.py`, `refine_submission.py`, `subset_submission.py`, `blend.py` | exact post-hoc steps and re-scoring from saved predictions |
-| `submission.py` | upload and read results from the challenge bucket |
+| `src/adsb.py`, `adsbfetch.py`, `aptdat.py` | ADS-B download, extraction and track features; stand coordinates |
+| `src/model.py`, `per_airport.py` | model families, tail classifier, `combine()`, shared options |
+| `src/service.py`, `inbound.py` | tail-classifier inputs for no-flight-plan departures |
+| `src/constraints.py`, `high_lobt.py`, `tracespec.py` | LOBT window, long-taxi specialist, track override |
+| `src/tail_submission.py`, `refine_submission.py`, `subset_submission.py`, `blend.py` | exact post-hoc steps and re-scoring of saved predictions |
+| `submission.py` | upload and read results |
 | `tests/` | unit tests |
-| `NEXT_STEPS.md` | the full experimental record: every submission, measurement and dead end |
-| `AGENTS.md` | working rules for anyone (person or coding agent) changing the code |
+| `NEXT_STEPS.md` | the experimental record: every submission, measurement and dead end |
+| `AGENTS.md` | working rules for changing the code or building a submission |
 
-Flags that stay off by default are kept as the record of measured negatives.
-`--help` lists every option.
-
-Licensed under GPLv3 (`LICENSE`).
+Flags that default to off are kept as the record of measured negatives;
+`predict.py --help` lists all options. Licensed under GPLv3.

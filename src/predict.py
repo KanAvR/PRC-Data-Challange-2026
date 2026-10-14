@@ -5,6 +5,7 @@ that passed validation is reproduced exactly.
 """
 import argparse
 import sys
+import time
 
 from pathlib import Path
 
@@ -26,6 +27,26 @@ from runtime_profile import RuntimeProfile
 
 RANKING_FILE = "dataset/ranking.parquet"
 SUBMITTING_TEMPLATE = "dataset/submitting.parquet"
+
+
+def trace_days(raw):
+    """The archive days the trace features of raw's departures read: each take-off
+    day and the day before it (adsb.dep_features)."""
+    t = pd.to_datetime(raw.loc[raw["PHASE_mvt"] == "DEP", "MVT_TIME_UTC_mvt"], utc=True)
+    days = set(t.dt.strftime("%Y-%m-%d"))
+    return sorted(days | {(pd.Timestamp(d) - pd.Timedelta(days=1)).strftime("%Y-%m-%d") for d in days})
+
+
+def wait_for_trace_days(raw, poll=60):
+    """Block until every day in trace_days(raw) is extracted: a missing day would
+    silently give its rows no trace."""
+    import adsb
+    while True:
+        missing = [d for d in trace_days(raw) if not (adsb.ADSB_DIR / f"{d}.parquet").exists()]
+        if not missing:
+            return
+        print(f"  waiting for {len(missing)} trace days ({missing[0]} .. {missing[-1]})", flush=True)
+        time.sleep(poll)
 
 
 def main():
@@ -53,6 +74,11 @@ def main():
                     help="take one mu family from its own saved parts file (repeatable), so families "
                          "from different builds combine without retraining; overrides "
                          "--reuse-family-parts for that family")
+    ap.add_argument("--fit-first", action=argparse.BooleanOptionalAction, default=False,
+                    help="with --adsb, fit the mu families before building the ranking file's "
+                         "trace features, waiting until every trace day it needs is on disk; the "
+                         "fit reads none of them, so the output is the same as the default order, "
+                         "and training can start while trace days still download")
     ap.add_argument("--timings", metavar="JSON",
                     help="write low-overhead wall/CPU/RSS timings after every pipeline stage")
     args = ap.parse_args()
@@ -105,14 +131,23 @@ def main():
                                           stage="ranking.features")
     with timings.stage("ranking.select_departures"):
         dep_mask = (ranking_raw["PHASE_mvt"] == "DEP").values
-    if args.adsb:
+
+    def ranking_trace_features():
         with timings.stage("ranking.adsb_features"):
             import adsb
-            ranking_adsb = adsb.dep_features(ranking_raw, ranking_tag, climb=args.adsb_climb_id)
+            f = adsb.dep_features(ranking_raw, ranking_tag, climb=args.adsb_climb_id)
             if args.adsb_climb_id and args.adsb_climb_nbr_clean:
                 from climbnbr import clean_neighbours
-                ranking_adsb = clean_neighbours(ranking_raw, ranking_adsb)
-            ranking_feats = ranking_feats.join(ranking_adsb)
+                f = clean_neighbours(ranking_raw, f)
+        return f
+
+    late_traces = args.adsb and args.fit_first
+    if late_traces and (args.adsb_offset_te or args.trace_te or args.mu_arr_habit):
+        raise SystemExit("--fit-first needs --no-adsb-offset-te --no-trace-te --no-mu-arr-habit: "
+                         "those build model inputs from the ranking traces before the fit")
+    if args.adsb and not late_traces:
+        import adsb
+        ranking_feats = ranking_feats.join(ranking_trace_features())
     if args.mu_arr_habit:
         import service
         ranking_feats = ranking_feats.join(service.arrival_habit(ranking_raw))
@@ -128,14 +163,29 @@ def main():
             ranking_dep = drop_mixed(ranking_dep)
         if not args.dest_proxy:
             ranking_dep = drop_dest(ranking_dep)
-        if args.adsb and not args.adsb_nbr:
+        if args.adsb and not late_traces and not args.adsb_nbr:
             ranking_dep = adsb.drop_adsb_nbr(ranking_dep)
-        if args.adsb and not args.adsb_pos:
+        if args.adsb and not late_traces and not args.adsb_pos:
             ranking_dep = adsb.drop_adsb_pos(ranking_dep)
         if args.adsb and args.trace_te:
             dates = pd.to_datetime(ranking_raw.loc[dep_mask, "MVT_TIME_UTC_mvt"], utc=True).dt.strftime("%Y-%m-%d")
             add_trace_encodings(ranking_dep, dates.values)
         ranking_ids = ranking_raw.loc[dep_mask, "MVT_ID_mvt"].values
+    base_cols = list(ranking_dep.columns)
+
+    def attach_late_traces(frame):
+        """--fit-first: the ranking traces join after the fit, in the column order the
+        default path builds (base, traces, then encodings), once every day is on disk."""
+        import adsb
+        wait_for_trace_days(ranking_raw)
+        tr = ranking_trace_features().loc[dep_mask]
+        if not args.adsb_nbr:
+            tr = adsb.drop_adsb_nbr(tr)
+        if not args.adsb_pos:
+            tr = adsb.drop_adsb_pos(tr)
+        frame = frame.join(tr)
+        order = base_cols + list(tr.columns)
+        return frame[order + [c for c in frame.columns if c not in order]]
 
     with timings.stage("features.align_categoricals"):
         align_categoricals(train_data, ranking_dep)
@@ -167,6 +217,8 @@ def main():
         mu_pred = saved["mu"].reindex(ranking_ids).to_numpy()
         assert np.isfinite(mu_pred).all(), "saved parts do not cover every ranking DEP row"
         print(f"Reusing mu from {args.reuse_mu_parts}", flush=True)
+        if late_traces:
+            ranking_dep = attach_late_traces(ranking_dep)
     else:
         reused = {}
         if args.reuse_families:
@@ -187,7 +239,7 @@ def main():
             saved = pd.read_parquet(path, columns=["MVT_ID_mvt", f"mu_{fam}"])
             reused[fam] = saved.set_index("MVT_ID_mvt")[f"mu_{fam}"].reindex(ranking_ids).to_numpy()
             assert np.isfinite(reused[fam]).all(), f"{path} mu_{fam} does not cover every ranking DEP row"
-        mus = []
+        mus, fitted = [], {}
         for fam in args.mu:
             if fam in reused:
                 print(f"Reusing mu family ({fam}) from a saved build", flush=True)
@@ -199,8 +251,18 @@ def main():
                 fit = lirf_schedmixed(fit)
             with timings.stage(f"mu.{fam}.fit"):
                 model = fit(train_data, y_train)
+            if late_traces:
+                fitted[fam] = model
+                mus.append(None)
+                continue
             with timings.stage(f"mu.{fam}.predict"):
                 mus.append(np.clip(model.predict(ranking_dep), 0, None))
+        if late_traces:
+            ranking_dep = attach_late_traces(ranking_dep)
+            for i, fam in enumerate(args.mu):
+                if fam in fitted:
+                    with timings.stage(f"mu.{fam}.predict"):
+                        mus[i] = np.clip(fitted[fam].predict(ranking_dep), 0, None)
         with timings.stage("mu.combine"):
             mu_pred = combine_mu({f"mu_{f}": m for f, m in zip(args.mu, mus)}, args.mu, args)
 

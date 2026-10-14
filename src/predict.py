@@ -32,6 +32,12 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     add_model_args(ap)
     ap.add_argument("--out", default="output/submitting.parquet")
+    ap.add_argument("--ranking", default=RANKING_FILE,
+                    help="rows to predict (default: %(default)s); the final submission uses "
+                         "dataset/final_ranking.parquet (Jan, Feb, Jun and Jul 2026)")
+    ap.add_argument("--template", default=SUBMITTING_TEMPLATE,
+                    help="submission template, row order kept (default: %(default)s); the final "
+                         "submission uses dataset/final_submitting.parquet")
     ap.add_argument("--reuse-mu-parts", metavar="PARTS",
                     help="take mu from a saved <out>.parts.parquet built with the same mu flags and "
                          "retrain only the tail models (minutes, not hours). Shown exact for v32: "
@@ -90,16 +96,19 @@ def main():
     print("Training rows:", len(train_data))
 
     print("Loading ranking data and building features...", flush=True)
-    with timings.stage("ranking.parquet_read", path=RANKING_FILE):
-        ranking_raw = pd.read_parquet(RANKING_FILE)
-    ranking_feats = build_features_cached(RANKING_FILE, ranking_raw, timings=timings,
+    # cache tag for the trace features: "ranking" for the default file, so its caches
+    # stay valid; the keys also fingerprint the rows, so another file cannot collide
+    ranking_tag = Path(args.ranking).stem
+    with timings.stage("ranking.parquet_read", path=args.ranking):
+        ranking_raw = pd.read_parquet(args.ranking)
+    ranking_feats = build_features_cached(args.ranking, ranking_raw, timings=timings,
                                           stage="ranking.features")
     with timings.stage("ranking.select_departures"):
         dep_mask = (ranking_raw["PHASE_mvt"] == "DEP").values
     if args.adsb:
         with timings.stage("ranking.adsb_features"):
             import adsb
-            ranking_adsb = adsb.dep_features(ranking_raw, "ranking", climb=args.adsb_climb_id)
+            ranking_adsb = adsb.dep_features(ranking_raw, ranking_tag, climb=args.adsb_climb_id)
             if args.adsb_climb_id and args.adsb_climb_nbr_clean:
                 from climbnbr import clean_neighbours
                 ranking_adsb = clean_neighbours(ranking_raw, ranking_adsb)
@@ -203,7 +212,7 @@ def main():
             import inbound
             clf_train = train_data.assign(inbound_air_after_sched=meta["inbound_air_after_sched"].values)
             clf_rank = ranking_dep.assign(inbound_air_after_sched=inbound.air_arrival(
-                ranking_raw, "ranking").loc[dep_mask].values)
+                ranking_raw, ranking_tag).loc[dep_mask].values)
         if args.clf_service:
             import service
             sf = service.service_features(ranking_raw).loc[dep_mask]
@@ -266,7 +275,7 @@ def main():
     with timings.stage("submission.assemble_and_validate"):
         pred_df = pd.DataFrame({"MVT_ID_mvt": ranking_ids, "TAXITIME_SEC_mvt": preds})
 
-        template = pd.read_parquet(SUBMITTING_TEMPLATE)
+        template = pd.read_parquet(args.template)
         submission = template[["MVT_ID_mvt"]].merge(pred_df, on="MVT_ID_mvt", how="left")
 
         assert len(submission) == len(template), "row count mismatch"

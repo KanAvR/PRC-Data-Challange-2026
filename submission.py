@@ -19,6 +19,9 @@ def get_client():
 
 
 def remote_name(version):
+    # the one final submission is <team>_final.parquet, not a numbered version
+    if version == "final":
+        return f"{TEAM}_final.parquet"
     version = version if version.startswith("v") else f"v{version}"
     return f"{TEAM}_{version}.parquet"
 

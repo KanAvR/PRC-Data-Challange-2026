@@ -84,15 +84,15 @@ we assume all four months count.
   leaderboard file over `submitting.parquet`'s rows. That is exact, because
   `predict.py` reads the template only after predicting.
 - **The adsb.lol download is throttled per connection, not per line.**
-  GitHub's release-asset host held each connection to ~55-130 KB/s even on a
-  fast line, so `adsb.py download` (one stream per day, ~3.3 GB a day) would
-  have needed days for two months. `src/adsbfetch.py` fetches each day over
+  In October 2026 GitHub's release-asset host limited each connection, so
+  `adsb.py download` (one stream per day, ~3.3 GB a day) was too slow for two
+  months before the deadline. `src/adsbfetch.py` fetches each day over
   many parallel byte-range requests (throughput scales with their number) and
   parses the local tar with the unchanged `adsb.extract_day`. Checked on
   2026-01-31: the same 798,900 points with identical values, and 0 differing
-  trace-feature cells over 4,602 departures. Four fetchers at once exhausted
-  Windows system resources (`WinError 1450`) in the extraction pools; two at a
-  time is safe, and a failed day is simply fetched again.
+  trace-feature cells over 4,602 departures. Too many fetchers at once can
+  exhaust system resources in the extraction pools (`WinError 1450` on
+  Windows); a failed day is simply fetched again.
 - **2026-06-11 has almost no surface positions at the source.** Its `prod-0`
   release (1.52 GB against 2.8-3.9 GB for other days; the only other tags are
   `staging-0` and `mlatonly-0`) holds full traces for fewer aircraft: 42,314
@@ -109,18 +109,18 @@ we assume all four months count.
   coverage. It was left as fetched; special-casing it would change the recipe.
 - **The exact v48 recipe from scratch is a long run**: the CatBoost families
   at their full budgets (`cat`/`cat_note` 18000, `cat_ctr1` 12000, `pa` 5000)
-  take well over half a day on a 16-core CPU machine; LightGBM and the tail
-  are minutes. v48 itself was assembled from reused family parts across
-  several runs, so nothing saved covers Feb/Jun, and it could not be rebuilt
-  before the deadline. The on-time file is the same recipe
+  are most of the cost, and LightGBM and the tail are a small part of it. v48
+  itself was assembled from reused family parts across several runs, so nothing saved covers Feb/Jun, and it could not be rebuilt
+  before the deadline. The final submission is the same recipe
   (same flags, same ADS-B features) with short budgets: `cat`/`cat_note` 2500,
   `cat_ctr1` 1600, `pa` 650, LightGBM 1200. Expected cost against v48 on the
   scored rows: +1.5..+2.5 (central +1.9), from the live tree-count steps
   v25/v32/v38/v39/v42/v44/v45 (+1.1 measured) plus extrapolation for the cuts
-  below the smallest budget ever submitted. **Measured live: v49, the on-time
-  build's Jan/Jul rows, scored 232.665, +2.14 against v48.** The on-time build
-  took under three hours, the CatBoost families most of it. The exact recipe
-  was started right after it, for a late upload if the organisers accept one.
+  below the smallest budget ever submitted. **Measured live: v49, the final
+  submission's Jan/Jul rows, scored 232.665, +2.14 against v48.** A full-budget
+  build was started after it in case a late file was accepted; late files are
+  not accepted, so it was stopped, and the short-budget file is the final
+  submission.
 
 **v36 and v37 (2026-10-07): both lost.** The LIRF schedule-copy line is now one
 live win (v33 `--clf-inbound`, -2.25) and three losses (v34 +2.08, v36 +0.40,
@@ -189,7 +189,7 @@ specialist identical, `mu` sd of change 4.25s (v25's tree step: 5.6s), mean
 squared change. v25's comparable step gave -0.37 live; guess -0.2..-0.4.
 
 **v31 candidate (built 2026-10-06, not uploaded):** v30's defaults plus
-`--adsb-climb-id` (B8). 4h52m on a 16-core Windows machine. Verified against
+`--adsb-climb-id` (B8). Verified against
 `dataset/submitting.parquet` (schema, dtypes, row order; no NaN, inf or
 negatives). Against v28's file: mean |change| 16.5s, top-10 rows 2.6% of the
 squared change; rows matched by the climb-out with a departure segment moved

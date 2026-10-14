@@ -11,12 +11,12 @@ February and June 2026, for 670,790 departures.
 | submission | rows | RMSE |
 |---|---|---:|
 | v48, best leaderboard submission | 344,841 (Jan, Jul) | 230.5207 |
-| `humble-giraffe_final.parquet` | 670,790 (Jan, Feb, Jun, Jul) | scored after the deadline |
-| v49, the final build's Jan and Jul rows | 344,841 | 232.665 |
+| final submission, `humble-giraffe_final.parquet` | 670,790 (Jan, Feb, Jun, Jul) | scored after the deadline |
+| v49, the final submission's Jan and Jul rows | 344,841 | 232.665 |
 
-The final file uses v48's flags and features with smaller CatBoost budgets,
-because a full-budget retrain on the new months did not fit before the
-deadline. v49 measures that cost on the leaderboard rows at +2.14.
+The final submission uses v48's flags and features with smaller CatBoost
+budgets, because a full-budget retrain on the new months did not fit before
+the deadline. v49 measures that cost on the leaderboard rows at +2.14.
 
 ## Method overview
 
@@ -43,10 +43,11 @@ Steps 2 and 3 meet in `combine()` (`src/model.py`):
 
 ## Results by component
 
-Each row is one submission on top of the previous best, so the live column is
-a leaderboard difference with everything else held fixed. Three rows bundle
-related flags (v9, v32, v43). The offline column is the pooled change on the four 2025 validation splits
-(see [Validation](#validation)), where one was recorded.
+Each row is one submission built on the previous best, so the live column is
+the leaderboard change with everything else held fixed. v9, v32 and v43 each
+bundle related flags. The offline column, where one was recorded, is the
+pooled change over the four 2025 validation splits (see
+[Validation](#validation)).
 
 | version | component | offline | live |
 |---|---|---:|---:|
@@ -122,12 +123,11 @@ before the proxy and ADS-B features):
   LIRF's normal-row squared error, and it is what the v33 and v43 tail inputs
   detect.
 
-2026 differs from 2025 in ways that matter here. Rows without a flight plan
-are 1.53% against 1.19%. Matched gaps above 6,000 s are 3.25 times as
-frequent, 141 of the 287 of them at EHAM. Snow rows are 2.6 times as frequent,
-including a January episode at EHAM larger than any in 2025. And 37% of July
-2026 flight numbers never appear in 2025, because airlines reissue
-alphanumeric callsigns each season.
+The hard cases are more common in 2026 than in 2025: departures without a
+flight plan (1.53% against 1.19%), matched gaps above 6,000 s (3.25 times as
+many; 141 of the 287 are at EHAM) and snow rows (2.6 times as many, including
+a January episode at EHAM larger than any in 2025). Airlines also reissue alphanumeric callsigns each
+season, so 37% of July 2026 flight numbers never appear in 2025.
 
 ## Technical details
 
@@ -136,8 +136,7 @@ alphanumeric callsigns each season.
 The base features are the gaps from movement time to `AOBT_3`, `LOBT` and
 `EOBT`, airport, stand, runway, aircraft type, a standardised airline code,
 local time, congestion counts and METAR observations from the Iowa
-Environmental Mesonet. `featcache.py` caches the result, keyed on a hash of
-the feature sources and input files.
+Environmental Mesonet.
 
 The neighbour proxy (`--proxy`, 32 columns in `PROXY_COLS`) averages nearby
 departures' movement-to-`AOBT_3` and movement-to-`LOBT` gaps over 15, 30 and
@@ -180,12 +179,17 @@ identifies the airframe instead (v31). Matched coverage of the 2026 ranking
 rows went from 29.5% to 58.6% with the callsign fallback. LEMD, LFPG and LTFM
 show essentially no ground points.
 
+The archive has gaps. 2025-06-11 covers only 5 hours. The 2026-06-11 release
+has full airborne tracks but almost no ground positions (454 points below
+40 kt per 3,000 traces, against 24,135 the day before), so only 35 of that
+day's 6,099 departures match and the model treats it as an uncovered day.
+
 The features describe the track and how good it is:
 
 - `adsb_leave_stand`, `adsb_leave0`, `adsb_push`: stand-exit, first-movement
   and pushback times, from the 60 m radius around the `apt.dat` stand
   (`STAND_R_M`) and a 15 m displacement from the parked position (`MOVE_M`).
-  On 2025 probe days the last point within 60 m of the stand was within 60 s
+  On sample days in 2025 the last point within 60 m of the stand was within 60 s
   of the label on 82-88% of EHAM rows and 84-88% of LSZH rows.
 - `adsb_first_seen`, `adsb_last_stop`, `adsb_n_ground`, `adsb_cadence`,
   `adsb_max_gap`: when the track starts, where it last stood still, and how
@@ -263,15 +267,16 @@ labels, so the hedge is capped at `max(v, 86,400 + 960)` (`--tail-cap`, v22).
   360 long matched rows a year, about 40 of them with a stand exit, so it
   cannot learn that the exit is the answer. An airport is trusted when its
   long stand exits (3,600 to 6,000 s) land within 300 s of the label on at
-  least 80% of at least 5 training rows. On 2025 that selects EHAM, EDDF and
+  least 80% of at least 5 training rows; on 2025 that selects EHAM, EDDF and
   EDDM. There, matched rows with a gap above 4,500 s and a track stand exit
   take the exit plus the airport's median offset, projected into the LOBT
-  window. The window's floor (`gap_LOBT - 3,660`) is what rules out tows,
-  which show a long exit before a short taxi. At 3,500 s the floor drops below zero and one split
-  loses 0.28 to tows; 4,500 sits inside the plateau found at 4,000 to 5,000.
-  On the 2025 splits the exit-based estimate had RMSE 58, 50 and 30 at EHAM,
-  EDDM and EDDF against the specialist's 799, 1,074 and 1,017. These are mostly
-  de-icing days, and EHAM had another in early January 2026.
+  window. Tows show a long exit before a short taxi, and the window's floor
+  (`gap_LOBT - 3,660`) rules them out. With a 3,500 s threshold the floor
+  drops below zero and one split loses 0.28 to tows; 4,500 sits inside a
+  plateau from 4,000 to 5,000. On the 2025 splits the exit-based estimate had
+  RMSE 58, 50 and 30 at EHAM, EDDM and EDDF, against the specialist's 799,
+  1,074 and 1,017. Most of these rows are de-icing days, and EHAM had another
+  in early January 2026.
 
 ## Validation
 
@@ -294,9 +299,9 @@ The `combine()` rule passes `mu` through on many tail rows, so a regressor
 that happens to sit higher on a few extreme rows can win the bootstrap
 without predicting anything better. This happened twice. One swap scored
 pooled robust -1.34, three rows carried 191M of its 225M holdout
-squared-error gain, and the real gain was 0.18. Changes to `mu` are therefore
-judged on the normal-row delta, and every candidate's concentration is
-checked (the share of squared change carried by its top 3, 10 and 25 rows).
+squared-error gain, and the real gain was 0.18. So changes to `mu` are judged
+on the normal-row delta, and we check how concentrated every candidate is:
+the share of its squared change carried by the top 3, 10 and 25 rows.
 
 `--mask-flight` makes each split's summer month resemble July 2026 by
 encoding each airport's 2026 share of flight keys as unseen, and saves the
@@ -317,6 +322,16 @@ How each kind of change transferred, from the record above:
 
 ## Reproducing the submissions
 
+To rebuild the final submission:
+
+1. Check out `main`. The file was built at commit `55a15ab`. Later commits
+   add `src/adsbfetch.py`, `src/subset_submission.py` and a test, and change
+   no code that the build runs.
+2. Install the environment and fetch the data ([Setup](#setup)).
+3. Run the final submission command ([Commands](#commands)).
+4. Check the file against `dataset/final_submitting.parquet`: same columns,
+   dtypes and row order, and no NaN, infinite or negative values.
+
 ### Setup
 
 ```bash
@@ -324,10 +339,10 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-On Windows the interpreter is `.venv\Scripts\python.exe`. Put the twelve
+On Windows the interpreter is `.venv\Scripts\python.exe`. Copy the twelve
 `training_*.parquet` files, `ranking.parquet`, `submitting.parquet`,
-`final_ranking.parquet` and `final_submitting.parquet` in `dataset/`, then
-fetch the external data:
+`final_ranking.parquet` and `final_submitting.parquet` from the challenge's
+`prc-2026-datasets` bucket into `dataset/`, then fetch the external data:
 
 ```bash
 .venv/bin/python src/weather.py download
@@ -340,45 +355,55 @@ fetch the external data:
 Each range starts a day early because a track can begin before midnight.
 `--alt-cut legacy` is needed to match the submissions: every day behind them
 was extracted with it, and the default (`field`) keeps airborne points up to
-1,500 ft above field elevation instead. In October 2026 GitHub's release
-host held each connection to about 55-130 KB/s, so `adsbfetch.py` fetches
-each day over many parallel range requests and passes the local tar to the
-same parser as `adsb.py download`. Re-fetching 2026-01-31 gave the same
-798,900 points and identical track features on all 4,602 departures. Run at most two fetchers at once;
-four exhausted Windows system resources. A failed day is fetched again by
-rerunning the command, which skips finished days.
+1,500 ft above field elevation instead. `adsbfetch.py` downloads each day
+over parallel range requests (`--streams` days at once, `--conns`
+connections per day) and passes the local tar to the same parser as
+`adsb.py download`, so both give the same points: re-fetching 2026-01-31 gave
+identical track features on all 4,602 departures. Rerunning the command
+fetches any day that failed and skips the finished ones.
 
 ### Commands
 
-```bash
-# v48 (the defaults)
-.venv/bin/python src/predict.py --mu lgb cat cat_note cat_ctr1 pa --proxy \
-    --out output/submitting_v48.parquet
+The final submission:
 
-# the final submission, built at commit 55a15ab
+```bash
 .venv/bin/python src/predict.py --mu lgb cat cat_note cat_ctr1 pa --proxy \
     --ranking dataset/final_ranking.parquet --template dataset/final_submitting.parquet \
     --fit-first --cat-iterations 2500 --ctr1-iterations 1600 --pa-cat-iterations 650 \
-    --out output/final/final_fallback.parquet
+    --out output/humble-giraffe_final.parquet
+```
 
-# v49: the final build's predictions for the leaderboard rows
-.venv/bin/python src/subset_submission.py --input output/final/final_fallback.parquet \
-    --template dataset/submitting.parquet --out output/final/v49.parquet
+Compared with v48's command, it reads the final ranking file and template,
+cuts the CatBoost budgets (`cat` and `cat_note` from 18,000 iterations to
+2,500, `cat_ctr1` from 12,000 to 1,600, the per-airport CatBoost from 5,000 to
+650) and adds `--fit-first`. That flag trains the models before building the
+ranking file's track features, so training could start while the new months
+were still downloading. It only changes the order of work: a LightGBM-only
+build on `ranking.parquet` gave identical predictions and parts with and
+without it.
+
+The other builds:
+
+```bash
+# v49: the final submission's predictions for the leaderboard rows
+.venv/bin/python src/subset_submission.py --input output/humble-giraffe_final.parquet \
+    --template dataset/submitting.parquet --out output/submitting_v49.parquet
+
+# v48, the best leaderboard score (the defaults)
+.venv/bin/python src/predict.py --mu lgb cat cat_note cat_ctr1 pa --proxy \
+    --out output/submitting_v48.parquet
 
 # tests
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-`--fit-first` trains the models before building the ranking file's track
-features, which let training start while the new months were downloading. It
-changes only the order of work: a LightGBM-only build on `ranking.parquet`
-gave identical predictions and parts with and without it. `predict.py` reads the template only after predicting,
-so `subset_submission.py` gives exactly what a run with
+`predict.py` reads the template only after predicting, so
+`subset_submission.py` gives exactly what a run with
 `--template dataset/submitting.parquet` would.
 
-A full-budget build takes many hours on a CPU, almost all of it in the
-CatBoost families. `--mu lgb --clf-pooled lgb --clf-nolobt lgb --no-te` is a
-LightGBM-only run that takes minutes.
+Almost all of a build's time goes to the CatBoost families. `--mu lgb
+--clf-pooled lgb --clf-nolobt lgb --no-te` is a much faster LightGBM-only
+run, useful for checking the setup.
 
 ### Earlier versions
 
@@ -411,27 +436,6 @@ the reuse reproduces a from-scratch run with zero rows different.
 Rerunning the v20 command gave a bit-identical file. Library versions are
 pinned in `requirements.txt`, but model seeds are not and the libraries use
 every core, so another machine may differ by a few seconds per row.
-
-The ADS-B archive is not uniform. 2025-06-11 holds only 5 hours, and the
-hours it does not cover are marked unknown. On 2026-06-11 adsb.lol's release has full airborne
-tracks but almost no ground positions (454 points below 40 kt per 3,000
-traces against 24,135 the day before). Only 35 of that day's 6,099 departures
-match, so the model treats it as an uncovered day.
-
-### Submitting
-
-`submission.py` reads `accessKey` and `secretKey` from a local
-`credentials.json`.
-
-```bash
-.venv/bin/python submission.py list
-.venv/bin/python submission.py upload VERSION --file output/submitting_vN.parquet
-.venv/bin/python submission.py upload final --file output/final/final_fallback.parquet
-.venv/bin/python submission.py read VERSION
-```
-
-Check each file against its template before uploading: columns, dtypes, row
-order, and no NaN, infinite or negative values.
 
 ## External data and software
 

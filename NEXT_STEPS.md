@@ -67,6 +67,50 @@ at EHAM/EDDF/EDDM (B47, B53); both flags are now defaults, so `predict.py --mu
 lgb cat cat_note cat_ctr1 pa --proxy` reproduces v48. Both are concentrated on
 January de-icing days: submitted once each, never to be re-tuned live.
 
+**Final phase (2026-10-14).** The organisers published `final_ranking.parquet`
+(1,341,197 rows: Jan 305,590, Feb 288,432, Jun 363,231, Jul 383,944; the Jan/Jul
+rows are the old file's) and `final_submitting.parquet` (670,790 rows, a
+superset of `submitting.parquet`) in `prc-2026-datasets`: "the same as the
+ranking and submitting dataset but covering two additional months, February
+and June 2026". The final answer is one file named `<team>_final.parquet`
+(`submission.py upload final`), due 10:00 UTC. How it is scored is not stated;
+we assume all four months count.
+- Tools: `predict.py --ranking/--template` take the final files (defaults
+  unchanged, and the trace cache is tagged by the ranking file's stem);
+  `--fit-first` fits `mu` before the ranking trace features and waits for any
+  missing trace day, so training could start while the download was still
+  running (default order and `--fit-first` agree on all 344,841 old rows and
+  every parts column); `src/subset_submission.py` turns a final build into a
+  leaderboard file over `submitting.parquet`'s rows. That is exact, because
+  `predict.py` reads the template only after predicting.
+- **The adsb.lol download is throttled per connection, not per line.**
+  GitHub's release-asset host held each connection to ~55-130 KB/s on a
+  500 Mbit/s line, so `adsb.py download` (one stream per day, ~3.3 GB a day)
+  would have needed days. `src/adsbfetch.py` fetches each day over 96 parallel
+  byte-range requests (4-10 MB/s per day; 44 MB/s across four processes) and
+  parses the local tar with the unchanged `adsb.extract_day`. Checked on
+  2026-01-31: the same 798,900 points with identical values, and 0 differing
+  trace-feature cells over 4,602 departures. Four fetchers at once hit Windows
+  `WinError 1450` (out of system resources) in the extraction pools; the
+  forward fetchers re-did the failed days.
+- **2026-06-11 is degraded at the source.** Its `prod-0` release is 1.52 GB
+  (other days 2.8-3.9 GB) and holds 42,314 traces but only 43,729 points, about
+  one per aircraft. The `staging-0` release is the same (1.60 GB, 47,975
+  points). Only 35 of the 6,099 departures that day match a trace (0.6%,
+  against 65-66% on 06-10 and 06-12), with degenerate features, and
+  `adsb_cov_apt_day` is 0, so the model treats it as a day without coverage.
+  It was left as fetched; special-casing it would change the recipe.
+- **Runtime of the exact v48 recipe from scratch:** ~15.5-16h on 16 cores
+  (`cat`+`cat_note` at 18000: 9.8h; `cat_ctr1` at 12000: 2.5h; `pa` at 5000:
+  3.1h; LightGBM and the tail: ~10 min). v48 itself was assembled from reused
+  family parts across several runs, so nothing saved covers Feb/Jun, and it
+  could not be rebuilt before the deadline. The on-time file is the same recipe
+  (same flags, same ADS-B features) with short budgets: `cat`/`cat_note` 2500,
+  `cat_ctr1` 1600, `pa` 650, LightGBM 1200. Expected cost against v48 on the
+  scored rows: +1.5..+2.5 (central +1.9), from the live tree-count steps
+  v25/v32/v38/v39/v42/v44/v45 (+1.1 measured) plus extrapolation for the cuts
+  below the smallest budget ever submitted.
+
 **v36 and v37 (2026-10-07): both lost.** The LIRF schedule-copy line is now one
 live win (v33 `--clf-inbound`, -2.25) and three losses (v34 +2.08, v36 +0.40,
 v37 +0.31), each of the losers better offline on three or four splits. Both

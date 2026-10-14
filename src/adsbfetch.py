@@ -27,7 +27,9 @@ import pandas as pd
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import adsb
 
-CHUNK = 32 * 1024 * 1024
+# small ranges keep every connection busy to the end of a day: with 32 MB ranges
+# a day's last few ranges ran on a handful of connections for minutes
+CHUNK = 8 * 1024 * 1024
 _local = {}                      # day -> local tar, read by the patched release_urls
 _lock = threading.Lock()
 _release_urls = adsb.release_urls
@@ -99,7 +101,7 @@ def fetch_day(day, conns, out_dir, legacy_cut):
     if (out_dir / f"{day}.parquet").exists():
         return f"{day}: exists"
     t = time.time()
-    tar = out_dir / f"{day}.tar.part"
+    tar = out_dir / f"{day}.{os.getpid()}.tar.part"  # a second fetcher may meet on one day
     out_dir.mkdir(parents=True, exist_ok=True)
     try:
         n = fetch(_release_urls(day), tar, conns)
@@ -132,6 +134,8 @@ def main():
     ap.add_argument("--end", required=True)
     ap.add_argument("--streams", type=int, default=2, help="days in flight at once")
     ap.add_argument("--conns", type=int, default=96, help="range connections per day")
+    ap.add_argument("--reverse", action="store_true",
+                    help="newest day first, to meet a forward fetcher over the same range")
     ap.add_argument("--out-dir", default=str(adsb.ADSB_DIR))
     ap.add_argument("--alt-cut", choices=["field", "legacy"], default="field",
                     help="as adsb.py download: every cached day so far used legacy")
@@ -139,6 +143,7 @@ def main():
     out_dir = pathlib.Path(a.out_dir)
     days = [d.strftime("%Y-%m-%d") for d in pd.date_range(a.start, a.end)]
     days = [d for d in days if not (out_dir / f"{d}.parquet").exists()]
+    days = days[::-1] if a.reverse else days
     print(f"{len(days)} days, {a.streams} at once, {a.conns} connections each, into {out_dir}"
           f"{' (legacy altitude cut)' if a.alt_cut == 'legacy' else ''}", flush=True)
     with ThreadPoolExecutor(max_workers=a.streams) as ex:
